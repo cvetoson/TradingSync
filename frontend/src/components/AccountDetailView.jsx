@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getAccountHistory, deleteHistoryEntry, getAccountHoldings, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, verifyHoldingSymbol } from '../services/api';
+import { getAccountHistory, deleteHistoryEntry, getAccountHoldings, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding as apiDeleteHolding, verifyHoldingSymbol } from '../services/api';
 import UpdateAccountModal from './UpdateAccountModal';
 
 const ACCOUNT_TYPES = [
@@ -29,18 +29,17 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const [editingQuantityValue, setEditingQuantityValue] = useState('');
   const [editingPriceId, setEditingPriceId] = useState(null);
   const [editingPriceValue, setEditingPriceValue] = useState('');
+  const [editingPriceCurrency, setEditingPriceCurrency] = useState('EUR');
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [verifyHolding, setVerifyHolding] = useState(null);
   const [verifySymbolInput, setVerifySymbolInput] = useState('');
   const [verifyResult, setVerifyResult] = useState(null);
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [verifyUpdating, setVerifyUpdating] = useState(false);
+  const [confirmRemoveHoldingId, setConfirmRemoveHoldingId] = useState(null);
+  const [removingHoldingId, setRemovingHoldingId] = useState(null);
 
   useEffect(() => {
-    // #region agent log
-    const isStocksOrCrypto = account.accountType === 'stocks' || account.accountType === 'crypto' || account.account_type === 'stocks' || account.account_type === 'crypto';
-    fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AccountDetailView.jsx:useEffect',message:'Effect ran',data:{accountId:account?.id,accountType:account?.accountType,account_type:account?.account_type,isStocksOrCrypto,callingLoadHoldings:isStocksOrCrypto},timestamp:Date.now(),runId:'holdings-debug',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     loadHistory();
     // Load holdings for stock/crypto accounts
     if (account.accountType === 'stocks' || account.accountType === 'crypto' || 
@@ -149,14 +148,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const loadHoldings = async () => {
     try {
       setHoldingsLoading(true);
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AccountDetailView.jsx:loadHoldings',message:'Fetching holdings',data:{accountId:account.id},timestamp:Date.now(),runId:'holdings-debug',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
       const data = await getAccountHoldings(account.id);
-      // #region agent log
-      const count = (data.holdings || []).length;
-      fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AccountDetailView.jsx:loadHoldings',message:'Holdings received',data:{accountId:account.id,holdingsCount:count,totalValue:data.totalValue},timestamp:Date.now(),runId:'holdings-debug',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
       setHoldings(data.holdings || []);
       setHoldingsTotalValue(data.totalValueEur != null ? data.totalValueEur : (data.totalValue || 0));
     } catch (error) {
@@ -229,6 +221,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
     const q = Number(holding.quantity) || 0;
     const displayPrice = holding.currentPrice ?? holding.purchase_price ?? (q > 0 ? (holding.totalValue || 0) / q : 0);
     setEditingPriceValue(displayPrice ? String(displayPrice) : '');
+    setEditingPriceCurrency((holding.priceCurrency || holding.currency || 'EUR').toUpperCase());
   };
 
   const handlePriceSave = async (holdingId) => {
@@ -238,10 +231,11 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         alert('Please enter a valid positive number');
         return;
       }
-      await updateHoldingPrice(holdingId, price);
+      await updateHoldingPrice(holdingId, price, editingPriceCurrency);
       await loadHoldings();
       setEditingPriceId(null);
       setEditingPriceValue('');
+      setEditingPriceCurrency('EUR');
       if (onUpdate) {
         onUpdate();
       }
@@ -254,6 +248,26 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const handlePriceCancel = () => {
     setEditingPriceId(null);
     setEditingPriceValue('');
+    setEditingPriceCurrency('EUR');
+  };
+
+  const handleRemoveHolding = (holdingId) => {
+    setConfirmRemoveHoldingId(holdingId);
+  };
+
+  const handleConfirmRemoveHolding = async (holdingId) => {
+    try {
+      setRemovingHoldingId(holdingId);
+      await apiDeleteHolding(holdingId);
+      setConfirmRemoveHoldingId(null);
+      await loadHoldings();
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      console.error('Error removing holding:', err);
+      alert('Failed to remove holding. Please try again.');
+    } finally {
+      setRemovingHoldingId(null);
+    }
   };
 
   const openVerifyModal = (holding) => {
@@ -477,6 +491,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                       <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Quantity</th>
                       <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Price per Share</th>
                       <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Total Value</th>
+                      <th className="text-center py-3 px-2 text-sm font-semibold text-gray-700 w-20">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -548,18 +563,20 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                                 Screenshot
                               </button>
                             ) : (
-                              <span
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              <button
+                                type="button"
+                                onClick={() => openVerifyModal(holding)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 transition-colors cursor-pointer"
                                 title={holding.priceLastUpdated
-                                  ? `Price from market API, updated ${formatPriceLastUpdated(holding.priceLastUpdated)}. Free APIs may be delayed (e.g. 15 min).`
-                                  : 'Price updated from live market data (may be delayed).'}
+                                  ? `Price from market API, updated ${formatPriceLastUpdated(holding.priceLastUpdated)}. Click to change symbol or switch to manual.`
+                                  : 'Live price. Click to change symbol or switch to manual.'}
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8v8M3 21h18M3 10h18M3 7l9-4 9 4M3 10l9 4 9-4" /></svg>
                                 Live
                                 {holding.priceLastUpdated && (
                                   <span className="text-emerald-600 font-normal">({formatPriceLastUpdated(holding.priceLastUpdated)})</span>
                                 )}
-                              </span>
+                              </button>
                             )}
                           </td>
                           <td className="py-3 px-4 text-sm text-gray-700 text-right">
@@ -616,7 +633,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                           </td>
                           <td className="py-3 px-4 text-sm text-gray-700 text-right">
                             {editingPriceId === holding.id ? (
-                              <div className="flex items-center gap-2 justify-end">
+                              <div className="flex items-center gap-2 justify-end flex-wrap">
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -633,6 +650,15 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                                   className="w-24 px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
                                   autoFocus
                                 />
+                                <select
+                                  value={editingPriceCurrency}
+                                  onChange={(e) => setEditingPriceCurrency(e.target.value)}
+                                  className="px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                  title="Price currency"
+                                >
+                                  <option value="EUR">€ EUR</option>
+                                  <option value="USD">$ USD</option>
+                                </select>
                                 <button
                                   onClick={() => handlePriceSave(holding.id)}
                                   className="text-green-600 hover:text-green-700"
@@ -662,7 +688,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                                       ? formatCurrency(holding.totalValue / (Number(holding.quantity) || 1), holding.priceCurrency) + ' (manual)'
                                       : formatCurrency(0, holding.priceCurrency)
                                 }
-                                {!holding.currentPrice && holding.symbol && (
+                                {isStaticPrice && !holding.currentPrice && holding.symbol && (
                                   <div className="flex items-center gap-1 justify-end mt-1">
                                     <span className="text-xs text-yellow-600" title="Price from screenshot or manual. Click edit to change.">
                                       (manual)
@@ -678,7 +704,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                                     </button>
                                   </div>
                                 )}
-                                {(holding.currentPrice || holding.purchase_price || (holding.totalValue && holding.totalValue > 0)) && (
+                                {isStaticPrice && (holding.currentPrice || holding.purchase_price || (holding.totalValue && holding.totalValue > 0)) && (
                                   <button
                                     onClick={() => handlePriceEdit(holding)}
                                     className="ml-1 text-gray-400 hover:text-blue-600 transition-colors"
@@ -695,6 +721,40 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                           <td className="py-3 px-4 text-sm font-medium text-gray-900 text-right">
                             {formatCurrency(holding.totalValueEur ?? holding.totalValue ?? 0, 'EUR')}
                           </td>
+                          <td className="py-3 px-2 text-center">
+                            {confirmRemoveHoldingId === holding.id ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmRemoveHolding(holding.id)}
+                                  disabled={removingHoldingId === holding.id}
+                                  className="text-red-600 hover:text-red-700 text-xs font-medium disabled:opacity-50"
+                                  title="Remove this holding"
+                                >
+                                  Remove
+                                </button>
+                                <span className="text-gray-400">|</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmRemoveHoldingId(null)}
+                                  className="text-gray-600 hover:text-gray-700 text-xs"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveHolding(holding.id)}
+                                className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded"
+                                title="Remove this holding"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -705,6 +765,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                       <td className="py-3 px-4 text-sm text-gray-900 text-right">
                         {formatCurrency(holdingsTotalValue ?? holdings.reduce((sum, h) => sum + (Number(h.totalValueEur) || Number(h.totalValue) || 0), 0), 'EUR')}
                       </td>
+                      <td className="py-3 px-2" />
                     </tr>
                   </tfoot>
                 </table>
@@ -931,10 +992,6 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
           account={account}
           onClose={() => setShowUpdateModal(false)}
           onSuccess={async () => {
-            // #region agent log
-            const isStocksOrCrypto = account.accountType === 'stocks' || account.accountType === 'crypto' || account.account_type === 'stocks' || account.account_type === 'crypto';
-            fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AccountDetailView.jsx:onSuccess',message:'Update modal onSuccess called',data:{accountId:account?.id,isStocksOrCrypto,callingLoadHoldings:false},timestamp:Date.now(),runId:'holdings-debug',hypothesisId:'H2'})}).catch(()=>{});
-            // #endregion
             setShowUpdateModal(false);
             // Reload history and refresh account data
             await loadHistory();

@@ -116,9 +116,14 @@ export async function updateHoldingQuantity(holdingId, quantity) {
   return response.data;
 }
 
-export async function updateHoldingPrice(holdingId, price) {
-  const response = await axios.put(`${API_BASE_URL}/holdings/${holdingId}/price`, {
-    price: price
-  });
+export async function updateHoldingPrice(holdingId, price, currency) {
+  const body = { price };
+  if (currency === 'USD' || currency === 'EUR') body.currency = currency;
+  const response = await axios.put(`${API_BASE_URL}/holdings/${holdingId}/price`, body);
+  return response.data;
+}
+
+export async function deleteHolding(holdingId) {
+  const response = await axios.delete(`${API_BASE_URL}/holdings/${holdingId}`);
   return response.data;
 }

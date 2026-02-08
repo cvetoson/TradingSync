@@ -1,8 +1,8 @@
-# TradingSyncApp – Stable version
+# TradingSyncApp – Stable version 2.0.0
 
 **Version**: 2.0.0  
 **Date**: February 8, 2026  
-**Status**: Stable baseline – keep this version as stable.
+**Status**: Stable baseline – no debug instrumentation; production-ready.
 
 ---
 
@@ -10,11 +10,15 @@
 
 - **Portfolio & accounts**: Summary, pie chart, account list, balance from total portfolio or sum of holdings where appropriate.
 - **Holdings**: Per-account holdings with quantity, price, total value (EUR). Price source: **Live** (Yahoo/CoinGecko) or **Screenshot** (manual/bonds like Romania).
+- **Live price not editable**: When a holding has a Live price, the price cell is read-only; edit is only for Screenshot/manual prices.
+- **Live badge editable**: Clicking the green “Live” badge opens the verify modal to change symbol or switch to manual.
+- **Row removable**: Each holding has an Actions column with a trash icon; confirm to remove the holding (DELETE /api/holdings/:id).
+- **Price & currency editable**: For Screenshot holdings, edit price and choose € EUR or $ USD; backend stores currency so display stays correct.
 - **Brokerage balance**: Uses total balance or sum of holdings when a single-holding balance would be misleading.
 - **Live vs Screenshot**: Bonds/CASH/static symbols (e.g. ROMANIA) always Screenshot; others get live price when available (15‑min cache, “Last updated” on badge).
 - **Link to live stock**: Verify symbol (Yahoo + optional ISIN/bond resolution and exchange suffixes); clear error for bonds/ISIN when no price found; Update to save symbol and switch to Live.
 - **Bonds / ISIN (e.g. XS2829209720)**: No external bond API required; keep as Screenshot with manual price. Optional `FINNHUB_API_KEY` for future bond data if needed.
-- **USD/EUR**: Backend returns `priceCurrency` and `totalValueEur`; UI shows price per share in $ or € and total value in EUR.
+- **USD/EUR**: Backend returns `priceCurrency` and `totalValueEur`; existing holding currency is not overwritten when fetching live price. UI shows price per share in $ or € and total value in EUR.
 - **Account detail**: Defensive handling for missing quantity/price and invalid dates; no crash on bad data.
 - **Screenshot upload & AI**: Multi-account extraction, account types, platform detection, history and projections (P2P compound interest) as in v1.
 

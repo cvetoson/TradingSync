@@ -58,9 +58,6 @@ function generateDailyHistoryForAccount(accountId, uploadBalance, interestRate, 
 
 // Helper function to save holdings for an account
 function saveHoldings(accountId, holdings, currency) {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:60',message:'saveHoldings entry',data:{accountId,holdingsCount:holdings?.length||0},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-  // #endregion
   if (!holdings || !Array.isArray(holdings) || holdings.length === 0) {
     return Promise.resolve();
   }
@@ -76,20 +73,11 @@ function saveHoldings(accountId, holdings, currency) {
 
     // Delete existing holdings for this account
     console.log('[SAVE_HOLDINGS] Starting delete for account', accountId);
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:69',message:'Deleting existing holdings',data:{accountId},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-    // #endregion
-    
+
     db.run('DELETE FROM holdings WHERE account_id = ?', [accountId], (deleteErr) => {
       clearTimeout(timeout);
       console.log('[SAVE_HOLDINGS] DELETE callback called', {hasError:!!deleteErr,error:deleteErr?.message});
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:75',message:'DELETE callback executed',data:{hasError:!!deleteErr,error:deleteErr?.message},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-      // #endregion
       if (deleteErr) {
-        // #region agent log
-        fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:77',message:'Error deleting holdings',data:{error:deleteErr.message},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-        // #endregion
         console.error('Error deleting existing holdings:', deleteErr);
         reject(deleteErr);
         return;
@@ -101,9 +89,6 @@ function saveHoldings(accountId, holdings, currency) {
         let insertedCount = 0;
         let errorOccurred = false;
         const totalHoldings = holdings.length;
-        // #region agent log
-        fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:90',message:'Starting holdings insert',data:{totalHoldings},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-        // #endregion
 
         if (totalHoldings === 0) {
           resolve();
@@ -162,18 +147,12 @@ function saveHoldings(accountId, holdings, currency) {
           currentPrice = purchasePrice;
         }
 
-        // #region agent log
-        fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:150',message:'Inserting holding',data:{symbol,quantity,insertedCount,totalHoldings},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-        // #endregion
         db.run(
           `INSERT INTO holdings (account_id, symbol, quantity, purchase_price, current_price, currency, asset_type)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [accountId, symbol, quantity, purchasePrice, currentPrice, holdingCurrency, assetType],
           (insertErr) => {
             if (insertErr) {
-              // #region agent log
-              fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:155',message:'Error inserting holding',data:{symbol,error:insertErr.message},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-              // #endregion
               console.error(`Error saving holding ${symbol}:`, insertErr);
               errorOccurred = true;
               reject(insertErr);
@@ -181,13 +160,7 @@ function saveHoldings(accountId, holdings, currency) {
             }
             
             insertedCount++;
-            // #region agent log
-            fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:163',message:'Holding inserted',data:{symbol,insertedCount,totalHoldings,isComplete:insertedCount===totalHoldings},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-            // #endregion
             if (insertedCount === totalHoldings) {
-              // #region agent log
-              fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:165',message:'All holdings saved',data:{accountId,totalHoldings},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-              // #endregion
               resolve();
             }
           }
@@ -195,9 +168,6 @@ function saveHoldings(accountId, holdings, currency) {
         });
       } catch (insertError) {
         clearTimeout(timeout);
-        // #region agent log
-        fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:catch',message:'Error in holdings insert',data:{error:insertError.message,stack:insertError.stack?.substring(0,200)},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'J'})}).catch(()=>{});
-        // #endregion
         console.error('Error in saveHoldings insert logic:', insertError);
         reject(insertError);
       }
@@ -224,15 +194,9 @@ function detectAccountType(platform) {
 
 // Upload screenshot and extract data
 export async function uploadScreenshot(req, res) {
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:179',message:'uploadScreenshot entry',data:{hasFile:!!req.file,bodyKeys:Object.keys(req.body||{})},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
   try {
     console.log('[UPLOAD] Starting upload process');
     if (!req.file) {
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:182',message:'No file uploaded',data:{},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       console.error('[UPLOAD] No file uploaded');
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -240,9 +204,6 @@ export async function uploadScreenshot(req, res) {
     const filePath = req.file.path;
     const investmentCategory = req.body.investmentCategory || 'unknown';
     let accountType = req.body.accountType || null;
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:190',message:'File received',data:{filePath,investmentCategory,accountType,fileSize:req.file.size},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     console.log('[UPLOAD] File path:', filePath, 'Category:', investmentCategory, 'Type:', accountType);
     
     // Map investment category to a display name
@@ -262,29 +223,17 @@ export async function uploadScreenshot(req, res) {
     const aiAccountType = (investmentCategory === 'auto' || !accountType) ? null : accountType;
 
     // Analyze screenshot with AI
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:209',message:'Starting AI analysis',data:{filePath,platform,aiAccountType},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     console.log('[UPLOAD] Analyzing screenshot with AI...');
     const extractedData = await analyzeScreenshot(filePath, platform, aiAccountType);
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:211',message:'AI analysis complete',data:{hasData:!!extractedData,accountsCount:extractedData?.accounts?.length||0,holdingsCount:extractedData?.holdings?.length||0,hasError:!!extractedData?.error},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     console.log('[UPLOAD] AI extraction complete. Accounts:', extractedData?.accounts?.length || 0, 'Holdings:', extractedData?.holdings?.length || 0);
 
     if (!extractedData) {
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:213',message:'No extracted data',data:{},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
       console.error('[UPLOAD] Failed to extract data from screenshot');
       return res.status(500).json({ error: 'Failed to extract data from screenshot' });
     }
 
     // Check if extraction failed due to API key error
     if (extractedData.error && (extractedData.error.includes('401') || extractedData.error.includes('API key'))) {
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:219',message:'API key error',data:{error:extractedData.error},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'F'})}).catch(()=>{});
-      // #endregion
       return res.status(500).json({ 
         error: 'OpenAI API key is invalid or expired',
         details: 'Please update your API key in backend/.env file. Get a new key at https://platform.openai.com/api-keys',
@@ -299,25 +248,16 @@ export async function uploadScreenshot(req, res) {
     const defaultAccountType = accountType || 'unknown';
 
     // Process each account separately
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:234',message:'Starting account processing',data:{accountsCount:accounts.length},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'G'})}).catch(()=>{});
-    // #endregion
     return new Promise((resolve, reject) => {
       const createdAccounts = [];
       let processedCount = 0;
       const totalAccounts = accounts.length;
 
       if (totalAccounts === 0) {
-        // #region agent log
-        fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:240',message:'No accounts found',data:{},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'H'})}).catch(()=>{});
-        // #endregion
         return res.status(400).json({ error: 'No accounts found in screenshot' });
       }
 
       accounts.forEach((accountData, index) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:270',message:'Processing account',data:{index,accountName:accountData.accountName,balance:accountData.balance},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'G'})}).catch(()=>{});
-        // #endregion
         // Use detected platform name from AI, or fallback to category display name
         const detectedPlatform = extractedData.platform || platform;
         const accountName = accountData.accountName || `${detectedPlatform} ${index + 1}`;
@@ -327,16 +267,10 @@ export async function uploadScreenshot(req, res) {
         const finalAccountType = accountData.accountType || defaultAccountType || detectAccountType(detectedPlatform);
 
         // Check if this specific account already exists
-        // #region agent log
-        fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:280',message:'Checking existing account',data:{detectedPlatform,accountName},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'G'})}).catch(()=>{});
-        // #endregion
         db.get(
           'SELECT * FROM accounts WHERE platform = ? AND account_name = ? ORDER BY last_updated DESC LIMIT 1',
           [detectedPlatform, accountName],
           (err, existingAccount) => {
-            // #region agent log
-            fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:283',message:'Account check result',data:{hasError:!!err,hasExistingAccount:!!existingAccount,accountId:existingAccount?.id},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'G'})}).catch(()=>{});
-            // #endregion
             if (err) {
               reject(err);
               return;
@@ -385,9 +319,6 @@ export async function uploadScreenshot(req, res) {
 
                           // For stock/crypto accounts, save holdings (non-blocking)
                           if ((finalAccountType === 'stocks' || finalAccountType === 'crypto') && extractedData.holdings) {
-                            // #region agent log
-                            fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:331',message:'Saving holdings for existing account (non-blocking)',data:{accountId:existingAccount.id,holdingsCount:extractedData.holdings.length},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'G'})}).catch(()=>{});
-                            // #endregion
                             // Save holdings asynchronously without blocking the response
                             saveHoldings(existingAccount.id, extractedData.holdings, currency)
                               .then(() => {
@@ -402,9 +333,6 @@ export async function uploadScreenshot(req, res) {
                           createdAccounts.push({ ...existingAccount, balance, interestRate, accountType: finalAccountType });
                           processedCount++;
                           if (processedCount === totalAccounts) {
-                            // #region agent log
-                            fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:337',message:'Sending response',data:{accountsCount:createdAccounts.length},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'G'})}).catch(()=>{});
-                            // #endregion
                             resolve(res.json({
                               success: true,
                               accounts: createdAccounts,
@@ -461,9 +389,6 @@ export async function uploadScreenshot(req, res) {
 
                           // For stock/crypto accounts, save holdings (non-blocking)
                           if ((finalAccountType === 'stocks' || finalAccountType === 'crypto') && extractedData.holdings) {
-                            // #region agent log
-                            fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:419',message:'Saving holdings for new account (non-blocking)',data:{accountId,holdingsCount:extractedData.holdings.length},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'G'})}).catch(()=>{});
-                            // #endregion
                             console.log(`[UPLOAD] Saving ${extractedData.holdings.length} holdings for account ${accountId} (non-blocking)`);
                             // Save holdings asynchronously without blocking the response
                             saveHoldings(accountId, extractedData.holdings, currency)
@@ -479,9 +404,6 @@ export async function uploadScreenshot(req, res) {
                           createdAccounts.push({ id: accountId, platform: detectedPlatform, accountName, balance, interestRate, accountType: finalAccountType });
                           processedCount++;
                           if (processedCount === totalAccounts) {
-                            // #region agent log
-                            fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:427',message:'Sending response for new account',data:{accountsCount:createdAccounts.length},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'G'})}).catch(()=>{});
-                            // #endregion
                             console.log('[UPLOAD] All accounts processed successfully');
                             resolve(res.json({
                               success: true,
@@ -502,9 +424,6 @@ export async function uploadScreenshot(req, res) {
       });
     });
   } catch (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:474',message:'Upload error caught',data:{error:error.message,stack:error.stack?.substring(0,200)},timestamp:Date.now(),runId:'upload-debug',hypothesisId:'I'})}).catch(()=>{});
-    // #endregion
     console.error('[UPLOAD] Error uploading screenshot:', error);
     console.error('[UPLOAD] Error stack:', error.stack);
     res.status(500).json({ error: error.message || 'Internal server error' });
@@ -862,9 +781,6 @@ export function getAccountHoldings(req, res) {
       if (err) {
         return res.status(500).json({ error: err.message });
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:getAccountHoldings',message:'Holdings from DB',data:{accountId,holdingsCount:(holdings||[]).length},timestamp:Date.now(),runId:'holdings-debug',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
 
       try {
         const STATIC_ONLY_SYMBOLS = ['CASH', 'CASH_BALANCE', 'ROMANIA'];
@@ -903,10 +819,11 @@ export function getAccountHoldings(req, res) {
               }
               if (currentPrice != null) {
                 priceLastUpdated = new Date().toISOString();
-                priceCurrency = 'USD';
+                // Keep existing holding currency (e.g. EUR) for display; only assume USD when not set (Yahoo returns USD)
+                priceCurrency = (holding.currency || 'USD').toUpperCase();
                 db.run(
-                  'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
-                  [currentPrice, 'USD', holding.id]
+                  'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
+                  [currentPrice, holding.id]
                 );
               } else {
                 priceFetchFailed = true;
@@ -1085,11 +1002,6 @@ export async function updateAccountWithScreenshot(req, res) {
             return res.status(400).json({ error: 'No account data found in screenshot' });
           }
 
-          // #region agent log
-          const accountSummaries = (accounts || []).map((acc, i) => ({ index: i, accountName: acc.accountName || acc.account_name, balance: acc.balance }));
-          fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:updateAccountWithScreenshot',message:'Extracted accounts and totalBalance',data:{accountId,existingAccountName:existingAccount.account_name,accountsCount:accounts.length,accountSummaries,totalBalance:extractedData.totalBalance,holdingsCount:(extractedData.holdings||[]).length},timestamp:Date.now(),runId:'balance-debug',hypothesisId:'B1'})}).catch(()=>{});
-          // #endregion
-
           // Use the first account's data, or try to match by name
           let accountData = accounts[0];
           if (accounts.length > 1) {
@@ -1116,14 +1028,8 @@ export async function updateAccountWithScreenshot(req, res) {
             const useHoldingsSum = sumFromHoldings > (selectedBalance || 0) && sumFromHoldings > (selectedBalance || 0) * 1.5;
             if (useTotal) {
               balance = totalNum;
-              // #region agent log
-              fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:updateAccountWithScreenshot',message:'Using totalBalance for brokerage',data:{accountId,selectedBalance,totalBalance,balance},timestamp:Date.now(),runId:'balance-debug',hypothesisId:'B2'})}).catch(()=>{});
-              // #endregion
             } else if (useHoldingsSum) {
               balance = sumFromHoldings;
-              // #region agent log
-              fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:updateAccountWithScreenshot',message:'Using sum of holdings for brokerage',data:{accountId,selectedBalance,sumFromHoldings,balance},timestamp:Date.now(),runId:'balance-debug',hypothesisId:'B3'})}).catch(()=>{});
-              // #endregion
             } else {
               balance = accountData.balance || existingAccount.balance;
             }
@@ -1185,9 +1091,6 @@ export async function updateAccountWithScreenshot(req, res) {
 
                       // For stock/crypto accounts, save holdings (async, but don't wait)
                       if ((existingAccount.account_type === 'stocks' || existingAccount.account_type === 'crypto') && extractedData.holdings) {
-                        // #region agent log
-                        fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'portfolio.js:updateAccountWithScreenshot',message:'Saving holdings after update',data:{accountId,holdingsCount:extractedData.holdings.length},timestamp:Date.now(),runId:'holdings-debug',hypothesisId:'H4'})}).catch(()=>{});
-                        // #endregion
                         saveHoldings(accountId, extractedData.holdings, currency)
                           .catch((holdingsErr) => {
                             console.error('Error saving holdings:', holdingsErr);
@@ -1357,11 +1260,11 @@ export function updateHoldingQuantity(req, res) {
   );
 }
 
-// Update holding price
+// Update holding price (optional: currency = 'USD' | 'EUR')
 export function updateHoldingPrice(req, res) {
   const db = getDatabase();
   const holdingId = req.params.id;
-  const { price } = req.body;
+  const { price, currency: currencyParam } = req.body;
 
   if (!holdingId || price === undefined || price === null) {
     return res.status(400).json({ error: 'holdingId and price are required' });
@@ -1372,9 +1275,16 @@ export function updateHoldingPrice(req, res) {
     return res.status(400).json({ error: 'price must be a valid positive number' });
   }
 
-  db.run(
-    'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
-    [priceValue, holdingId],
+  const currency = (currencyParam && ['USD', 'EUR'].includes(String(currencyParam).toUpperCase()))
+    ? String(currencyParam).toUpperCase()
+    : null;
+
+  const sql = currency
+    ? 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?'
+    : 'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?';
+  const params = currency ? [priceValue, currency, holdingId] : [priceValue, holdingId];
+
+  db.run(sql, params,
     function(err) {
       if (err) {
         return res.status(500).json({ error: err.message });
@@ -1392,6 +1302,24 @@ export function updateHoldingPrice(req, res) {
       });
     }
   );
+}
+
+// Delete a single holding
+export function deleteHolding(req, res) {
+  const db = getDatabase();
+  const holdingId = req.params.id;
+  if (!holdingId) {
+    return res.status(400).json({ error: 'Holding ID is required' });
+  }
+  db.run('DELETE FROM holdings WHERE id = ?', [holdingId], function(err) {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Holding not found' });
+    }
+    res.json({ success: true, message: 'Holding removed', holdingId });
+  });
 }
 
 // Delete history entry

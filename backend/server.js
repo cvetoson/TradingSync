@@ -6,15 +6,9 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { initDatabase } from './database.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
-import { uploadScreenshot, getPortfolioSummary, getAccounts, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, updateAccountWithScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, verifyHoldingSymbol } from './routes/portfolio.js';
+import { uploadScreenshot, getPortfolioSummary, getAccounts, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, updateAccountWithScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
 
 dotenv.config();
-
-// #region agent log
-const debugLog = (location, message, data, hypothesisId) => {
-  fetch('http://127.0.0.1:7244/ingest/f19eab2b-5e8f-43bd-8ad8-3185e8082f01',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location,message,data:{...data},timestamp:Date.now(),runId:'upload-debug',hypothesisId})}).catch(()=>{});
-};
-// #endregion
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -81,6 +75,7 @@ app.get('/api/holdings/verify-symbol', verifyHoldingSymbol);
 app.put('/api/holdings/:id/symbol', updateHoldingSymbol);
 app.put('/api/holdings/:id/quantity', updateHoldingQuantity);
 app.put('/api/holdings/:id/price', updateHoldingPrice);
+app.delete('/api/holdings/:id', deleteHolding);
 
 // Health check
 app.get('/api/health', (req, res) => {
