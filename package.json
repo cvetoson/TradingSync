@@ -1,0 +1,18 @@
+{
+  "name": "trading-sync-app",
+  "version": "2.0.0",
+  "description": "Portfolio aggregation app that syncs data from multiple trading platforms via screenshot analysis",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd backend && npm run dev",
+    "client": "cd frontend && npm run dev",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install"
+  },
+  "keywords": ["trading", "portfolio", "sync", "dashboard"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
