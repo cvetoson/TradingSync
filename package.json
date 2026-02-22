@@ -1,6 +1,6 @@
 {
   "name": "trading-sync-app",
-  "version": "2.0.0",
+  "version": "3.5.0",
   "description": "Portfolio aggregation app that syncs data from multiple trading platforms via screenshot analysis",
   "main": "index.js",
   "scripts": {

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { initDatabase } from './database.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
-import { uploadScreenshot, getPortfolioSummary, getAccounts, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, updateAccountWithScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
+import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
 
 dotenv.config();
 
@@ -52,23 +52,21 @@ backfillAccountHistory()
   });
 
 // Routes
-app.post('/api/upload', (req, res, next) => {
-  debugLog('server.js:55', 'Upload route hit', {method:req.method,path:req.path,hasBody:!!req.body}, 'A');
-  next();
-}, upload.single('screenshot'), (req, res, next) => {
-  debugLog('server.js:multer', 'Multer processed', {hasFile:!!req.file,fileSize:req.file?.size,fileName:req.file?.filename}, 'B');
-  next();
-}, uploadScreenshot);
+app.post('/api/upload', upload.single('screenshot'), uploadScreenshot);
 app.get('/api/portfolio/summary', getPortfolioSummary);
 app.get('/api/accounts', getAccounts);
+app.post('/api/accounts', createAccount);
+app.post('/api/accounts/:id/holdings', createHolding);
 app.get('/api/accounts/:id/history', getAccountHistory);
 app.get('/api/accounts/:id/holdings', getAccountHoldings);
+app.get('/api/accounts/:id/holdings/projection', getHoldingsProjection);
 app.put('/api/accounts/:id/name', updateAccountName);
 app.put('/api/accounts/:id/type', updateAccountType);
 app.put('/api/accounts/:id/platform', updateAccountPlatform);
 app.put('/api/accounts/:id/balance', updateAccountBalance);
 app.put('/api/accounts/:id/interest-rate', updateAccountInterestRate);
 app.put('/api/accounts/:id/update', upload.single('screenshot'), updateAccountWithScreenshot);
+app.post('/api/accounts/:id/add-holdings', upload.single('screenshot'), addHoldingsFromScreenshot);
 app.delete('/api/accounts/:id', deleteAccount);
 app.delete('/api/history/:id', deleteHistoryEntry);
 app.get('/api/holdings/verify-symbol', verifyHoldingSymbol);

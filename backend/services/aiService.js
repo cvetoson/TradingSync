@@ -57,6 +57,7 @@ export async function analyzeScreenshot(filePath, platform, accountType = null) 
         'p2p': 'P2P lending platform with fixed interest rates',
         'stocks': 'stock trading, ETF, or equity investment platform',
         'crypto': 'cryptocurrency or digital asset platform',
+        'precious': 'gold, silver, or precious metals platform (XAG, XAU)',
         'savings': 'savings account or deposit product',
         'bank': 'banking or fixed income investment',
         'unknown': 'investment or trading platform'
@@ -76,7 +77,7 @@ export async function analyzeScreenshot(filePath, platform, accountType = null) 
       "interestRate": <annual interest rate as a number (TAE, APY, etc.), or null if not applicable>,
       "currency": <currency code like "EUR", "USD", "GBP">,
       "accountName": <name or identifier of this specific account/vault>,
-      "accountType": <one of: "p2p", "stocks", "crypto", "bank", "savings", "unknown">,
+      "accountType": <one of: "p2p", "stocks", "crypto", "precious", "bank", "savings", "unknown">,
       "investedAmount": <initial investment amount as a number, or null if not visible>,
       "investmentDate": <date when investment was made in format "YYYY-MM-DD" or "DD.MM.YYYY", or null if not visible>,
       "generatedProfit": <profit generated so far as a number, or null if not visible>
@@ -91,9 +92,9 @@ export async function analyzeScreenshot(filePath, platform, accountType = null) 
       "quantity": <number of shares/coins (e.g., 0.42, 0.06, 0.41)>,
       "currentPrice": <current price per unit at time of screenshot, or null if not visible>,
       "purchasePrice": <purchase price if visible, or null>,
-      "assetType": <"stock", "crypto", "etf", or "bond">,
+      "assetType": <"stock", "crypto", "etf", "bond", or "precious" for gold/silver/XAG/XAU>,
       "name": <full name of the asset (e.g., "Tesla", "ASML Holding", "Advanced Micro Devices")>,
-      "currency": <currency of the price (e.g., "USD", "EUR")>
+      "currency": <currency of the price/value - DETECT from symbols: € or EUR → "EUR", $ or USD → "USD", £ or GBP → "GBP", Fr or CHF → "CHF">
     }
   ]
 }
@@ -115,13 +116,24 @@ CRITICAL INSTRUCTIONS:
   - Calculate "balance" as: investedAmount + generatedProfit (e.g., 1063.99 + 99.73 = 1163.72)
   - The "balance" field MUST be the CURRENT TOTAL VALUE (invested + profit), NOT just the invested amount
 - The "totalBalance" should be the sum of all individual account balances
+- **GOLD & SILVER (precious metals)**: If you see Gold, Silver, XAG (silver), XAU (gold), or precious metals in the account name, platform, or in a holding name/symbol, use accountType "precious" and for that holding use assetType "precious". Use symbol "XAG" for silver and "XAU" for gold when visible.
+- **CRITICAL FOR CURRENCY DETECTION**: Detect currency from the screenshot for EACH value:
+  - € or "EUR" or "€" next to a number → currency: "EUR"
+  - $ or "USD" or "US$" or "USD" → currency: "USD"
+  - £ or "GBP" or "£" or "GBp" → currency: "GBP"
+  - "CHF" or "Fr" → currency: "CHF"
+  - Set "currency" for each account from the displayed balance (e.g., "1,210.14 €" → EUR)
+  - Set "currency" for each holding from the value/price column (e.g., "508.65 €" → EUR, "33.40 $" → USD)
+  - If the account header shows "Portfolio in EUR" or similar, use that for the primary "currency" field
 - **CRITICAL FOR STOCK/ETF ACCOUNTS**: If you see a brokerage account with multiple holdings (stocks, ETFs, bonds):
   - Extract EACH individual holding as a separate object in the "holdings" array
-  - For each holding, extract: symbol (e.g., "TSLA", "ASML", "ROMANIA" for bonds), quantity (e.g., 0.42, 0.06), name (e.g., "Tesla", "ASML Holding", "Romania 5.25% 05/32")
+  - For each holding, extract: symbol (e.g., "TSLA", "ASML", "ROMANIA" for bonds, "XAG" for silver, "XAU" for gold), quantity (e.g., 0.42, 0.06), name (e.g., "Tesla", "ASML Holding", "Silver", "Gold")
   - **IMPORTANT FOR SYMBOLS**: Use the visible name/ticker from the screenshot. For bonds like "Romania 5.25% 05/32", use "ROMANIA" as the symbol (NOT the ISIN code unless it's clearly visible in the screenshot)
   - Extract the current value shown for each holding (e.g., "149,20 €" for Tesla, "543,42 €" for Romania bond, "44,21 €" for cash)
   - **CRITICAL**: Extract "currentValue" field for each holding - this is the TOTAL VALUE shown in the screenshot (e.g., 149.20, 543.42, 44.21)
   - If price per share is visible (e.g., "411,70 $"), extract it as "currentPrice"
+  - **CRITICAL**: Set "currency" for each holding from the value/price column - if you see "508.65 €" use "EUR", if "33.40 $" use "USD", if "£29.21" use "GBP"
+  - **European brokers (Trading 212, Revolut, etc.)**: If ALL values in the portfolio are shown in € (euro), set currency "EUR" for every holding - the broker converts to EUR for display
   - **IMPORTANT**: Also extract "Cash balance" or "Cash" as a holding with:
     - symbol: "CASH" or "CASH_BALANCE"
     - quantity: 1 (or the cash amount if shown as quantity)
@@ -327,18 +339,22 @@ CRITICAL INSTRUCTIONS:
  * Detects account type based on platform name
  */
 function detectAccountType(platform) {
-  const platformLower = platform.toLowerCase();
-  
+  const platformLower = (platform || '').toLowerCase();
   if (platformLower.includes('bondora') || platformLower.includes('iuvo') || platformLower.includes('moneyfit')) {
     return 'p2p';
-  } else if (platformLower.includes('trading') || platformLower.includes('ibkr')) {
+  }
+  if (platformLower.includes('trading') || platformLower.includes('ibkr')) {
     return 'stocks';
-  } else if (platformLower.includes('revolut') || platformLower.includes('ledger')) {
+  }
+  if (platformLower.includes('revolut') || platformLower.includes('ledger')) {
     return 'crypto';
-  } else if (platformLower.includes('bank')) {
+  }
+  if (platformLower.includes('gold') || platformLower.includes('silver') || platformLower.includes('xag') || platformLower.includes('xau') || platformLower.includes('precious')) {
+    return 'precious';
+  }
+  if (platformLower.includes('bank')) {
     return 'bank';
   }
-  
   return 'unknown';
 }
 

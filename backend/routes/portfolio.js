@@ -1,7 +1,34 @@
 import { getDatabase } from '../database.js';
 import { analyzeScreenshot } from '../services/aiService.js';
 import { calculatePortfolioValue } from '../services/calculations.js';
-import { fetchCurrentPrice } from '../services/marketData.js';
+import { fetchCurrentPrice, getProjectedPrice3M, fetchUsdToEurRate, fetchGbpToEurRate } from '../services/marketData.js';
+
+const LSE_GBP_ETF_SYMBOLS = ['EQQQ', 'IITU', 'VUSA', 'VWRL', 'EIMI', 'VFEM', 'XAIX'];
+const LSE_USD_ETF_SYMBOLS = ['ECAR', 'NVDA', 'META', 'SMSD'];
+const LSE_CHF_SYMBOLS = ['ABBN']; // Swiss stocks; marketData returns EUR (CHF converted)
+const EUR_NATIVE_SYMBOLS = ['IFX', 'TEF', 'MLAA']; // XETRA/Madrid/Paris - Yahoo returns EUR, do NOT convert
+
+/** Promise wrapper for db.run so we can await DB writes before returning */
+function dbRun(db, sql, params) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
+/** Compute holding value in EUR from raw DB data; applies pence→GBP for LSE European ETFs */
+function holdingValueInEur(h, usdToEur, gbpToEur) {
+  const q = Number(h.quantity) || 0;
+  let p = Number(h.current_price) ?? Number(h.purchase_price) ?? 0;
+  const sym = String(h.symbol || '').trim().toUpperCase();
+  const currency = EUR_NATIVE_SYMBOLS.includes(sym) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
+  const isPence = LSE_GBP_ETF_SYMBOLS.includes(sym) && p >= 1000 && p < 50000;
+  const isUsdLseEtf = LSE_USD_ETF_SYMBOLS.includes(sym);
+  if (isPence) p = p / 100;
+  let value = q * p;
+  if (currency === 'USD' || isUsdLseEtf) value *= usdToEur;
+  else if (currency === 'GBP' || isPence) value *= gbpToEur;
+  return value;
+}
 
 /**
  * Generates daily calculated history entries for P2P accounts from upload date to today
@@ -56,139 +83,146 @@ function generateDailyHistoryForAccount(accountId, uploadBalance, interestRate, 
   );
 }
 
-// Helper function to save holdings for an account
+// Deduplicate holdings by symbol (merge quantities and values; keep one entry per symbol)
+function deduplicateHoldings(holdings) {
+  const bySymbol = new Map();
+  for (const h of holdings || []) {
+    const sym = (h.symbol || '').trim().toUpperCase();
+    if (!sym) continue;
+    const existing = bySymbol.get(sym);
+    if (!existing) {
+      bySymbol.set(sym, { ...h, symbol: (h.symbol || '').trim() });
+      continue;
+    }
+    const q1 = parseFloat(existing.quantity) || 0;
+    const q2 = parseFloat(h.quantity) || 0;
+    const v1 = parseFloat(existing.currentValue ?? existing.current_value ?? existing.value ?? existing.amount) || 0;
+    const v2 = parseFloat(h.currentValue ?? h.current_value ?? h.value ?? h.amount) || 0;
+    existing.quantity = q1 + q2;
+    if (v1 + v2 > 0) existing.currentValue = v1 + v2;
+    if (existing.currentValue) existing.current_value = existing.currentValue;
+  }
+  return Array.from(bySymbol.values());
+}
+
+// Shared insert logic for holdings (used by saveHoldings and saveHoldingsMerge)
+function insertHoldings(db, accountId, holdings, currency, resolve, reject) {
+  const deduped = deduplicateHoldings(holdings);
+  let insertedCount = 0;
+  let errorOccurred = false;
+  const totalHoldings = deduped.length;
+  deduped.forEach((holding) => {
+    if (errorOccurred) return;
+    const symbol = holding.symbol;
+    if (!symbol) {
+      insertedCount++;
+      if (insertedCount === totalHoldings) resolve();
+      return;
+    }
+    const rawCurrentValue = holding.currentValue ?? holding.current_value ?? holding.value ?? holding.amount;
+    const currentValueNum = rawCurrentValue != null ? parseFloat(rawCurrentValue) : null;
+    let quantity = parseFloat(holding.quantity) || 0;
+    let purchasePrice = holding.purchasePrice ? parseFloat(holding.purchasePrice) : (holding.purchase_price != null ? parseFloat(holding.purchase_price) : null);
+    let currentPrice = holding.currentPrice ? parseFloat(holding.currentPrice) : (holding.current_price != null ? parseFloat(holding.current_price) : null);
+    const symUpper = (symbol || '').toUpperCase();
+    const assetType = (symUpper === 'XAG' || symUpper === 'XAU') ? 'precious' : (holding.assetType || holding.asset_type || 'stock');
+    const holdingCurrency = holding.currency || currency || 'EUR';
+    if (currentValueNum != null && !isNaN(currentValueNum)) {
+      const totalValue = currentValueNum;
+      if (symbol === 'CASH' || symbol === 'CASH_BALANCE' || symbol.toUpperCase().includes('CASH')) {
+        quantity = 1;
+        currentPrice = totalValue;
+        purchasePrice = totalValue;
+      } else {
+        if (quantity > 0) {
+          const calculatedPrice = totalValue / quantity;
+          currentPrice = calculatedPrice;
+          if (purchasePrice == null) purchasePrice = calculatedPrice;
+        } else {
+          quantity = 1;
+          currentPrice = totalValue;
+          if (purchasePrice == null) purchasePrice = totalValue;
+        }
+      }
+    } else if (currentPrice != null && !isNaN(currentPrice)) {
+      if (purchasePrice == null) purchasePrice = currentPrice;
+      if (quantity <= 0) quantity = 1;
+    } else if (!currentPrice && quantity > 0 && purchasePrice != null) {
+      currentPrice = purchasePrice;
+    }
+    db.run(
+      `INSERT INTO holdings (account_id, symbol, quantity, purchase_price, current_price, currency, asset_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [accountId, symbol, quantity, purchasePrice, currentPrice, holdingCurrency, assetType],
+      (insertErr) => {
+        if (insertErr) {
+          errorOccurred = true;
+          reject(insertErr);
+          return;
+        }
+        insertedCount++;
+        if (insertedCount === totalHoldings) resolve();
+      }
+    );
+  });
+}
+
+// Helper function to save holdings for an account (replaces existing)
 function saveHoldings(accountId, holdings, currency) {
   if (!holdings || !Array.isArray(holdings) || holdings.length === 0) {
     return Promise.resolve();
   }
-
   const db = getDatabase();
-  
   return new Promise((resolve, reject) => {
-    // Add timeout to prevent hanging
-    const timeout = setTimeout(() => {
-      console.error('[SAVE_HOLDINGS] Timeout - DELETE callback never executed');
-      reject(new Error('saveHoldings timeout - database operation took too long'));
-    }, 10000); // 10 second timeout
-
-    // Delete existing holdings for this account
-    console.log('[SAVE_HOLDINGS] Starting delete for account', accountId);
-
+    const timeout = setTimeout(() => reject(new Error('saveHoldings timeout')), 10000);
     db.run('DELETE FROM holdings WHERE account_id = ?', [accountId], (deleteErr) => {
       clearTimeout(timeout);
-      console.log('[SAVE_HOLDINGS] DELETE callback called', {hasError:!!deleteErr,error:deleteErr?.message});
       if (deleteErr) {
-        console.error('Error deleting existing holdings:', deleteErr);
         reject(deleteErr);
         return;
       }
-
       try {
-        console.log('[SAVE_HOLDINGS] Starting insert logic', {totalHoldings:holdings.length});
-        // Insert new holdings
-        let insertedCount = 0;
-        let errorOccurred = false;
-        const totalHoldings = holdings.length;
-
-        if (totalHoldings === 0) {
-          resolve();
-          return;
-        }
-
-        holdings.forEach((holding) => {
-        if (errorOccurred) return;
-
-        const symbol = holding.symbol;
-        if (!symbol) {
-          console.warn('Skipping holding without symbol:', holding);
-          insertedCount++;
-          if (insertedCount === totalHoldings) {
-            resolve();
-          }
-          return;
-        }
-
-        // Normalize value from screenshot (multiple possible keys from AI)
-        const rawCurrentValue = holding.currentValue ?? holding.current_value ?? holding.value ?? holding.amount;
-        const currentValueNum = rawCurrentValue != null ? parseFloat(rawCurrentValue) : null;
-
-        let quantity = parseFloat(holding.quantity) || 0;
-        let purchasePrice = holding.purchasePrice ? parseFloat(holding.purchasePrice) : (holding.purchase_price != null ? parseFloat(holding.purchase_price) : null);
-        let currentPrice = holding.currentPrice ? parseFloat(holding.currentPrice) : (holding.current_price != null ? parseFloat(holding.current_price) : null);
-        const assetType = holding.assetType || holding.asset_type || 'stock';
-        const holdingCurrency = holding.currency || currency || 'EUR';
-
-        // If we have a currentValue from screenshot (the total value shown, e.g., 543.42 for Romania, 44.21 for cash) — always use it as static value
-        if (currentValueNum != null && !isNaN(currentValueNum)) {
-          const totalValue = currentValueNum;
-
-          // For cash, quantity is 1 and price is the cash amount
-          if (symbol === 'CASH' || symbol === 'CASH_BALANCE' || symbol.toUpperCase().includes('CASH')) {
-            quantity = 1;
-            currentPrice = totalValue;
-            purchasePrice = totalValue;
-          } else {
-            // For other holdings (stocks, bonds, etc.): use total value as static number so it shows even without a ticker
-            if (quantity > 0) {
-              const calculatedPrice = totalValue / quantity;
-              currentPrice = calculatedPrice;
-              if (purchasePrice == null) purchasePrice = calculatedPrice;
-            } else {
-              quantity = 1;
-              currentPrice = totalValue;
-              if (purchasePrice == null) purchasePrice = totalValue;
-            }
-          }
-        } else if (currentPrice != null && !isNaN(currentPrice)) {
-          // AI sent currentPrice but no currentValue — use it as static value so we don't show €0.00
-          if (purchasePrice == null) purchasePrice = currentPrice;
-          if (quantity <= 0) quantity = 1;
-        } else if (!currentPrice && quantity > 0 && purchasePrice != null) {
-          currentPrice = purchasePrice;
-        }
-
-        db.run(
-          `INSERT INTO holdings (account_id, symbol, quantity, purchase_price, current_price, currency, asset_type)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [accountId, symbol, quantity, purchasePrice, currentPrice, holdingCurrency, assetType],
-          (insertErr) => {
-            if (insertErr) {
-              console.error(`Error saving holding ${symbol}:`, insertErr);
-              errorOccurred = true;
-              reject(insertErr);
-              return;
-            }
-            
-            insertedCount++;
-            if (insertedCount === totalHoldings) {
-              resolve();
-            }
-          }
-        );
-        });
-      } catch (insertError) {
-        clearTimeout(timeout);
-        console.error('Error in saveHoldings insert logic:', insertError);
-        reject(insertError);
+        insertHoldings(db, accountId, holdings, currency, resolve, reject);
+      } catch (e) {
+        reject(e);
       }
     });
   });
 }
 
+// Helper: add holdings to account without deleting existing (merge mode)
+function saveHoldingsMerge(accountId, holdings, currency) {
+  if (!holdings || !Array.isArray(holdings) || holdings.length === 0) {
+    return Promise.resolve();
+  }
+  const db = getDatabase();
+  return new Promise((resolve, reject) => {
+    try {
+      insertHoldings(db, accountId, holdings, currency, resolve, reject);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
 // Helper function to detect account type (same as in aiService)
 function detectAccountType(platform) {
-  const platformLower = platform.toLowerCase();
-  
+  const platformLower = (platform || '').toLowerCase();
   if (platformLower.includes('bondora') || platformLower.includes('iuvo') || platformLower.includes('moneyfit')) {
     return 'p2p';
-  } else if (platformLower.includes('trading') || platformLower.includes('ibkr')) {
+  }
+  if (platformLower.includes('trading') || platformLower.includes('ibkr')) {
     return 'stocks';
-  } else if (platformLower.includes('revolut') || platformLower.includes('ledger')) {
+  }
+  if (platformLower.includes('revolut') || platformLower.includes('ledger')) {
     return 'crypto';
-  } else if (platformLower.includes('bank') || platformLower.includes('savings')) {
+  }
+  if (platformLower.includes('gold') || platformLower.includes('silver') || platformLower.includes('xag') || platformLower.includes('xau') || platformLower.includes('precious')) {
+    return 'precious';
+  }
+  if (platformLower.includes('bank') || platformLower.includes('savings')) {
     return 'savings';
   }
-  
   return 'unknown';
 }
 
@@ -212,6 +246,7 @@ export async function uploadScreenshot(req, res) {
       'p2p': 'P2P Lending',
       'equities': 'ETF & Stocks',
       'crypto': 'Cryptocurrency',
+      'precious': 'Gold & Silver',
       'savings': 'Savings & Deposits',
       'fixed-income': 'Fixed Income & Bonds',
       'alternative': 'Alternative Investments'
@@ -318,7 +353,7 @@ export async function uploadScreenshot(req, res) {
                           }
 
                           // For stock/crypto accounts, save holdings (non-blocking)
-                          if ((finalAccountType === 'stocks' || finalAccountType === 'crypto') && extractedData.holdings) {
+                          if ((finalAccountType === 'stocks' || finalAccountType === 'crypto' || finalAccountType === 'precious') && extractedData.holdings) {
                             // Save holdings asynchronously without blocking the response
                             saveHoldings(existingAccount.id, extractedData.holdings, currency)
                               .then(() => {
@@ -388,7 +423,7 @@ export async function uploadScreenshot(req, res) {
                           }
 
                           // For stock/crypto accounts, save holdings (non-blocking)
-                          if ((finalAccountType === 'stocks' || finalAccountType === 'crypto') && extractedData.holdings) {
+                          if ((finalAccountType === 'stocks' || finalAccountType === 'crypto' || finalAccountType === 'precious') && extractedData.holdings) {
                             console.log(`[UPLOAD] Saving ${extractedData.holdings.length} holdings for account ${accountId} (non-blocking)`);
                             // Save holdings asynchronously without blocking the response
                             saveHoldings(accountId, extractedData.holdings, currency)
@@ -456,6 +491,92 @@ function updateHoldings(accountId, holdings) {
   });
 }
 
+// Create a new account (for manual addition)
+export function createAccount(req, res) {
+  const db = getDatabase();
+  const { accountName, platform, accountType } = req.body;
+
+  const name = (accountName || 'Manual').trim();
+  const plat = (platform || 'Manual').trim();
+  const type = (accountType || 'stocks').trim();
+
+  db.run(
+    'INSERT INTO accounts (platform, account_name, account_type, balance, currency) VALUES (?, ?, ?, 0, ?)',
+    [plat, name, type, 'EUR'],
+    function(err) {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      const accountId = this.lastID;
+      res.status(201).json({
+        success: true,
+        account: { id: accountId, platform: plat, accountName: name, accountType: type }
+      });
+    }
+  );
+}
+
+// Add a holding manually to an account
+export async function createHolding(req, res) {
+  const db = getDatabase();
+  const accountId = req.params.id;
+  const { symbol, quantity, price, currency, assetType } = req.body;
+
+  if (!accountId) {
+    return res.status(400).json({ error: 'Account ID is required' });
+  }
+  const sym = (symbol || '').trim().toUpperCase();
+  if (!sym) {
+    return res.status(400).json({ error: 'Symbol is required' });
+  }
+  const qty = parseFloat(quantity);
+  if (isNaN(qty) || qty <= 0) {
+    return res.status(400).json({ error: 'Quantity must be a positive number' });
+  }
+
+  const asset = (assetType || 'stock').toLowerCase();
+  const curr = (currency || 'EUR').toUpperCase();
+
+  // Check account exists
+  db.get('SELECT id, account_type FROM accounts WHERE id = ?', [accountId], async (accErr, account) => {
+    if (accErr || !account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    let currentPrice = price != null && price !== '' ? parseFloat(price) : null;
+    if (currentPrice != null && (isNaN(currentPrice) || currentPrice < 0)) currentPrice = null;
+
+    // If no price provided, try to fetch live price
+    if (currentPrice == null) {
+      try {
+        const fetched = await fetchCurrentPrice(sym, asset);
+        if (fetched) currentPrice = fetched;
+      } catch (e) {
+        console.warn('Could not fetch price for', sym, e?.message);
+      }
+    }
+
+    if (currentPrice == null || isNaN(currentPrice)) {
+      currentPrice = 0;
+    }
+
+    db.run(
+      'INSERT INTO holdings (account_id, symbol, quantity, purchase_price, current_price, currency, asset_type) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [accountId, sym, qty, currentPrice, currentPrice, curr, asset],
+      function(insertErr) {
+        if (insertErr) {
+          return res.status(500).json({ error: insertErr.message });
+        }
+        syncAccountBalanceFromHoldings(accountId);
+        res.status(201).json({
+          success: true,
+          holding: { id: this.lastID, symbol: sym, quantity: qty, currentPrice }
+        });
+      }
+    );
+  });
+}
+
 // Get portfolio summary with pie chart data
 export function getPortfolioSummary(req, res) {
   const db = getDatabase();
@@ -473,6 +594,8 @@ export function getPortfolioSummary(req, res) {
       accounts = accounts || [];
 
       try {
+        // Live USD→EUR for portfolio totals (same as holdings detail)
+        const usdToEur = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || (await fetchUsdToEurRate()) || 0.846;
         // Calculate current values for each account
         const portfolioData = await Promise.all(
           accounts.map(async (account) => {
@@ -480,24 +603,36 @@ export function getPortfolioSummary(req, res) {
             let currentValue = await calculatePortfolioValue(account).catch(() => account.balance || 0);
             if (typeof currentValue !== 'number' || Number.isNaN(currentValue)) currentValue = account.balance || 0;
 
-            // For stock/crypto accounts, if we have holdings, use the holdings total instead
-            if ((account.account_type === 'stocks' || account.account_type === 'crypto') && (account.holdings_count || 0) > 0) {
+            // For stock/crypto/precious accounts, if we have holdings, use the sum of holdings in EUR (match detail view)
+            if ((account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') && (account.holdings_count || 0) > 0) {
+              const [gbpToEur] = await Promise.all([fetchGbpToEurRate()]);
+              const gbpRate = gbpToEur || 1.17;
               const holdingsResult = await new Promise((resolve) => {
                 db.all(
-                  'SELECT * FROM holdings WHERE account_id = ?',
+                  'SELECT symbol, quantity, current_price, purchase_price, currency FROM holdings WHERE account_id = ?',
                   [account.id],
-                  async (err, holdings) => {
+                  (err, holdings) => {
                     if (err) {
-                      resolve({ totalValue: currentValue });
+                      resolve({ totalValueEur: currentValue });
                       return;
                     }
                     const list = holdings || [];
-                    const totalValue = list.reduce((sum, h) => sum + (Number(h.quantity) || 0) * (Number(h.current_price) || Number(h.purchase_price) || 0), 0);
-                    resolve({ totalValue });
+                    const totalValueEur = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpRate), 0);
+                    resolve({ totalValueEur });
                   }
                 );
               });
-              if (holdingsResult && holdingsResult.totalValue > 0) currentValue = holdingsResult.totalValue;
+              // Use holdings sum; prefer synced account.balance when it's higher (getAccountHoldings just ran)
+              const holdingsSum = holdingsResult?.totalValueEur;
+              const freshBalance = await new Promise((resolve) => {
+                db.get('SELECT balance FROM accounts WHERE id = ?', [account.id], (e, row) => resolve(row?.balance));
+              });
+              const useValue = (typeof freshBalance === 'number' && freshBalance > (holdingsSum || 0))
+                ? freshBalance
+                : holdingsSum;
+              if (useValue != null && typeof useValue === 'number' && !Number.isNaN(useValue)) {
+                currentValue = useValue;
+              }
             }
 
             return {
@@ -611,7 +746,7 @@ export function updateAccountType(req, res) {
   const accountId = req.params.id;
   const { accountType } = req.body;
 
-  const validTypes = ['p2p', 'stocks', 'crypto', 'bank', 'savings', 'unknown'];
+  const validTypes = ['p2p', 'stocks', 'crypto', 'precious', 'bank', 'savings', 'unknown'];
   
   if (!accountId || !accountType) {
     return res.status(400).json({ error: 'accountId and accountType are required' });
@@ -786,8 +921,10 @@ export function getAccountHoldings(req, res) {
         const STATIC_ONLY_SYMBOLS = ['CASH', 'CASH_BALANCE', 'ROMANIA'];
         const normalizedSymbol = (s) => String(s || '').trim().toUpperCase();
         const num = (v) => (v != null && v !== '' ? Number(v) : 0);
-        const USD_TO_EUR = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || 0.92;
-
+        // Live rate from Yahoo (USDEUR=X) so e.g. 79.67 USD → 67.40 EUR; fallback env or current default
+        const [fetchedRate, gbpToEur] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate()]);
+        const USD_TO_EUR = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || fetchedRate || 0.846;
+        const GBP_TO_EUR = gbpToEur || 1.17;
         const holdingsWithPrices = await Promise.all(
           (holdings || []).map(async (holding) => {
             const quantity = num(holding.quantity);
@@ -799,39 +936,108 @@ export function getAccountHoldings(req, res) {
 
             const lastUpdated = holding.last_updated ? new Date(holding.last_updated) : null;
             const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
-            const isPriceRecent = lastUpdated && lastUpdated > fifteenMinutesAgo;
+            const isPreciousMetal = sym === 'XAG' || sym === 'XAU';
+            // Precious metals + EUR-native: always fetch (cached may be wrong from prior USD conversion bug)
+            const alwaysRefetchPrice = isPreciousMetal || EUR_NATIVE_SYMBOLS.includes(sym);
+            const isPriceRecent = alwaysRefetchPrice ? false : (lastUpdated && lastUpdated > fifteenMinutesAgo);
 
             let currentPrice = holding.current_price != null ? Number(holding.current_price) : null;
+            // For crypto with very small price (<0.001), may be wrong token id - force re-fetch
+            const assetTypeLower = (holding.asset_type || holding.assetType || '').toLowerCase();
+            const forceRefetchCrypto = assetTypeLower === 'crypto' && currentPrice != null && currentPrice > 0 && currentPrice < 0.001;
+            // For stocks/ETFs: if stored price is unreasonably high (>10k), likely AI extracted total value as price - force refetch
+            const isStockOrEtf = ['stock', 'etf'].includes(assetTypeLower);
+            const forceRefetchWrongPrice = isStockOrEtf && currentPrice != null && currentPrice > 10000;
+            // LSE GBP ETFs (EQQQ, IITU, VFEM, etc.) trade ~£5 (~€6). If cached price > 50 EUR, AI likely stored total as price. If < 1, wrong scale.
+            const holdingCurrency = (holding.currency || 'EUR').toUpperCase();
+            const forceRefetchCorruptedLseGbp = isStockOrEtf && currentPrice != null && LSE_GBP_ETF_SYMBOLS.includes(sym) &&
+              (currentPrice < 1 || (holdingCurrency === 'EUR' && currentPrice > 50));
+            // SMSD (Samsung LSE) trades ~$50-200; cached €903 is implausible - force refetch
+            const forceRefetchSmsd = sym === 'SMSD' && currentPrice != null && currentPrice > 500;
+            // META trades ~$600; cached €34 implies wrong ticker/source - force refetch
+            const forceRefetchMeta = sym === 'META' && currentPrice != null && currentPrice < 100;
+            // ABBN (ABB Swiss) ~CHF 80 = €76; cached €64 was USD conversion - force refetch for correct CHF→EUR
+            const forceRefetchAbbn = sym === 'ABBN' && currentPrice != null && (currentPrice < 70 || currentPrice > 100);
+            // EUR-native (IFX, TEF, MLAA): if stored as USD, was wrongly converted - force refetch to correct
+            const forceRefetchEurNative = EUR_NATIVE_SYMBOLS.includes(sym) && (holding.currency || 'EUR').toUpperCase() === 'USD';
+            const shouldFetchPrice = currentPrice == null || !isPriceRecent || forceRefetchCrypto || forceRefetchWrongPrice || forceRefetchCorruptedLseGbp || forceRefetchSmsd || forceRefetchMeta || forceRefetchAbbn || forceRefetchEurNative;
             let priceFetchFailed = false;
             let priceLastUpdated = holding.last_updated || null;
             let priceCurrency = (holding.currency || 'EUR').toUpperCase();
+            let priceCameFromFetch = false;
 
             if (useStaticValueOnly) {
               currentPrice = currentPrice ?? (holding.purchase_price != null ? Number(holding.purchase_price) : null);
               if (currentPrice == null && holding.purchase_price != null) currentPrice = Number(holding.purchase_price);
               priceFetchFailed = true;
               priceCurrency = (holding.currency || 'EUR').toUpperCase();
-            } else if (currentPrice == null || !isPriceRecent) {
+            } else if (shouldFetchPrice) {
+              let fetchedPrice = null;
               try {
-                currentPrice = await fetchCurrentPrice(holding.symbol, holding.asset_type);
+                fetchedPrice = await fetchCurrentPrice(holding.symbol, holding.asset_type);
+                currentPrice = fetchedPrice;
               } catch (e) {
                 currentPrice = null;
               }
               if (currentPrice != null) {
+                priceCameFromFetch = true;
                 priceLastUpdated = new Date().toISOString();
-                // Keep existing holding currency (e.g. EUR) for display; only assume USD when not set (Yahoo returns USD)
-                priceCurrency = (holding.currency || 'USD').toUpperCase();
-                db.run(
-                  'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
-                  [currentPrice, holding.id]
-                );
+                const holdingCurrency = (holding.currency || 'USD').toUpperCase();
+                const assetType = (holding.asset_type || holding.assetType || '').toLowerCase();
+                const symInner = normalizedSymbol(holding.symbol);
+                // Yahoo returns: LSE GBP ETFs = pence; LSE USD ETFs (ECAR) + US stocks (NVDA, META) + XAG/XAU/crypto = USD
+                // EUR native (IFX.DE, TEF.MC, MLAA.PA) = EUR; do NOT convert
+                const isGbpPrice = LSE_GBP_ETF_SYMBOLS.includes(symInner);
+                const isChfPrice = LSE_CHF_SYMBOLS.includes(symInner); // marketData already returns EUR
+                const isEurNative = EUR_NATIVE_SYMBOLS.includes(symInner); // XETRA/Madrid/Paris = EUR
+                const isUsdPrice = (symInner === 'XAG' || symInner === 'XAU') || assetType === 'crypto' ||
+                  LSE_USD_ETF_SYMBOLS.includes(symInner) || (!isGbpPrice && !isChfPrice && !isEurNative); // Default: non-GBP/CHF/EUR = USD
+                if (isChfPrice || isEurNative) {
+                  priceCurrency = 'EUR';
+                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
+                } else if (isGbpPrice && holdingCurrency === 'EUR') {
+                  currentPrice = currentPrice * GBP_TO_EUR;
+                  priceCurrency = 'EUR';
+                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
+                } else if (isUsdPrice) {
+                  currentPrice = currentPrice * USD_TO_EUR;
+                  priceCurrency = 'EUR';
+                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
+                } else {
+                  priceCurrency = holdingCurrency;
+                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, holding.id]);
+                }
               } else {
-                priceFetchFailed = true;
-                if (holding.purchase_price != null) currentPrice = Number(holding.purchase_price);
-                priceCurrency = (holding.currency || 'EUR').toUpperCase();
+                // Fetch failed - use cached price from last successful fetch if available; show "Live (X ago)" not yellow Screenshot
+                let cachedPrice = holding.current_price != null ? Number(holding.current_price) : null;
+                // Cached price for LSE GBP ETFs may be in pence; convert. USD ETFs (ECAR) no pence conversion
+                if (cachedPrice != null && cachedPrice >= 1000 && cachedPrice < 50000 && LSE_GBP_ETF_SYMBOLS.includes(sym)) {
+                  cachedPrice = cachedPrice / 100;
+                  if ((holding.currency || 'EUR').toUpperCase() === 'EUR') cachedPrice = cachedPrice * GBP_TO_EUR;
+                }
+                if (cachedPrice != null && cachedPrice > 0) {
+                  currentPrice = cachedPrice;
+                  priceLastUpdated = holding.last_updated || null;
+                  priceFetchFailed = false; // Keep Live badge with stale timestamp, don't show yellow Screenshot
+                  priceCurrency = (holding.currency || 'EUR').toUpperCase();
+                } else {
+                  priceFetchFailed = true;
+                  if (holding.purchase_price != null) currentPrice = Number(holding.purchase_price);
+                  priceCurrency = (holding.currency || 'EUR').toUpperCase();
+                }
               }
             }
 
+            // When using CACHED price only: LSE GBP ETF may be stored in pence; convert. Skip when we just fetched (already in EUR).
+            if (!priceCameFromFetch && currentPrice != null && currentPrice >= 1000 && currentPrice < 50000 && LSE_GBP_ETF_SYMBOLS.includes(sym)) {
+              currentPrice = currentPrice / 100;
+              if ((holding.currency || 'EUR').toUpperCase() === 'EUR') {
+                currentPrice = currentPrice * GBP_TO_EUR;
+                priceCurrency = 'EUR';
+              } else {
+                priceCurrency = 'GBP';
+              }
+            }
             const purchasePriceNum = holding.purchase_price != null ? Number(holding.purchase_price) : 0;
             let totalValue = 0;
             if (currentPrice != null) totalValue = quantity * currentPrice;
@@ -842,7 +1048,7 @@ export function getAccountHoldings(req, res) {
             const gainLoss = totalValue - purchaseValue;
             const gainLossPercent = purchaseValue > 0 ? (gainLoss / purchaseValue) * 100 : 0;
 
-            const totalValueEur = priceCurrency === 'USD' ? totalValue * USD_TO_EUR : totalValue;
+            const totalValueEur = priceCurrency === 'USD' ? totalValue * USD_TO_EUR : priceCurrency === 'GBP' ? totalValue * GBP_TO_EUR : totalValue;
 
             return {
               ...holding,
@@ -860,7 +1066,15 @@ export function getAccountHoldings(req, res) {
           })
         );
 
-        const totalValueEur = holdingsWithPrices.reduce((sum, h) => sum + (h.totalValueEur || (h.priceCurrency === 'USD' ? (h.totalValue || 0) * USD_TO_EUR : (h.totalValue || 0))), 0);
+        // Await all DB updates so portfolio summary sees fresh data on next load
+        const updatePromises = holdingsWithPrices.map((h) => h._updatePromise).filter(Boolean);
+        if (updatePromises.length > 0) await Promise.all(updatePromises);
+        holdingsWithPrices.forEach((h) => delete h._updatePromise);
+
+        const totalValueEur = holdingsWithPrices.reduce((sum, h) => sum + (h.totalValueEur ?? 0), 0);
+
+        // Sync account balance with computed total (use computed value to avoid race with DB updates)
+        await syncAccountBalanceFromHoldings(accountId, totalValueEur).catch(() => {});
 
         res.json({
           holdings: holdingsWithPrices,
@@ -875,6 +1089,70 @@ export function getAccountHoldings(req, res) {
       }
     }
   );
+}
+
+// Get 3-month value projection for stocks/crypto account (for chart)
+export async function getHoldingsProjection(req, res) {
+  const db = getDatabase();
+  const accountId = req.params.id;
+  if (!accountId) {
+    return res.status(400).json({ error: 'accountId is required' });
+  }
+  const usdToEur = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || (await fetchUsdToEurRate()) || 0.846;
+
+  db.get('SELECT * FROM accounts WHERE id = ?', [accountId], async (err, account) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+    const accountType = (account.account_type || account.accountType || '').toLowerCase();
+    if (accountType !== 'stocks' && accountType !== 'crypto' && accountType !== 'precious') {
+      return res.json({ totalValueEurNow: 0, totalValueEur3M: 0, monthly: [], perHolding: [], source: null });
+    }
+
+    db.all('SELECT id, symbol, quantity, current_price, purchase_price, currency, asset_type FROM holdings WHERE account_id = ?', [accountId], async (dbErr, holdings) => {
+      if (dbErr) return res.status(500).json({ error: dbErr.message });
+      const list = holdings || [];
+      if (list.length === 0) {
+        return res.json({ totalValueEurNow: 0, totalValueEur3M: 0, monthly: [], perHolding: [], source: null });
+      }
+
+      try {
+        let totalNowEur = 0;
+        let total3MEur = 0;
+        const perHolding = [];
+        for (const h of list) {
+          const q = Number(h.quantity) || 0;
+          const curPrice = h.current_price != null ? Number(h.current_price) : (h.purchase_price != null ? Number(h.purchase_price) : null);
+          const price = curPrice ?? await fetchCurrentPrice(h.symbol, h.asset_type || 'stock');
+          if (price == null || q <= 0) continue;
+          const sym = String(h.symbol || '').trim().toUpperCase();
+          const currency = EUR_NATIVE_SYMBOLS.includes(sym) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
+          const valueNow = q * price;
+          const valueNowEur = currency === 'USD' ? valueNow * usdToEur : valueNow;
+          totalNowEur += valueNowEur;
+
+          const proj = await getProjectedPrice3M(h.symbol, price, h.asset_type || 'stock');
+          const price3M = proj ? proj.projectedPrice : price;
+          const value3M = q * price3M;
+          const value3MEur = currency === 'USD' ? value3M * usdToEur : value3M;
+          total3MEur += value3MEur;
+          perHolding.push({ symbol: h.symbol, currentPrice: price, projectedPrice3M: price3M, source: proj ? proj.source : null });
+        }
+
+        const now = new Date();
+        const monthly = [
+          { month: 0, date: now.toISOString().slice(0, 10), valueEur: totalNowEur },
+          { month: 1, date: new Date(now.getFullYear(), now.getMonth() + 1, now.getDate()).toISOString().slice(0, 10), valueEur: totalNowEur + (total3MEur - totalNowEur) / 3 },
+          { month: 2, date: new Date(now.getFullYear(), now.getMonth() + 2, now.getDate()).toISOString().slice(0, 10), valueEur: totalNowEur + (2 * (total3MEur - totalNowEur)) / 3 },
+          { month: 3, date: new Date(now.getFullYear(), now.getMonth() + 3, now.getDate()).toISOString().slice(0, 10), valueEur: total3MEur }
+        ];
+        const source = perHolding.some((p) => p.source) ? (perHolding.some((p) => p.source === 'trend_crypto') ? 'trend_crypto' : 'trend') : null;
+        res.json({ totalValueEurNow: totalNowEur, totalValueEur3M: total3MEur, monthly, perHolding, source });
+      } catch (e) {
+        console.error('getHoldingsProjection error:', e);
+        return res.status(500).json({ error: e.message || 'Failed to compute projection' });
+      }
+    });
+  });
 }
 
 // Get account history with daily changes
@@ -1016,7 +1294,7 @@ export async function updateAccountWithScreenshot(req, res) {
           }
 
           // For brokerage (stocks/crypto), prefer the full portfolio total when the selected account balance looks wrong (e.g. a single holding value)
-          const isBrokerage = existingAccount.account_type === 'stocks' || existingAccount.account_type === 'crypto';
+          const isBrokerage = existingAccount.account_type === 'stocks' || existingAccount.account_type === 'crypto' || existingAccount.account_type === 'precious';
           const selectedBalance = accountData.balance ?? existingAccount.balance;
           const totalBalance = extractedData.totalBalance;
           const holdings = extractedData.holdings || [];
@@ -1090,7 +1368,7 @@ export async function updateAccountWithScreenshot(req, res) {
                       }
 
                       // For stock/crypto accounts, save holdings (async, but don't wait)
-                      if ((existingAccount.account_type === 'stocks' || existingAccount.account_type === 'crypto') && extractedData.holdings) {
+                      if ((existingAccount.account_type === 'stocks' || existingAccount.account_type === 'crypto' || existingAccount.account_type === 'precious') && extractedData.holdings) {
                         saveHoldings(accountId, extractedData.holdings, currency)
                           .catch((holdingsErr) => {
                             console.error('Error saving holdings:', holdingsErr);
@@ -1134,10 +1412,68 @@ export async function updateAccountWithScreenshot(req, res) {
   }
 }
 
+// Add holdings from screenshot (merge with existing, do not replace)
+export async function addHoldingsFromScreenshot(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const accountId = parseInt(req.params.id);
+    if (!accountId) {
+      return res.status(400).json({ error: 'Invalid account ID' });
+    }
+
+    const filePath = req.file.path;
+    const db = getDatabase();
+
+    db.get('SELECT * FROM accounts WHERE id = ?', [accountId], async (err, account) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!account) return res.status(404).json({ error: 'Account not found' });
+
+      const accountType = account.account_type || account.accountType || '';
+      if (accountType !== 'stocks' && accountType !== 'crypto' && accountType !== 'precious') {
+        return res.status(400).json({ error: 'Add holdings from screenshot is only supported for stocks, crypto, or precious metal accounts' });
+      }
+
+      try {
+        const extractedData = await analyzeScreenshot(filePath, account.platform, account.account_type);
+        if (!extractedData) {
+          return res.status(500).json({ error: 'Failed to extract data from screenshot' });
+        }
+        if (extractedData.error && (extractedData.error.includes('401') || extractedData.error.includes('API key'))) {
+          return res.status(500).json({ error: 'OpenAI API key is invalid or expired' });
+        }
+
+        const holdings = extractedData.holdings || [];
+        if (holdings.length === 0) {
+          return res.status(400).json({ error: 'No holdings found in screenshot' });
+        }
+
+        const currency = extractedData.currency || account.currency || 'EUR';
+        await saveHoldingsMerge(accountId, holdings, currency);
+        syncAccountBalanceFromHoldings(accountId);
+
+        res.json({
+          success: true,
+          addedCount: holdings.length,
+          message: `Added ${holdings.length} holding(s) to account`
+        });
+      } catch (aiError) {
+        console.error('Error adding holdings from screenshot:', aiError);
+        return res.status(500).json({ error: 'Failed to analyze screenshot', details: aiError.message });
+      }
+    });
+  } catch (error) {
+    console.error('Error adding holdings:', error);
+    return res.status(500).json({ error: error.message });
+  }
+}
+
 // Verify symbol: fetch live price to confirm ticker is valid (for "Screenshot" → "Live" flow)
 export async function verifyHoldingSymbol(req, res) {
   const symbol = (req.query.symbol || req.body?.symbol || '').trim().toUpperCase();
-  const assetType = req.query.assetType || req.body?.assetType || 'stock';
+  const assetType = (req.query.assetType || req.body?.assetType || 'stock').toLowerCase();
 
   if (!symbol) {
     return res.status(400).json({ found: false, error: 'Symbol is required' });
@@ -1156,7 +1492,7 @@ export async function verifyHoldingSymbol(req, res) {
       });
     }
     const error = isIsin
-      ? 'Price not found for this bond/ISIN. Yahoo often has no data for non-US bonds (e.g. Romanian). You can keep it as Screenshot, or set FINNHUB_API_KEY in the backend for optional bond data.'
+      ? 'Price not found for this bond/ISIN. Yahoo often has no data for non-US bonds (e.g. Romanian). You can keep it as Screenshot.'
       : 'Price not found for this symbol';
     return res.json({ found: false, symbol, error });
   } catch (err) {
@@ -1223,6 +1559,30 @@ export function updateHoldingSymbol(req, res) {
   );
 }
 
+// Recompute account balance from holdings sum (EUR) for stocks/crypto; keeps card in sync with detail view
+// When totalEur is provided, use it directly (avoids race with in-flight DB updates)
+async function syncAccountBalanceFromHoldings(accountId, totalEur = null) {
+  if (!accountId) return;
+  const db = getDatabase();
+  if (totalEur != null && typeof totalEur === 'number' && !Number.isNaN(totalEur)) {
+    await dbRun(db, 'UPDATE accounts SET balance = ? WHERE id = ?', [totalEur, accountId]);
+    return;
+  }
+  const [usdRate, gbpRate] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate()]);
+  const usdToEur = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || usdRate || 0.846;
+  const gbpToEur = gbpRate || 1.17;
+  db.all(
+    'SELECT symbol, quantity, current_price, purchase_price, currency FROM holdings WHERE account_id = ?',
+    [accountId],
+    (err, holdings) => {
+      if (err) return;
+      const list = holdings || [];
+      const total = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpToEur), 0);
+      db.run('UPDATE accounts SET balance = ? WHERE id = ?', [total, accountId], () => {});
+    }
+  );
+}
+
 // Update holding quantity
 export function updateHoldingQuantity(req, res) {
   const db = getDatabase();
@@ -1245,11 +1605,12 @@ export function updateHoldingQuantity(req, res) {
       if (err) {
         return res.status(500).json({ error: err.message });
       }
-      
       if (this.changes === 0) {
         return res.status(404).json({ error: 'Holding not found' });
       }
-
+      db.get('SELECT account_id FROM holdings WHERE id = ?', [holdingId], (_e, row) => {
+        if (row) syncAccountBalanceFromHoldings(row.account_id);
+      });
       res.json({
         success: true,
         message: 'Holding quantity updated successfully',
@@ -1289,11 +1650,12 @@ export function updateHoldingPrice(req, res) {
       if (err) {
         return res.status(500).json({ error: err.message });
       }
-      
       if (this.changes === 0) {
         return res.status(404).json({ error: 'Holding not found' });
       }
-
+      db.get('SELECT account_id FROM holdings WHERE id = ?', [holdingId], (_e, row) => {
+        if (row) syncAccountBalanceFromHoldings(row.account_id);
+      });
       res.json({
         success: true,
         message: 'Holding price updated successfully',
@@ -1311,14 +1673,21 @@ export function deleteHolding(req, res) {
   if (!holdingId) {
     return res.status(400).json({ error: 'Holding ID is required' });
   }
-  db.run('DELETE FROM holdings WHERE id = ?', [holdingId], function(err) {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-    if (this.changes === 0) {
+  db.get('SELECT account_id FROM holdings WHERE id = ?', [holdingId], (getErr, row) => {
+    if (getErr || !row) {
       return res.status(404).json({ error: 'Holding not found' });
     }
-    res.json({ success: true, message: 'Holding removed', holdingId });
+    const accountId = row.account_id;
+    db.run('DELETE FROM holdings WHERE id = ?', [holdingId], function(err) {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Holding not found' });
+      }
+      syncAccountBalanceFromHoldings(accountId);
+      res.json({ success: true, message: 'Holding removed', holdingId });
+    });
   });
 }
 

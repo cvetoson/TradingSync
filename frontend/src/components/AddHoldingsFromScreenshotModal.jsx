@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { updateAccountWithScreenshot } from '../services/api';
+import { addHoldingsFromScreenshot } from '../services/api';
 
-export default function UpdateAccountModal({ account, onClose, onSuccess, onAddNewAccount }) {
+export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuccess }) {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -20,7 +20,7 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!file) {
       setError('Please select a file');
       return;
@@ -30,12 +30,10 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
     setError('');
 
     try {
-      const result = await updateAccountWithScreenshot(account.id, file);
-      console.log('[UpdateAccountModal] Update successful:', result);
-      onSuccess();
-      onClose(); // Close modal on success
+      const result = await addHoldingsFromScreenshot(account.id, file);
+      onSuccess(result);
+      onClose();
     } catch (err) {
-      console.error('[UpdateAccountModal] Update error:', err);
       const errorMessage = err.response?.data?.error || err.message || 'Network Error';
       setError(errorMessage);
     } finally {
@@ -47,7 +45,7 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-800">Update Account</h2>
+          <h2 className="text-2xl font-bold text-gray-800">Add Holdings from Screenshot</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
@@ -59,31 +57,31 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
           </button>
         </div>
 
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-          <p className="text-sm text-blue-800">
+        <div className="mb-4 p-3 bg-green-50 rounded-lg">
+          <p className="text-sm text-green-800">
             <strong>{account.accountName || account.platform}</strong>
           </p>
-          <p className="text-xs text-blue-600 mt-1">
-            Update this account with a new screenshot, or add a new account from a different screenshot.
+          <p className="text-xs text-green-700 mt-1">
+            Upload a screenshot of additional holdings. They will be added to your existing holdings (not replaced).
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              New Screenshot
+              Screenshot
             </label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-400 transition-colors">
               <input
                 type="file"
                 accept="image/*"
                 onChange={handleFileChange}
                 className="hidden"
-                id="file-upload"
+                id="add-holdings-file"
                 required
                 disabled={uploading}
               />
-              <label htmlFor="file-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <label htmlFor="add-holdings-file" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 {file ? (
                   <div>
                     <svg className="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,47 +110,28 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
             </div>
           )}
 
-          <div className="flex flex-col gap-3 pt-4">
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                disabled={uploading}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={uploading || !file}
-              >
-                {uploading ? 'Updating...' : 'Update Account'}
-              </button>
-            </div>
-            {onAddNewAccount && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onAddNewAccount();
-                }}
-                className="w-full px-4 py-2 border border-green-500 text-green-700 rounded-lg hover:bg-green-50 transition-colors flex items-center justify-center gap-2"
-                disabled={uploading}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add New Account
-              </button>
-            )}
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={uploading}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={uploading || !file}
+            >
+              {uploading ? 'Adding...' : 'Add Holdings'}
+            </button>
           </div>
         </form>
 
         <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
           <p className="text-xs text-yellow-800">
-            ⚠️ <strong>Note:</strong> The AI will extract the new balance from the screenshot. 
-            Make sure the screenshot clearly shows the current account balance.
+            💡 The AI will extract holdings from the screenshot and add them to this account. Existing holdings are kept.
           </p>
         </div>
       </div>

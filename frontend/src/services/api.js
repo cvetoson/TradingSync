@@ -3,7 +3,9 @@ import axios from 'axios';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 export async function getPortfolioSummary() {
-  const response = await axios.get(`${API_BASE_URL}/portfolio/summary`);
+  const response = await axios.get(`${API_BASE_URL}/portfolio/summary`, {
+    params: { _t: Date.now() }
+  });
   return response.data;
 }
 
@@ -24,6 +26,24 @@ export async function uploadScreenshot(file, investmentCategory, accountType) {
 
 export async function getAccounts() {
   const response = await axios.get(`${API_BASE_URL}/accounts`);
+  return response.data;
+}
+
+export async function createAccount(accountName, platform, accountType) {
+  const response = await axios.post(`${API_BASE_URL}/accounts`, {
+    accountName: accountName || 'Manual',
+    platform: platform || 'Manual',
+    accountType: accountType || 'stocks'
+  });
+  return response.data;
+}
+
+export async function createHolding(accountId, symbol, quantity, price, currency, assetType) {
+  const body = { symbol, quantity };
+  if (price != null && price !== '') body.price = parseFloat(price);
+  if (currency) body.currency = currency;
+  if (assetType) body.assetType = assetType;
+  const response = await axios.post(`${API_BASE_URL}/accounts/${accountId}/holdings`, body);
   return response.data;
 }
 
@@ -66,6 +86,19 @@ export async function updateAccountWithScreenshot(accountId, file) {
   return response.data;
 }
 
+export async function addHoldingsFromScreenshot(accountId, file) {
+  const formData = new FormData();
+  formData.append('screenshot', file);
+
+  const response = await axios.post(`${API_BASE_URL}/accounts/${accountId}/add-holdings`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return response.data;
+}
+
 export async function deleteAccount(accountId) {
   const response = await axios.delete(`${API_BASE_URL}/accounts/${accountId}`);
   return response.data;
@@ -77,7 +110,14 @@ export async function deleteHistoryEntry(historyId) {
 }
 
 export async function getAccountHoldings(accountId) {
-  const response = await axios.get(`${API_BASE_URL}/accounts/${accountId}/holdings`);
+  const response = await axios.get(`${API_BASE_URL}/accounts/${accountId}/holdings`, {
+    params: { _t: Date.now() }
+  });
+  return response.data;
+}
+
+export async function getHoldingsProjection(accountId) {
+  const response = await axios.get(`${API_BASE_URL}/accounts/${accountId}/holdings/projection`);
   return response.data;
 }
 

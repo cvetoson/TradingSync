@@ -1,18 +1,21 @@
 import { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getAccountHistory, deleteHistoryEntry, getAccountHoldings, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding as apiDeleteHolding, verifyHoldingSymbol } from '../services/api';
+import { getAccountHistory, deleteHistoryEntry, getAccountHoldings, getHoldingsProjection, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding as apiDeleteHolding, verifyHoldingSymbol } from '../services/api';
 import UpdateAccountModal from './UpdateAccountModal';
+import AddHoldingModal from './AddHoldingModal';
+import AddHoldingsFromScreenshotModal from './AddHoldingsFromScreenshotModal';
 
 const ACCOUNT_TYPES = [
   { value: 'p2p', label: 'P2P Lending', color: 'bg-green-100 text-green-800' },
   { value: 'stocks', label: 'ETF & Stocks', color: 'bg-blue-100 text-blue-800' },
   { value: 'crypto', label: 'Cryptocurrency', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'precious', label: 'Gold & Silver', color: 'bg-amber-100 text-amber-800' },
   { value: 'savings', label: 'Savings & Deposits', color: 'bg-purple-100 text-purple-800' },
   { value: 'bank', label: 'Fixed Income & Bonds', color: 'bg-indigo-100 text-indigo-800' },
   { value: 'unknown', label: 'Alternative Investments', color: 'bg-gray-100 text-gray-800' }
 ];
 
-export default function AccountDetailView({ account, currency, onClose, onUpdate }) {
+export default function AccountDetailView({ account, currency, onClose, onUpdate, onAddNewAccount }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState([]);
@@ -38,12 +41,15 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const [verifyUpdating, setVerifyUpdating] = useState(false);
   const [confirmRemoveHoldingId, setConfirmRemoveHoldingId] = useState(null);
   const [removingHoldingId, setRemovingHoldingId] = useState(null);
+  const [projectionSource, setProjectionSource] = useState(null); // 'analyst' | 'trend' | 'p2p' | null
+  const [showAddHoldingModal, setShowAddHoldingModal] = useState(false);
+  const [showAddHoldingsFromScreenshotModal, setShowAddHoldingsFromScreenshotModal] = useState(false);
 
   useEffect(() => {
     loadHistory();
     // Load holdings for stock/crypto accounts
-    if (account.accountType === 'stocks' || account.accountType === 'crypto' || 
-        account.account_type === 'stocks' || account.account_type === 'crypto') {
+    if (account.accountType === 'stocks' || account.accountType === 'crypto' || account.accountType === 'precious' ||
+        account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') {
       loadHoldings();
     }
   }, [account.id]);
@@ -88,8 +94,11 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
           });
         }
         setProjectedData(projected);
-      } else {
+        setProjectionSource('p2p');
+      } else if (accountType !== 'stocks' && accountType !== 'crypto' && accountType !== 'precious') {
+        // Only clear for non-stock accounts; stocks/crypto/precious get projection from loadHoldings
         setProjectedData([]);
+        setProjectionSource(null);
       }
     } catch (error) {
       console.error('Error loading account history:', error);
@@ -151,12 +160,38 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
       const data = await getAccountHoldings(account.id);
       setHoldings(data.holdings || []);
       setHoldingsTotalValue(data.totalValueEur != null ? data.totalValueEur : (data.totalValue || 0));
+
+      const accountType = account.account_type || account.accountType;
+      if ((accountType === 'stocks' || accountType === 'crypto' || accountType === 'precious') && (data.holdings || []).length > 0) {
+        try {
+          const proj = await getHoldingsProjection(account.id);
+          if (proj && proj.monthly && proj.monthly.length > 0) {
+            const points = proj.monthly.map((m) => {
+              const d = new Date(m.date);
+              return {
+                date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                value: null,
+                projectedValue: m.valueEur,
+                timestamp: d.getTime()
+              };
+            });
+            setProjectedData(points);
+            setProjectionSource(proj.source || 'trend');
+          }
+        } catch (e) {
+          console.error('Projection load failed:', e);
+          setProjectedData([]);
+          setProjectionSource(null);
+        }
+      }
     } catch (error) {
       console.error('Error loading holdings:', error);
       setHoldings([]);
       setHoldingsTotalValue(0);
     } finally {
       setHoldingsLoading(false);
+      // Refresh portfolio so dashboard/cards show updated total
+      if (onUpdate) onUpdate();
     }
   };
 
@@ -261,7 +296,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
       await apiDeleteHolding(holdingId);
       setConfirmRemoveHoldingId(null);
       await loadHoldings();
-      if (onUpdate) onUpdate();
+      if (onUpdate) await onUpdate();
     } catch (err) {
       console.error('Error removing holding:', err);
       alert('Failed to remove holding. Please try again.');
@@ -289,8 +324,10 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
     if (!sym) return;
     setVerifyLoading(true);
     setVerifyResult(null);
+    const accountType = (account?.account_type || account?.accountType || '').toLowerCase();
+    const effectiveAssetType = verifyHolding?.asset_type || verifyHolding?.assetType || (accountType === 'crypto' ? 'crypto' : 'stock');
     try {
-      const data = await verifyHoldingSymbol(sym, verifyHolding?.asset_type || 'stock');
+      const data = await verifyHoldingSymbol(sym, effectiveAssetType);
       setVerifyResult(data);
     } catch (err) {
       setVerifyResult({ found: false, error: err.response?.data?.error || err.message || 'Verification failed' });
@@ -315,28 +352,15 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
     }
   };
 
-  // For stock/crypto accounts, use holdings total if available, otherwise use account balance
-  const isStockOrCrypto = (account.accountType === 'stocks' || account.accountType === 'crypto' || 
-                           account.account_type === 'stocks' || account.account_type === 'crypto');
-  const effectiveBalance = isStockOrCrypto && holdingsTotalValue > 0 
-    ? holdingsTotalValue 
-    : (account.currentValue || account.balance || 0);
+  // For stock/crypto accounts: prefer account balance (from upload/screenshot) as source of truth when available
+  const isStockOrCrypto = (account.accountType === 'stocks' || account.accountType === 'crypto' || account.accountType === 'precious' ||
+                           account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious');
   const accountBalance = account.currentValue || account.balance || 0;
-  const valueDifference = isStockOrCrypto ? Math.abs(holdingsTotalValue - accountBalance) : 0;
-  const valueMismatch = isStockOrCrypto && valueDifference > 0.01 && holdings.length > 0; // More than 1 cent difference and we have holdings
-  
-  // Debug logging
-  useEffect(() => {
-    if (holdings.length > 0) {
-      console.log('[AccountDetailView] Value comparison:', {
-        holdingsTotal: holdingsTotalValue,
-        accountBalance: accountBalance,
-        difference: valueDifference,
-        shouldShowWarning: valueMismatch,
-        holdingsCount: holdings.length
-      });
-    }
-  }, [holdings, holdingsTotalValue, accountBalance, valueDifference, valueMismatch]);
+  const holdingsSum = holdings.length > 0 ? holdings.reduce((sum, h) => sum + (Number(h.totalValueEur) ?? Number(h.totalValue) ?? 0), 0) : 0;
+  const fromHoldings = holdingsTotalValue > 0 ? holdingsTotalValue : holdingsSum;
+  const effectiveBalance = isStockOrCrypto
+    ? (fromHoldings > 0 ? fromHoldings : accountBalance)
+    : accountBalance;
 
   const handleDeleteHistory = async (historyId) => {
     if (confirmDeleteId !== historyId) {
@@ -409,6 +433,19 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
               </svg>
               Update Account
             </button>
+            {(account.accountType === 'stocks' || account.accountType === 'crypto' || account.accountType === 'precious' ||
+              account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') && (
+              <button
+                onClick={() => setShowAddHoldingsFromScreenshotModal(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                title="Add holdings from screenshot to this account"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Additional Holdings
+              </button>
+            )}
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -427,11 +464,6 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
             <div className="text-2xl font-bold text-blue-600">
               {formatCurrency(effectiveBalance)}
             </div>
-            {isStockOrCrypto && holdingsTotalValue > 0 && holdingsTotalValue !== accountBalance && (
-              <div className="text-xs text-gray-500 mt-1">
-                (from holdings calculation)
-              </div>
-            )}
           </div>
           {(account.interestRate || account.interest_rate) && (
             <div className="bg-green-50 rounded-lg p-4">
@@ -448,38 +480,30 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         </div>
 
         {/* Holdings (for stock/crypto accounts) */}
-        {(account.accountType === 'stocks' || account.accountType === 'crypto' || 
-          account.account_type === 'stocks' || account.account_type === 'crypto') && (
+        {(account.accountType === 'stocks' || account.accountType === 'crypto' || account.accountType === 'precious' ||
+          account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') && (
           <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
             <div className="mb-4">
               <h3 className="text-xl font-semibold text-gray-800 mb-3">Holdings</h3>
               <p className="text-xs text-gray-500 mb-2">
                 Live prices are from market data (Yahoo) and may differ slightly from your broker (e.g. Revolut) due to timing or feed.
               </p>
-              {valueMismatch && !holdingsLoading && holdings.length > 0 && (
-                <div className="flex items-start gap-3 bg-yellow-50 border-2 border-yellow-400 rounded-lg px-4 py-3 mb-4">
-                  <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold text-yellow-800 mb-1">⚠️ Value Mismatch Detected</div>
-                    <div className="text-xs text-yellow-700 space-y-1">
-                      <div>Holdings total: <strong className="text-yellow-900">{formatCurrency(holdingsTotalValue)}</strong></div>
-                      <div>Account balance: <strong className="text-yellow-900">{formatCurrency(accountBalance)}</strong></div>
-                      <div>Difference: <strong className="text-yellow-900">{formatCurrency(valueDifference)}</strong></div>
-                    </div>
-                    <div className="text-xs text-yellow-600 mt-2 italic">
-                      Some holdings may be missing (e.g., cash balance) or prices may not be up to date. Check if all assets were extracted from the screenshot.
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
             {holdingsLoading ? (
               <div className="text-center py-8 text-gray-500">Loading holdings...</div>
             ) : holdings.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No holdings found. Upload a screenshot to extract individual stocks/crypto.
+                <p className="mb-4">No holdings found. Add one manually or upload a screenshot to extract.</p>
+                <button
+                  type="button"
+                  onClick={() => setShowAddHoldingModal(true)}
+                  className="text-sm text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded px-3 py-1.5 transition-colors inline-flex items-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add holding
+                </button>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -763,12 +787,26 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                     <tr className="border-t-2 border-gray-300 font-semibold">
                       <td colSpan="4" className="py-3 px-4 text-sm text-gray-700">Total</td>
                       <td className="py-3 px-4 text-sm text-gray-900 text-right">
-                        {formatCurrency(holdingsTotalValue ?? holdings.reduce((sum, h) => sum + (Number(h.totalValueEur) || Number(h.totalValue) || 0), 0), 'EUR')}
+                        {formatCurrency(fromHoldings > 0 ? fromHoldings : accountBalance, 'EUR')}
                       </td>
                       <td className="py-3 px-2" />
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+            )}
+            {!holdingsLoading && (
+              <div className="mt-4 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddHoldingModal(true)}
+                  className="text-sm text-gray-500 hover:text-gray-700 transition-colors inline-flex items-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add holding
+                </button>
               </div>
             )}
           </div>
@@ -824,7 +862,11 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
             </ResponsiveContainer>
             {projectedData.length > 0 && (
               <p className="text-xs text-gray-500 mt-2 text-center">
-                Projection based on {account.interestRate || account.interest_rate}% APY interest rate
+                {projectionSource === 'p2p'
+                  ? `Projection based on ${account.interestRate || account.interest_rate}% APY interest rate`
+                  : projectionSource === 'trend_crypto'
+                    ? '3‑month projection based on 2‑year history with recent-trend weighting. Not guaranteed.'
+                    : '3‑month projection based on 6‑month historical trend. Not guaranteed.'}
               </p>
             )}
           </div>
@@ -991,13 +1033,44 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         <UpdateAccountModal
           account={account}
           onClose={() => setShowUpdateModal(false)}
+          onAddNewAccount={onAddNewAccount}
           onSuccess={async () => {
             setShowUpdateModal(false);
             // Reload history and refresh account data
             await loadHistory();
+            // Reload holdings and projection for stocks/crypto/precious (backend may have updated holdings from screenshot)
+            const at = account.account_type || account.accountType;
+            if (at === 'stocks' || at === 'crypto' || at === 'precious') {
+              await loadHoldings();
+            }
             if (onUpdate) {
               onUpdate();
             }
+          }}
+        />
+      )}
+
+      {showAddHoldingsFromScreenshotModal && (
+        <AddHoldingsFromScreenshotModal
+          account={account}
+          onClose={() => setShowAddHoldingsFromScreenshotModal(false)}
+          onSuccess={async () => {
+            setShowAddHoldingsFromScreenshotModal(false);
+            await loadHoldings();
+            if (onUpdate) await onUpdate();
+          }}
+        />
+      )}
+
+      {showAddHoldingModal && (
+        <AddHoldingModal
+          accountId={account.id}
+          accountType={account.account_type || account.accountType || 'stocks'}
+          onClose={() => setShowAddHoldingModal(false)}
+          onSuccess={async () => {
+            setShowAddHoldingModal(false);
+            await loadHoldings();
+            if (onUpdate) await onUpdate();
           }}
         />
       )}

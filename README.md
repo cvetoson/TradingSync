@@ -1,5 +1,7 @@
 # Trading Sync App
 
+**Stable version: v3.5.0** – See [STABLE.md](STABLE.md) for release notes and production-ready baseline.
+
 A portfolio aggregation application that syncs data from multiple trading platforms (Bondora, Moneyfit, Trading 212, IBKR, Iuvo, Revolut, etc.) by analyzing screenshots using AI.
 
 ## Features

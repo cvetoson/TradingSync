@@ -5,6 +5,7 @@ const ACCOUNT_TYPES = [
   { value: 'p2p', label: 'P2P Lending', description: 'Peer-to-peer lending with fixed rates', color: 'bg-green-100 text-green-800' },
   { value: 'stocks', label: 'ETF & Stocks', description: 'Stock trading, ETFs, and equity investments', color: 'bg-blue-100 text-blue-800' },
   { value: 'crypto', label: 'Cryptocurrency', description: 'Digital assets and crypto platforms', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'precious', label: 'Gold & Silver', description: 'Gold, silver, and precious metals (XAG, XAU)', color: 'bg-amber-100 text-amber-800' },
   { value: 'savings', label: 'Savings & Deposits', description: 'High-yield savings accounts', color: 'bg-purple-100 text-purple-800' },
   { value: 'bank', label: 'Fixed Income & Bonds', description: 'Bonds and fixed-income investments', color: 'bg-indigo-100 text-indigo-800' },
   { value: 'unknown', label: 'Alternative Investments', description: 'Other investment types', color: 'bg-gray-100 text-gray-800' }

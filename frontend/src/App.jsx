@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import AccountDetailView from './components/AccountDetailView';
-import { getPortfolioSummary } from './services/api';
+import { getPortfolioSummary, getAccountHoldings } from './services/api';
 
 function App() {
   const [portfolioData, setPortfolioData] = useState(null);
@@ -62,20 +62,33 @@ function App() {
 
         {selectedAccount && (
           <AccountDetailView
+            key={selectedAccount.id}
             account={selectedAccount}
             currency={portfolioData?.currency || 'EUR'}
-            onClose={() => setSelectedAccount(null)}
+            onClose={async () => {
+              const accountId = selectedAccount?.id;
+              const accType = selectedAccount?.accountType || selectedAccount?.account_type;
+              const isStockCrypto = accType === 'stocks' || accType === 'crypto' || accType === 'precious';
+              setSelectedAccount(null);
+              if (accountId && isStockCrypto) {
+                try {
+                  await getAccountHoldings(accountId);
+                } catch (_) {}
+              }
+              setRefreshTrigger((prev) => prev + 1);
+            }}
+            onAddNewAccount={() => {
+              setSelectedAccount(null);
+              setShowUploadModal(true);
+            }}
             onUpdate={async () => {
-              // Reload portfolio and update selected account
               const data = await getPortfolioSummary();
               setPortfolioData(data);
-              // Update selected account with fresh data
-              if (data?.accounts) {
-                const updatedAccount = data.accounts.find(acc => acc.id === selectedAccount.id);
-                if (updatedAccount) {
-                  setSelectedAccount(updatedAccount);
-                }
-              }
+              setSelectedAccount((prev) => {
+                if (!prev || !data?.accounts) return prev;
+                const updated = data.accounts.find((acc) => acc.id === prev.id);
+                return updated || prev;
+              });
             }}
           />
         )}

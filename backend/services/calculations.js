@@ -29,8 +29,8 @@ export async function calculatePortfolioValue(account) {
         const currentValue = balance * Math.pow(1 + rateDecimal, daysSinceUpdate / 365);
         
         resolve(currentValue);
-    } else if (account.account_type === 'stocks' || account.account_type === 'crypto') {
-      // For stocks/crypto, just use the balance from the account
+    } else if (account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') {
+      // For stocks/crypto/precious, just use the balance from the account
       // Don't recalculate from holdings - use the value that was uploaded
       resolve(account.balance || 0);
     } else {

@@ -5,6 +5,7 @@ const ACCOUNT_TYPES = [
   { value: 'p2p', label: 'P2P Lending', color: 'bg-green-100 text-green-800' },
   { value: 'stocks', label: 'ETF & Stocks', color: 'bg-blue-100 text-blue-800' },
   { value: 'crypto', label: 'Cryptocurrency', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'precious', label: 'Gold & Silver', color: 'bg-amber-100 text-amber-800' },
   { value: 'savings', label: 'Savings & Deposits', color: 'bg-purple-100 text-purple-800' },
   { value: 'bank', label: 'Fixed Income & Bonds', color: 'bg-indigo-100 text-indigo-800' },
   { value: 'unknown', label: 'Alternative Investments', color: 'bg-gray-100 text-gray-800' }
