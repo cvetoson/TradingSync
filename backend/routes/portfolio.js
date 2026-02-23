@@ -668,19 +668,50 @@ export function getPortfolioSummary(req, res) {
         // Calculate totals
         const totalValue = portfolioData.reduce((sum, acc) => sum + acc.currentValue, 0);
 
-        // Prepare pie chart data
-        const pieData = portfolioData.map(acc => ({
-          name: acc.accountName || acc.platform,
-          value: acc.currentValue,
-          platform: acc.platform,
-          accountType: acc.accountType,
-          percentage: totalValue > 0 ? ((acc.currentValue / totalValue) * 100).toFixed(2) : 0
+        // Group by platform (parent) -> categories (accountType) -> accounts
+        const platformMap = new Map();
+        for (const acc of portfolioData) {
+          const platformKey = (acc.platform || acc.accountName || 'Other').trim();
+          const accountType = acc.accountType || acc.account_type || 'unknown';
+          if (!platformMap.has(platformKey)) {
+            platformMap.set(platformKey, {
+              name: platformKey,
+              value: 0,
+              accounts: [],
+              categories: new Map()
+            });
+          }
+          const platform = platformMap.get(platformKey);
+          platform.value += acc.currentValue;
+          platform.accounts.push(acc);
+          if (!platform.categories.has(accountType)) {
+            platform.categories.set(accountType, []);
+          }
+          platform.categories.get(accountType).push(acc);
+        }
+        const platforms = Array.from(platformMap.values()).map((p) => ({
+          name: p.name,
+          value: p.value,
+          accounts: p.accounts,
+          categories: Object.fromEntries(
+            Array.from(p.categories.entries()).map(([k, v]) => [k, v])
+          )
+        }));
+
+        // Pie chart: one slice per platform
+        const pieData = platforms.map((p) => ({
+          name: p.name,
+          value: p.value,
+          platform: p.name,
+          accounts: p.accounts,
+          percentage: totalValue > 0 ? ((p.value / totalValue) * 100).toFixed(2) : 0
         }));
 
         res.json({
           totalValue: totalValue,
           currency: 'EUR',
           accounts: portfolioData,
+          platforms,
           pieData: pieData,
           lastUpdated: new Date().toISOString()
         });

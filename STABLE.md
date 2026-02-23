@@ -1,13 +1,16 @@
-# TradingSyncApp – Stable version 3.5
+# TradingSyncApp – Stable version 3.6
 
-**Version**: 3.5.0  
-**Date**: February 22, 2026  
+**Version**: 3.6.0  
+**Date**: February 23, 2026  
 **Status**: Stable – production-ready.
 
 ---
 
 ## What’s in this stable release
 
+- **Platform & Instrument views** (v3.6): Toggle between "By Platform" and "By Instrument" in the pie chart. Platform view groups by provider (Revolut, Iuvo, etc.); Instrument view groups by type (ETF & Stocks, Crypto, P2P, etc.).
+- **Platform detail with category tabs**: Click a platform to see investment categories (Shares, Crypto, P2P, etc.) as tabs; each tab lists accounts of that type.
+- **Holdings tabs**: In account detail, filter holdings by All, Shares, Crypto, Gold & Silver, or Bonds.
 - **Portfolio totals refresh** (v3.5): AccountCard and Dashboard totals now update correctly after viewing holdings; getPortfolioSummary prefers synced account.balance when higher than holdings sum.
 - **Portfolio & accounts**: Summary, pie chart, account list. Balance from total portfolio or sum of holdings (stocks/crypto/precious).
 - **Holdings**: Per-account holdings with quantity, price, total value (EUR). Price source: **Live** (Yahoo/CoinGecko) or **Screenshot** (manual/bonds).
@@ -34,4 +37,4 @@
 
 ---
 
-*Stable baseline for v3.5. Tag or branch from here for further work.*
+*Stable baseline for v3.6. Tag or branch from here for further work.*

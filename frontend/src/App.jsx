@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import AccountDetailView from './components/AccountDetailView';
+import PlatformDetailView from './components/PlatformDetailView';
 import { getPortfolioSummary, getAccountHoldings } from './services/api';
 
 function App() {
@@ -10,6 +11,7 @@ function App() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [selectedAccount, setSelectedAccount] = useState(null);
+  const [selectedPlatform, setSelectedPlatform] = useState(null);
 
   useEffect(() => {
     loadPortfolio();
@@ -50,6 +52,7 @@ function App() {
             onUploadClick={() => setShowUploadModal(true)}
             onRefresh={loadPortfolio}
             onViewAccountDetails={(account) => setSelectedAccount(account)}
+            onViewPlatformDetails={(platform) => setSelectedPlatform(platform)}
           />
         )}
 
@@ -57,6 +60,27 @@ function App() {
           <UploadModal
             onClose={() => setShowUploadModal(false)}
             onSuccess={handleUploadSuccess}
+          />
+        )}
+
+        {selectedPlatform && (
+          <PlatformDetailView
+            platform={selectedPlatform}
+            currency={portfolioData?.currency || 'EUR'}
+            onClose={() => setSelectedPlatform(null)}
+            onViewAccountDetails={() => {}}
+            onAddNewAccount={() => {
+              setSelectedPlatform(null);
+              setShowUploadModal(true);
+            }}
+            onUpdate={async () => {
+              const data = await getPortfolioSummary();
+              setPortfolioData(data);
+              setSelectedPlatform((prev) => {
+                if (!prev || !data?.platforms) return prev;
+                return data.platforms.find((p) => p.name === prev.name) || prev;
+              });
+            }}
           />
         )}
 

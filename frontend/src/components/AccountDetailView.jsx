@@ -44,6 +44,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const [projectionSource, setProjectionSource] = useState(null); // 'analyst' | 'trend' | 'p2p' | null
   const [showAddHoldingModal, setShowAddHoldingModal] = useState(false);
   const [showAddHoldingsFromScreenshotModal, setShowAddHoldingsFromScreenshotModal] = useState(false);
+  const [holdingsTab, setHoldingsTab] = useState('all'); // 'all' | 'stock' | 'crypto' | 'precious' | 'bond'
 
   useEffect(() => {
     loadHistory();
@@ -488,6 +489,39 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
               <p className="text-xs text-gray-500 mb-2">
                 Live prices are from market data (Yahoo) and may differ slightly from your broker (e.g. Revolut) due to timing or feed.
               </p>
+              {holdings.length > 0 && (() => {
+                const getHoldingType = (h) => ((h.asset_type || h.assetType || 'stock') || '').toLowerCase();
+                const HOLDINGS_TABS = [
+                  { value: 'all', label: 'All' },
+                  { value: 'stock', label: 'Shares', match: (t) => ['stock', 'etf'].includes(t) },
+                  { value: 'crypto', label: 'Crypto', match: (t) => t === 'crypto' },
+                  { value: 'precious', label: 'Gold & Silver', match: (t) => t === 'precious' },
+                  { value: 'bond', label: 'Bonds', match: (t) => t === 'bond' }
+                ];
+                const tabsWithData = HOLDINGS_TABS.filter((tab) => {
+                  if (tab.value === 'all') return true;
+                  return holdings.some((h) => tab.match && tab.match(getHoldingType(h)));
+                });
+                if (tabsWithData.length <= 1) return null;
+                return (
+                  <div className="flex gap-1 border-b border-gray-200 mb-3">
+                    {tabsWithData.map((tab) => (
+                      <button
+                        key={tab.value}
+                        type="button"
+                        onClick={() => setHoldingsTab(tab.value)}
+                        className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                          holdingsTab === tab.value
+                            ? 'border-blue-600 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             {holdingsLoading ? (
               <div className="text-center py-8 text-gray-500">Loading holdings...</div>
@@ -507,6 +541,16 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
               </div>
             ) : (
               <div className="overflow-x-auto">
+                {(() => {
+                  const getHoldingType = (h) => ((h.asset_type || h.assetType || 'stock') || '').toLowerCase();
+                  const filteredHoldings = holdingsTab === 'all'
+                    ? holdings
+                    : holdings.filter((h) => {
+                        const t = getHoldingType(h);
+                        if (holdingsTab === 'stock') return ['stock', 'etf'].includes(t);
+                        return t === holdingsTab;
+                      });
+                  return (
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200">
@@ -519,7 +563,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                     </tr>
                   </thead>
                   <tbody>
-                    {holdings.map((holding) => {
+                    {filteredHoldings.map((holding) => {
                       const isEditing = editingSymbolId === holding.id;
                       const isStaticPrice = holding.priceFetchFailed === true;
                       return (
@@ -787,12 +831,19 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                     <tr className="border-t-2 border-gray-300 font-semibold">
                       <td colSpan="4" className="py-3 px-4 text-sm text-gray-700">Total</td>
                       <td className="py-3 px-4 text-sm text-gray-900 text-right">
-                        {formatCurrency(fromHoldings > 0 ? fromHoldings : accountBalance, 'EUR')}
+                        {formatCurrency(
+                          holdingsTab === 'all'
+                            ? (fromHoldings > 0 ? fromHoldings : accountBalance)
+                            : filteredHoldings.reduce((s, h) => s + (Number(h.totalValueEur) ?? Number(h.totalValue) ?? 0), 0),
+                          'EUR'
+                        )}
                       </td>
                       <td className="py-3 px-2" />
                     </tr>
                   </tfoot>
                 </table>
+                  );
+                })()}
               </div>
             )}
             {!holdingsLoading && (
