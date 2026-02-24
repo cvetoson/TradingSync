@@ -14,8 +14,20 @@ export function getDatabase() {
 export function initDatabase() {
   const db = getDatabase();
 
-  // Accounts table - stores information about each platform account
   db.serialize(() => {
+    // Users table - for authentication
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        display_name TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Accounts table - stores information about each platform account
     db.run(`
       CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,9 +40,39 @@ export function initDatabase() {
         last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
         screenshot_path TEXT,
         raw_data TEXT, -- JSON string of extracted data
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        user_id INTEGER REFERENCES users(id)
       )
     `);
+
+    // Add user_id to accounts if missing (migration)
+    db.all(`PRAGMA table_info(accounts)`, (err, cols) => {
+      if (!err && cols && !cols.some((c) => c.name === 'user_id')) {
+        db.run(`ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id)`);
+      }
+    });
+
+    // Add email verification and password reset columns to users (migration)
+    db.all(`PRAGMA table_info(users)`, (err, cols) => {
+      if (!err && cols) {
+        if (!cols.some((c) => c.name === 'email_verified')) {
+          db.run(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0`);
+          db.run(`UPDATE users SET email_verified = 1`); // existing users are verified
+        }
+        if (!cols.some((c) => c.name === 'email_verification_token')) {
+          db.run(`ALTER TABLE users ADD COLUMN email_verification_token TEXT`);
+        }
+        if (!cols.some((c) => c.name === 'email_verification_expires')) {
+          db.run(`ALTER TABLE users ADD COLUMN email_verification_expires DATETIME`);
+        }
+        if (!cols.some((c) => c.name === 'password_reset_token')) {
+          db.run(`ALTER TABLE users ADD COLUMN password_reset_token TEXT`);
+        }
+        if (!cols.some((c) => c.name === 'password_reset_expires')) {
+          db.run(`ALTER TABLE users ADD COLUMN password_reset_expires DATETIME`);
+        }
+      }
+    });
 
     // Holdings table - for stocks/crypto holdings
     db.run(`

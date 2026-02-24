@@ -301,10 +301,11 @@ export async function uploadScreenshot(req, res) {
         // Use provided accountType from request, or from extracted data, or fallback to detection
         const finalAccountType = accountData.accountType || defaultAccountType || detectAccountType(detectedPlatform);
 
-        // Check if this specific account already exists
+        const userId = req.userId || null;
+        // Check if this specific account already exists (user's account or unassigned legacy)
         db.get(
-          'SELECT * FROM accounts WHERE platform = ? AND account_name = ? ORDER BY last_updated DESC LIMIT 1',
-          [detectedPlatform, accountName],
+          'SELECT * FROM accounts WHERE platform = ? AND account_name = ? AND (user_id = ? OR user_id IS NULL) ORDER BY last_updated DESC LIMIT 1',
+          [detectedPlatform, accountName, userId],
           (err, existingAccount) => {
             if (err) {
               reject(err);
@@ -312,13 +313,13 @@ export async function uploadScreenshot(req, res) {
             }
 
             if (existingAccount) {
-              // Update existing account
+              // Update existing account (claim with user_id if unassigned)
               db.run(
                 `UPDATE accounts 
-                 SET balance = ?, interest_rate = ?, account_type = ?, 
+                 SET balance = ?, interest_rate = ?, account_type = ?, user_id = COALESCE(user_id, ?),
                      last_updated = CURRENT_TIMESTAMP, screenshot_path = ?, raw_data = ?
                  WHERE id = ?`,
-                [balance, interestRate, finalAccountType, filePath, JSON.stringify(extractedData), existingAccount.id],
+                [balance, interestRate, finalAccountType, userId, filePath, JSON.stringify(extractedData), existingAccount.id],
                 function(updateErr) {
                   if (updateErr) {
                     reject(updateErr);
@@ -384,9 +385,9 @@ export async function uploadScreenshot(req, res) {
             } else {
               // Create new account
               db.run(
-                `INSERT INTO accounts (platform, account_name, account_type, balance, interest_rate, currency, screenshot_path, raw_data)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [detectedPlatform, accountName, finalAccountType, balance, interestRate, currency, filePath, JSON.stringify(extractedData)],
+                `INSERT INTO accounts (platform, account_name, account_type, balance, interest_rate, currency, screenshot_path, raw_data, user_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [detectedPlatform, accountName, finalAccountType, balance, interestRate, currency, filePath, JSON.stringify(extractedData), userId],
                 function(insertErr) {
                   if (insertErr) {
                     reject(insertErr);
@@ -494,6 +495,8 @@ function updateHoldings(accountId, holdings) {
 // Create a new account (for manual addition)
 export function createAccount(req, res) {
   const db = getDatabase();
+  const userId = req.userId;
+  if (!userId) return res.status(401).json({ error: 'Authentication required' });
   const { accountName, platform, accountType } = req.body;
 
   const name = (accountName || 'Manual').trim();
@@ -501,8 +504,8 @@ export function createAccount(req, res) {
   const type = (accountType || 'stocks').trim();
 
   db.run(
-    'INSERT INTO accounts (platform, account_name, account_type, balance, currency) VALUES (?, ?, ?, 0, ?)',
-    [plat, name, type, 'EUR'],
+    'INSERT INTO accounts (platform, account_name, account_type, balance, currency, user_id) VALUES (?, ?, ?, 0, ?, ?)',
+    [plat, name, type, 'EUR', userId],
     function(err) {
       if (err) {
         return res.status(500).json({ error: err.message });
@@ -516,15 +519,17 @@ export function createAccount(req, res) {
   );
 }
 
-// Add a holding manually to an account
+// Add a holding manually to an account (requireAccountAuth middleware verifies access)
 export async function createHolding(req, res) {
-  const db = getDatabase();
   const accountId = req.params.id;
+  if (!accountId) return res.status(400).json({ error: 'Account ID is required' });
+  createHoldingHandler(req, res, accountId);
+}
+
+async function createHoldingHandler(req, res, accountId) {
+  const db = getDatabase();
   const { symbol, quantity, price, currency, assetType } = req.body;
 
-  if (!accountId) {
-    return res.status(400).json({ error: 'Account ID is required' });
-  }
   const sym = (symbol || '').trim().toUpperCase();
   if (!sym) {
     return res.status(400).json({ error: 'Symbol is required' });
@@ -537,7 +542,6 @@ export async function createHolding(req, res) {
   const asset = (assetType || 'stock').toLowerCase();
   const curr = (currency || 'EUR').toUpperCase();
 
-  // Check account exists
   db.get('SELECT id, account_type FROM accounts WHERE id = ?', [accountId], async (accErr, account) => {
     if (accErr || !account) {
       return res.status(404).json({ error: 'Account not found' });
@@ -577,16 +581,20 @@ export async function createHolding(req, res) {
   });
 }
 
+
 // Get portfolio summary with pie chart data
 export function getPortfolioSummary(req, res) {
   const db = getDatabase();
+  const userId = req.userId;
+  if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
   db.all(
     `SELECT a.*, 
             (SELECT COUNT(*) FROM holdings h WHERE h.account_id = a.id) as holdings_count
      FROM accounts a
+     WHERE a.user_id = ? OR a.user_id IS NULL
      ORDER BY a.last_updated DESC`,
-    [],
+    [userId],
     async (err, accounts) => {
       if (err) {
         return res.status(500).json({ error: err.message });
@@ -726,10 +734,12 @@ export function getPortfolioSummary(req, res) {
 // Get all accounts
 export function getAccounts(req, res) {
   const db = getDatabase();
+  const userId = req.userId;
+  if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
   db.all(
-    'SELECT * FROM accounts ORDER BY last_updated DESC',
-    [],
+    'SELECT * FROM accounts WHERE user_id = ? OR user_id IS NULL ORDER BY last_updated DESC',
+    [userId],
     (err, accounts) => {
       if (err) {
         return res.status(500).json({ error: err.message });
