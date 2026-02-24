@@ -1,17 +1,21 @@
 import sqlite3 from 'sqlite3';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const dbPath = join(__dirname, 'trading_sync.db');
+// Use DATABASE_PATH for persistent storage (e.g. Railway volume at /app/backend/data)
+const dbPath = process.env.DATABASE_PATH || join(__dirname, 'trading_sync.db');
 
 export function getDatabase() {
   return new sqlite3.Database(dbPath);
 }
 
 export function initDatabase() {
+  const dir = dirname(dbPath);
+  if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const db = getDatabase();
 
   db.serialize(() => {

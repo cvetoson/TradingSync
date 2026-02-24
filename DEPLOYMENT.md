@@ -15,17 +15,28 @@
 
 ## 3. Set variables
 
-1. Click your service → **Variables**
-2. Add these (click **+ New Variable** for each):
+1. Click your service → **Variables** → **+ New Variable**
+2. Add each of these:
 
-| Variable       | Value                          |
-|----------------|--------------------------------|
-| `NODE_ENV`     | `production`                   |
-| `APP_URL`      | Your domain (from step 2)     |
-| `JWT_SECRET`   | Any long random string         |
-| `OPENAI_API_KEY` | Your OpenAI API key         |
+| Variable | Value | Required |
+|----------|-------|----------|
+| `NODE_ENV` | `production` | Yes |
+| `PORT` | `3001` | Yes (for domain) |
+| `APP_URL` | `https://tradingsync-production.up.railway.app` | Yes (use your domain) |
+| `JWT_SECRET` | Any long random string (e.g. `abc123xyz789secret`) | Yes |
+| `OPENAI_API_KEY` | Your key from platform.openai.com/api-keys | For screenshot upload |
+| `DATABASE_PATH` | `/app/backend/data/trading_sync.db` | Only if using a Volume (step 3b) |
 
-For email (optional): `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_PORT`, `EMAIL_FROM`
+For email: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_PORT`, `EMAIL_FROM`
+
+## 3b. Persistent database (optional)
+
+Without this, data resets on redeploy. For a persistent DB:
+
+1. **Settings** → **Storage** → **Add Volume**
+2. Mount path: `/app/backend/data`
+3. Add variable: `DATABASE_PATH` = `/app/backend/data/trading_sync.db`
+4. Redeploy
 
 ## 4. Deploy
 
