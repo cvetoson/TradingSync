@@ -22,6 +22,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(join(__dirname, 'uploads')));
 
+// Serve frontend in production
+const frontendPath = join(__dirname, '..', 'frontend', 'dist');
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(frontendPath));
+}
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -90,6 +96,17 @@ app.delete('/api/holdings/:id', requireAuth, requireHoldingAuth, deleteHolding);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Trading Sync API is running' });
 });
+
+// SPA fallback: serve index.html for non-API routes in production
+if (process.env.NODE_ENV === 'production') {
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(join(frontendPath, 'index.html'));
+    } else {
+      res.status(404).json({ error: 'Not found' });
+    }
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);

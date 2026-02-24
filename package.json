@@ -7,7 +7,9 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd backend && npm run dev",
     "client": "cd frontend && npm run dev",
-    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install"
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "npm run build && cd backend && NODE_ENV=production node server.js"
   },
   "keywords": ["trading", "portfolio", "sync", "dashboard"],
   "author": "",

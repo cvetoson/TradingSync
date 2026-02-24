@@ -34,41 +34,70 @@ A portfolio aggregation application that syncs data from multiple trading platfo
 - **Database**: SQLite (easily upgradeable to PostgreSQL)
 - **AI**: OpenAI Vision API (GPT-4) for screenshot analysis
 
-## Setup Instructions
+## Setup Instructions (New Computer)
 
-### Prerequisites
+### 1. Clone the repo
 
-- Node.js 18+ installed
-- npm or yarn
+```bash
+git clone https://github.com/cvetoson/TradingSync.git
+cd TradingSync
+```
 
-### Installation
+### 2. Install dependencies
 
-1. **Install all dependencies**:
-   ```bash
-   npm run install-all
-   ```
+```bash
+npm run install-all
+```
 
-2. **Set up environment variables** (required for AI):
-   Create a `.env` file in the `backend` directory:
-   ```
-   OPENAI_API_KEY=your_openai_api_key_here
-   PORT=3001
-   ```
-   
-   You can get your OpenAI API key from: https://platform.openai.com/api-keys
+### 3. Create backend `.env`
 
-3. **Start the development servers**:
-   ```bash
-   npm run dev
-   ```
+Copy the example and fill in your values:
 
-   This will start:
-   - Backend server on `http://localhost:3001`
-   - Frontend dev server on `http://localhost:3000`
+```bash
+cp backend/.env.example backend/.env
+```
 
-### Manual Start (Alternative)
+Edit `backend/.env` with at least:
 
-If you prefer to run them separately:
+```
+PORT=3001
+APP_URL=http://localhost:3000
+JWT_SECRET=your-secret-key-change-in-production
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+For email (verification, password reset), add SMTP settings. Without them, reset/verify links appear on screen in dev.
+
+### 4. Start the app
+
+```bash
+npm run dev
+```
+
+This starts:
+- **Backend** on `http://localhost:3001`
+- **Frontend** on `http://localhost:3000`
+
+### 5. First run: create default user (optional)
+
+The database (`backend/trading_sync.db`) is **not in git**—it’s created on first run. To add a default user:
+
+```bash
+cd backend
+node scripts/seedDefaultUser.js
+```
+
+Default credentials: `default@tradingsync.local` / `changeme123` (or set `DEFAULT_USER_EMAIL` and `DEFAULT_USER_PASSWORD` in `.env`).
+
+### 6. Open the app
+
+Go to `http://localhost:3000` and sign in or register.
+
+**Using an existing database:** Copy `backend/trading_sync.db` from another machine into `backend/` before starting. Then run the seed script only if you need to assign accounts to the default user.
+
+---
+
+### Manual start (alternative)
 
 **Backend**:
 ```bash
@@ -77,7 +106,7 @@ npm install
 npm run dev
 ```
 
-**Frontend**:
+**Frontend** (in another terminal):
 ```bash
 cd frontend
 npm install
@@ -116,7 +145,7 @@ TradingSyncApp/
 
 - [x] Integrate OpenAI Vision API for screenshot analysis
 - [ ] Add market data API integration (Alpha Vantage, CoinGecko) for stock/crypto prices
-- [ ] Implement user authentication
+- [x] Implement user authentication
 - [ ] Add data export functionality
 - [ ] Create mobile app version
 - [ ] Add notifications for portfolio changes
