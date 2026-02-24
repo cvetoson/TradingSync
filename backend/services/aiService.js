@@ -24,8 +24,7 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey });
 }
 
-// Initialize OpenAI client (will be recreated on each call)
-let openai = getOpenAIClient();
+// Client is created lazily when analyzeScreenshot is called (avoids crash on startup if key missing)
 
 /**
  * Analyzes a screenshot and extracts portfolio data using OpenAI Vision API
