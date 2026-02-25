@@ -21,7 +21,7 @@ export default function ForgotPasswordPage() {
       setSent(true);
       if (res.devLink) setDevLink(res.devLink);
     } catch (err) {
-      setError(err.response?.data?.error || 'Something went wrong');
+      setError(err.response?.data?.error || 'Could not send reset link. Check your connection and try again.');
     } finally {
       setLoading(false);
     }

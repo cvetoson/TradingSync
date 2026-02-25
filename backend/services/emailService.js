@@ -1,5 +1,7 @@
 import nodemailer from 'nodemailer';
 
+const EMAIL_TIMEOUT_MS = 15000; // 15s – avoid hanging on slow/failing SMTP
+
 let transporter = null;
 
 async function getTransporter() {
@@ -16,6 +18,8 @@ async function getTransporter() {
       port: port ? parseInt(port, 10) : 587,
       secure: port === '465',
       auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 5000,
     });
   } else {
     // Dev fallback: create Ethereal test account (fake SMTP)
@@ -37,18 +41,23 @@ async function getTransporter() {
 
 /**
  * Send an email. Returns { sent: true, previewUrl? } or { sent: false, error, devLink? }
+ * Wraps sendMail in a timeout so we never hang.
  */
 export async function sendEmail({ to, subject, html, text }) {
   try {
     const transport = await getTransporter();
     const from = process.env.EMAIL_FROM || 'Trading Sync <noreply@tradingsync.app>';
-    const info = await transport.sendMail({
+    const sendPromise = transport.sendMail({
       from,
       to,
       subject,
       html: html || text,
       text: text || html?.replace(/<[^>]*>/g, '') || '',
     });
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Email send timed out')), EMAIL_TIMEOUT_MS)
+    );
+    const info = await Promise.race([sendPromise, timeoutPromise]);
 
     const previewUrl = nodemailer.getTestMessageUrl?.(info);
     if (previewUrl) {
@@ -67,7 +76,8 @@ export async function sendEmail({ to, subject, html, text }) {
  * When no SMTP: skip Ethereal (can hang on Railway) and return link immediately.
  */
 export async function sendVerificationEmail(email, token, appUrl) {
-  const verifyUrl = `${appUrl}/verify-email?token=${encodeURIComponent(token)}`;
+  const base = (appUrl || '').replace(/\/+$/, '');
+  const verifyUrl = `${base}/verify-email?token=${encodeURIComponent(token)}`;
   if (!process.env.SMTP_HOST) {
     return { sent: false, devLink: verifyUrl };
   }
@@ -80,14 +90,17 @@ export async function sendVerificationEmail(email, token, appUrl) {
     <p>If you didn't create an account, you can ignore this email.</p>
   `;
   const result = await sendEmail({ to: email, subject: 'Verify your Trading Sync email', html });
+  if (!result.sent) return { ...result, devLink: verifyUrl };
   return result;
 }
 
 /**
  * Send password reset email.
+ * Returns devLink when no SMTP or when send fails (fallback so user can still reset).
  */
 export async function sendPasswordResetEmail(email, token, appUrl) {
-  const resetUrl = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;
+  const base = (appUrl || '').replace(/\/+$/, '');
+  const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
   if (!process.env.SMTP_HOST) {
     return { sent: false, devLink: resetUrl };
   }
@@ -99,5 +112,7 @@ export async function sendPasswordResetEmail(email, token, appUrl) {
     <p>This link expires in 1 hour.</p>
     <p>If you didn't request this, you can ignore this email.</p>
   `;
-  return sendEmail({ to: email, subject: 'Reset your Trading Sync password', html });
+  const result = await sendEmail({ to: email, subject: 'Reset your Trading Sync password', html });
+  if (!result.sent) return { ...result, devLink: resetUrl };
+  return result;
 }

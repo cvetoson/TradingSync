@@ -30,7 +30,7 @@ export default function Register({ onSwitchToLogin }) {
       const res = await api.register(email, password, confirmPassword, displayName);
       navigate('/check-email', { state: { email, devLink: res.devLink } });
     } catch (err) {
-      const msg = err.response?.data?.error || err.message || 'Registration failed';
+      const msg = err.response?.data?.error || err.message || 'Registration failed. Please try again.';
       setError(msg);
     } finally {
       setLoading(false);

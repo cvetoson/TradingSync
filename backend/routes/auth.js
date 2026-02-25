@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getDatabase } from '../database.js';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../services/emailService.js';
+import { logError } from '../lib/errorLog.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -43,10 +44,15 @@ export async function register(req, res) {
     [emailNorm, hash, (displayName || '').trim() || null, verificationToken, expiresAt],
     async function (err) {
       if (err) {
-        if (err.message?.includes('UNIQUE')) {
-          return res.status(409).json({ error: 'Email already registered' });
+        const msg = (err.message || '').toLowerCase();
+        if (msg.includes('unique') || msg.includes('duplicate key')) {
+          logError('POST /auth/register', 'duplicate_email', 409);
+          return res.status(409).json({
+            error: 'This email is already registered. Sign in or use Forgot password to reset.',
+          });
         }
-        return res.status(500).json({ error: err.message });
+        logError('POST /auth/register', err.message, 500);
+        return res.status(500).json({ error: 'Registration failed. Please try again.' });
       }
 
       const emailResult = await sendVerificationEmail(emailNorm, verificationToken, APP_URL);
@@ -81,16 +87,22 @@ export async function verifyEmail(req, res) {
     'SELECT id, email, display_name FROM users WHERE email_verification_token = ? AND email_verification_expires > ?',
     [token, new Date().toISOString()],
     (err, user) => {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        logError('POST /auth/verify-email', err.message, 500);
+        return res.status(500).json({ error: 'Verification failed. Please try again.' });
+      }
       if (!user) {
-        return res.status(400).json({ error: 'Invalid or expired verification link' });
+        return res.status(400).json({ error: 'This link is invalid or has expired. Request a new one.' });
       }
 
       db.run(
         'UPDATE users SET email_verified = 1, email_verification_token = NULL, email_verification_expires = NULL WHERE id = ?',
         [user.id],
         (updateErr) => {
-          if (updateErr) return res.status(500).json({ error: updateErr.message });
+          if (updateErr) {
+            logError('POST /auth/verify-email', updateErr.message, 500);
+            return res.status(500).json({ error: 'Verification failed. Please try again.' });
+          }
           const jwtToken = jwt.sign(
             { userId: user.id, email: user.email },
             JWT_SECRET,
@@ -121,29 +133,37 @@ export async function login(req, res) {
     'SELECT id, email, password_hash, display_name, email_verified FROM users WHERE email = ?',
     [emailNorm],
     async (err, user) => {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        logError('POST /auth/login', err.message, 500);
+        return res.status(500).json({ error: 'Sign in failed. Please try again.' });
+      }
       if (!user) return res.status(401).json({ error: 'Invalid email or password' });
 
-      const ok = await bcrypt.compare(password, user.password_hash);
-      if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
+      try {
+        const ok = await bcrypt.compare(password, user.password_hash);
+        if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
 
-      if (!user.email_verified) {
-        return res.status(403).json({
-          error: 'Please verify your email before signing in',
-          code: 'EMAIL_NOT_VERIFIED',
+        if (!user.email_verified) {
+          return res.status(403).json({
+            error: 'Please verify your email before signing in',
+            code: 'EMAIL_NOT_VERIFIED',
+          });
+        }
+
+        const token = jwt.sign(
+          { userId: user.id, email: user.email },
+          JWT_SECRET,
+          { expiresIn: JWT_EXPIRES_IN }
+        );
+        res.json({
+          success: true,
+          token,
+          user: { id: user.id, email: user.email, displayName: user.display_name },
         });
+      } catch (e) {
+        logError('POST /auth/login', e?.message || 'Unknown', 500);
+        res.status(500).json({ error: 'Sign in failed. Please try again.' });
       }
-
-      const token = jwt.sign(
-        { userId: user.id, email: user.email },
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRES_IN }
-      );
-      res.json({
-        success: true,
-        token,
-        user: { id: user.id, email: user.email, displayName: user.display_name },
-      });
     }
   );
 }
@@ -161,7 +181,10 @@ export async function forgotPassword(req, res) {
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
   db.get('SELECT id, email FROM users WHERE email = ?', [emailNorm], async (err, user) => {
-    if (err) return res.status(500).json({ error: err.message });
+    if (err) {
+      logError('POST /auth/forgot-password', err.message, 500);
+      return res.status(500).json({ error: 'Could not process request. Please try again.' });
+    }
     // Always return success to prevent email enumeration
     if (!user) {
       return res.json({ success: true, message: 'If that email exists, we sent a reset link' });
@@ -171,11 +194,16 @@ export async function forgotPassword(req, res) {
       'UPDATE users SET password_reset_token = ?, password_reset_expires = ? WHERE id = ?',
       [resetToken, expiresAt, user.id],
       async (updateErr) => {
-        if (updateErr) return res.status(500).json({ error: updateErr.message });
+        if (updateErr) {
+          logError('POST /auth/forgot-password', updateErr.message, 500);
+          return res.status(500).json({ error: 'Could not process request. Please try again.' });
+        }
 
         const emailResult = await sendPasswordResetEmail(emailNorm, resetToken, APP_URL);
         if (emailResult.devLink) {
-          console.log('📧 Password reset link (dev):', emailResult.devLink);
+          if (!emailResult.sent) {
+            console.error('📧 Password reset email failed:', emailResult.error);
+          }
           return res.json({
             success: true,
             message: 'If that email exists, we sent a reset link',
@@ -210,16 +238,24 @@ export async function resetPassword(req, res) {
     'SELECT id, email FROM users WHERE password_reset_token = ? AND password_reset_expires > ?',
     [token, new Date().toISOString()],
     (err, user) => {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        logError('POST /auth/reset-password', err.message, 500);
+        return res.status(500).json({ error: 'Could not reset password. Please try again.' });
+      }
       if (!user) {
-        return res.status(400).json({ error: 'Invalid or expired reset link' });
+        return res.status(400).json({
+          error: 'This reset link is invalid or has expired. Request a new one from Forgot password.',
+        });
       }
 
       db.run(
         'UPDATE users SET password_hash = ?, password_reset_token = NULL, password_reset_expires = NULL WHERE id = ?',
         [hash, user.id],
         (updateErr) => {
-          if (updateErr) return res.status(500).json({ error: updateErr.message });
+          if (updateErr) {
+            logError('POST /auth/reset-password', updateErr.message, 500);
+            return res.status(500).json({ error: 'Could not reset password. Please try again.' });
+          }
           res.json({ success: true, message: 'Password updated. You can now sign in.' });
         }
       );

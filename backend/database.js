@@ -7,8 +7,11 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Railway may use DATABASE_URL, POSTGRES_URL, or DATABASE_PRIVATE_URL
+// Railway: DATABASE_PUBLIC_URL = reachable from local machine (use for dev/seed)
+// DATABASE_URL/DATABASE_PRIVATE_URL = internal (Railway only, use in production)
 const DATABASE_URL =
+  process.env.DATABASE_PUBLIC_URL ||
+  process.env.POSTGRES_PUBLIC_URL ||
   process.env.DATABASE_URL ||
   process.env.POSTGRES_URL ||
   process.env.DATABASE_PRIVATE_URL ||

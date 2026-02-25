@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { initDatabase, isPostgreSQL } from './database.js';
+import { getRecentErrors } from './lib/errorLog.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
 import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword } from './routes/auth.js';
 import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
@@ -96,6 +97,7 @@ async function start() {
   });
 
   // Debug endpoint – for AI/remote troubleshooting (no secrets)
+  // Share this URL when something fails so we can see recentErrors
   app.get('/api/debug', (req, res) => {
     res.json({
       status: 'ok',
@@ -103,6 +105,7 @@ async function start() {
       nodeEnv: process.env.NODE_ENV || 'development',
       hasSmtp: !!(process.env.SMTP_HOST && process.env.SMTP_USER),
       appUrl: process.env.APP_URL || '(not set)',
+      recentErrors: getRecentErrors(),
     });
   });
 
