@@ -39,8 +39,8 @@ export function backfillAccountHistory() {
               return;
             }
 
-            // If no history exists, create an initial entry
-            if (result.count === 0) {
+            // If no history exists, create an initial entry (count may be string in PostgreSQL)
+            if (Number(result?.count ?? 0) === 0) {
               db.run(
                 `INSERT INTO account_history (account_id, balance, interest_rate, currency, recorded_at)
                  VALUES (?, ?, ?, ?, ?)`,

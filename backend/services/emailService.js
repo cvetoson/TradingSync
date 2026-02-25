@@ -64,9 +64,13 @@ export async function sendEmail({ to, subject, html, text }) {
 
 /**
  * Send verification email. Returns devLink when no SMTP (for dev).
+ * When no SMTP: skip Ethereal (can hang on Railway) and return link immediately.
  */
 export async function sendVerificationEmail(email, token, appUrl) {
   const verifyUrl = `${appUrl}/verify-email?token=${encodeURIComponent(token)}`;
+  if (!process.env.SMTP_HOST) {
+    return { sent: false, devLink: verifyUrl };
+  }
   const html = `
     <h2>Verify your email</h2>
     <p>Thanks for signing up for Trading Sync. Click the link below to verify your email:</p>
@@ -75,17 +79,7 @@ export async function sendVerificationEmail(email, token, appUrl) {
     <p>This link expires in 24 hours.</p>
     <p>If you didn't create an account, you can ignore this email.</p>
   `;
-
-  const result = await sendEmail({
-    to: email,
-    subject: 'Verify your Trading Sync email',
-    html,
-  });
-
-  // In dev (no SMTP), always return the link so the UI can show it
-  if (!process.env.SMTP_HOST) {
-    return { ...result, devLink: verifyUrl };
-  }
+  const result = await sendEmail({ to: email, subject: 'Verify your Trading Sync email', html });
   return result;
 }
 
@@ -94,6 +88,9 @@ export async function sendVerificationEmail(email, token, appUrl) {
  */
 export async function sendPasswordResetEmail(email, token, appUrl) {
   const resetUrl = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;
+  if (!process.env.SMTP_HOST) {
+    return { sent: false, devLink: resetUrl };
+  }
   const html = `
     <h2>Reset your password</h2>
     <p>You requested a password reset for Trading Sync. Click the link below to set a new password:</p>
@@ -102,16 +99,5 @@ export async function sendPasswordResetEmail(email, token, appUrl) {
     <p>This link expires in 1 hour.</p>
     <p>If you didn't request this, you can ignore this email.</p>
   `;
-
-  const result = await sendEmail({
-    to: email,
-    subject: 'Reset your Trading Sync password',
-    html,
-  });
-
-  // In dev (no SMTP), always return the link so the UI can show it
-  if (!process.env.SMTP_HOST) {
-    return { ...result, devLink: resetUrl };
-  }
-  return result;
+  return sendEmail({ to: email, subject: 'Reset your Trading Sync password', html });
 }

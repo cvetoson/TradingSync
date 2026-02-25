@@ -29,14 +29,23 @@
 
 For email: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_PORT`, `EMAIL_FROM`
 
-## 3b. Persistent database (optional)
+## 3b. Database (required for production)
 
-Without this, data resets on redeploy. For a persistent DB:
+**Option A: PostgreSQL (recommended)** – persistent, works reliably on Railway:
 
-1. **Settings** → **Storage** → **Add Volume**
-2. Mount path: `/app/backend/data`
-3. Add variable: `DATABASE_PATH` = `/app/backend/data/trading_sync.db`
-4. Redeploy
+1. In your Railway project, click **+ New** → **Database** → **PostgreSQL**
+2. Railway creates a Postgres service and sets `DATABASE_URL` automatically
+3. **Link it to your app**: Click your **TradingSync** service → **Variables** → **+ New Variable** → **Add Reference** → select the Postgres service’s `DATABASE_URL` (or `POSTGRES_URL` / `DATABASE_PRIVATE_URL` – the app checks all of these)
+4. Redeploy – the app will use PostgreSQL instead of SQLite
+5. On startup you should see `📦 Using PostgreSQL database`. If you see `Using SQLite`, none of the Postgres URL variables reached your app
+
+**Option B: SQLite + Volume** – simpler but less robust:
+
+1. Press **⌘K** (Mac) or **Ctrl+K** (Windows)
+2. Search for **"volume"** → Create Volume
+3. Attach to your service, mount path: `/app/backend/data`
+4. Add variable: `DATABASE_PATH` = `/app/backend/data/trading_sync.db`
+5. Redeploy
 
 ## 4. Deploy
 
@@ -51,3 +60,7 @@ Railway deploys automatically when you push to GitHub. Or click **Redeploy** in 
 ---
 
 **That's it.** The Dockerfile handles build and start. No extra commands needed.
+
+## Troubleshooting
+
+- **`/api/debug`** – Returns database type, env status (no secrets). Share this URL with AI tools for remote troubleshooting: `https://your-app.up.railway.app/api/debug`

@@ -4,7 +4,7 @@ import multer from 'multer';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { initDatabase } from './database.js';
+import { initDatabase, isPostgreSQL } from './database.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
 import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword } from './routes/auth.js';
 import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
@@ -44,70 +44,85 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-// Initialize database
-initDatabase();
+// Initialize database and start server
+async function start() {
+  const usePostgres = isPostgreSQL();
+  console.log(`📦 Using ${usePostgres ? 'PostgreSQL' : 'SQLite'} database`);
+  if (!usePostgres && process.env.NODE_ENV === 'production') {
+    console.warn('⚠️  SQLite in production: data may be lost on redeploy. Set DATABASE_URL for PostgreSQL.');
+  }
+  await initDatabase();
+  await backfillAccountHistory().then((r) => {
+    if (r.created > 0) console.log(`✅ Backfilled history for ${r.created} account(s)`);
+  }).catch((err) => console.error('Error backfilling history:', err));
 
-// Backfill history for existing accounts (run once on startup)
-backfillAccountHistory()
-  .then((result) => {
-    if (result.created > 0) {
-      console.log(`✅ Backfilled history for ${result.created} account(s)`);
-    }
-  })
-  .catch((err) => {
-    console.error('Error backfilling history:', err);
+  // Auth routes (public)
+  app.post('/api/auth/register', register);
+  app.post('/api/auth/verify-email', verifyEmail);
+  app.post('/api/auth/login', login);
+  app.post('/api/auth/forgot-password', forgotPassword);
+  app.post('/api/auth/reset-password', resetPassword);
+
+  // Protected routes (require authentication)
+  app.get('/api/auth/me', requireAuth, getProfile);
+  app.put('/api/auth/profile', requireAuth, updateProfile);
+  app.put('/api/auth/change-password', requireAuth, changePassword);
+  app.post('/api/upload', requireAuth, upload.single('screenshot'), uploadScreenshot);
+  app.get('/api/portfolio/summary', requireAuth, getPortfolioSummary);
+  app.get('/api/accounts', requireAuth, getAccounts);
+  app.post('/api/accounts', requireAuth, createAccount);
+  app.post('/api/accounts/:id/holdings', requireAuth, requireAccountAuth, createHolding);
+  app.get('/api/accounts/:id/history', requireAuth, requireAccountAuth, getAccountHistory);
+  app.get('/api/accounts/:id/holdings', requireAuth, requireAccountAuth, getAccountHoldings);
+  app.get('/api/accounts/:id/holdings/projection', requireAuth, requireAccountAuth, getHoldingsProjection);
+  app.put('/api/accounts/:id/name', requireAuth, requireAccountAuth, updateAccountName);
+  app.put('/api/accounts/:id/type', requireAuth, requireAccountAuth, updateAccountType);
+  app.put('/api/accounts/:id/platform', requireAuth, requireAccountAuth, updateAccountPlatform);
+  app.put('/api/accounts/:id/balance', requireAuth, requireAccountAuth, updateAccountBalance);
+  app.put('/api/accounts/:id/interest-rate', requireAuth, requireAccountAuth, updateAccountInterestRate);
+  app.put('/api/accounts/:id/update', requireAuth, requireAccountAuth, upload.single('screenshot'), updateAccountWithScreenshot);
+  app.post('/api/accounts/:id/add-holdings', requireAuth, requireAccountAuth, upload.single('screenshot'), addHoldingsFromScreenshot);
+  app.delete('/api/accounts/:id', requireAuth, requireAccountAuth, deleteAccount);
+  app.delete('/api/history/:id', requireAuth, requireHistoryAuth, deleteHistoryEntry);
+  app.get('/api/holdings/verify-symbol', requireAuth, verifyHoldingSymbol);
+  app.put('/api/holdings/:id/symbol', requireAuth, requireHoldingAuth, updateHoldingSymbol);
+  app.put('/api/holdings/:id/quantity', requireAuth, requireHoldingAuth, updateHoldingQuantity);
+  app.put('/api/holdings/:id/price', requireAuth, requireHoldingAuth, updateHoldingPrice);
+  app.delete('/api/holdings/:id', requireAuth, requireHoldingAuth, deleteHolding);
+
+  // Health check
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', message: 'Trading Sync API is running' });
   });
 
-// Auth routes (public)
-app.post('/api/auth/register', register);
-app.post('/api/auth/verify-email', verifyEmail);
-app.post('/api/auth/login', login);
-app.post('/api/auth/forgot-password', forgotPassword);
-app.post('/api/auth/reset-password', resetPassword);
+  // Debug endpoint – for AI/remote troubleshooting (no secrets)
+  app.get('/api/debug', (req, res) => {
+    res.json({
+      status: 'ok',
+      database: isPostgreSQL() ? 'PostgreSQL' : 'SQLite',
+      nodeEnv: process.env.NODE_ENV || 'development',
+      hasSmtp: !!(process.env.SMTP_HOST && process.env.SMTP_USER),
+      appUrl: process.env.APP_URL || '(not set)',
+    });
+  });
 
-// Protected routes (require authentication)
-app.get('/api/auth/me', requireAuth, getProfile);
-app.put('/api/auth/profile', requireAuth, updateProfile);
-app.put('/api/auth/change-password', requireAuth, changePassword);
-app.post('/api/upload', requireAuth, upload.single('screenshot'), uploadScreenshot);
-app.get('/api/portfolio/summary', requireAuth, getPortfolioSummary);
-app.get('/api/accounts', requireAuth, getAccounts);
-app.post('/api/accounts', requireAuth, createAccount);
-app.post('/api/accounts/:id/holdings', requireAuth, requireAccountAuth, createHolding);
-app.get('/api/accounts/:id/history', requireAuth, requireAccountAuth, getAccountHistory);
-app.get('/api/accounts/:id/holdings', requireAuth, requireAccountAuth, getAccountHoldings);
-app.get('/api/accounts/:id/holdings/projection', requireAuth, requireAccountAuth, getHoldingsProjection);
-app.put('/api/accounts/:id/name', requireAuth, requireAccountAuth, updateAccountName);
-app.put('/api/accounts/:id/type', requireAuth, requireAccountAuth, updateAccountType);
-app.put('/api/accounts/:id/platform', requireAuth, requireAccountAuth, updateAccountPlatform);
-app.put('/api/accounts/:id/balance', requireAuth, requireAccountAuth, updateAccountBalance);
-app.put('/api/accounts/:id/interest-rate', requireAuth, requireAccountAuth, updateAccountInterestRate);
-app.put('/api/accounts/:id/update', requireAuth, requireAccountAuth, upload.single('screenshot'), updateAccountWithScreenshot);
-app.post('/api/accounts/:id/add-holdings', requireAuth, requireAccountAuth, upload.single('screenshot'), addHoldingsFromScreenshot);
-app.delete('/api/accounts/:id', requireAuth, requireAccountAuth, deleteAccount);
-app.delete('/api/history/:id', requireAuth, requireHistoryAuth, deleteHistoryEntry);
-app.get('/api/holdings/verify-symbol', requireAuth, verifyHoldingSymbol);
-app.put('/api/holdings/:id/symbol', requireAuth, requireHoldingAuth, updateHoldingSymbol);
-app.put('/api/holdings/:id/quantity', requireAuth, requireHoldingAuth, updateHoldingQuantity);
-app.put('/api/holdings/:id/price', requireAuth, requireHoldingAuth, updateHoldingPrice);
-app.delete('/api/holdings/:id', requireAuth, requireHoldingAuth, deleteHolding);
+  // SPA fallback: serve index.html for non-API routes in production
+  if (process.env.NODE_ENV === 'production') {
+    app.get('*', (req, res) => {
+      if (!req.path.startsWith('/api')) {
+        res.sendFile(join(frontendPath, 'index.html'));
+      } else {
+        res.status(404).json({ error: 'Not found' });
+      }
+    });
+  }
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Trading Sync API is running' });
-});
-
-// SPA fallback: serve index.html for non-API routes in production
-if (process.env.NODE_ENV === 'production') {
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api')) {
-      res.sendFile(join(frontendPath, 'index.html'));
-    } else {
-      res.status(404).json({ error: 'Not found' });
-    }
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+start().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });

@@ -78,8 +78,8 @@ export async function verifyEmail(req, res) {
   }
 
   db.get(
-    'SELECT id, email, display_name FROM users WHERE email_verification_token = ? AND email_verification_expires > datetime("now")',
-    [token],
+    'SELECT id, email, display_name FROM users WHERE email_verification_token = ? AND email_verification_expires > ?',
+    [token, new Date().toISOString()],
     (err, user) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!user) {
@@ -207,8 +207,8 @@ export async function resetPassword(req, res) {
   const hash = await bcrypt.hash(password, 10);
 
   db.get(
-    'SELECT id, email FROM users WHERE password_reset_token = ? AND password_reset_expires > datetime("now")',
-    [token],
+    'SELECT id, email FROM users WHERE password_reset_token = ? AND password_reset_expires > ?',
+    [token, new Date().toISOString()],
     (err, user) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!user) {

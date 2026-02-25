@@ -63,10 +63,10 @@ function generateDailyHistoryForAccount(accountId, uploadBalance, interestRate, 
         // Calculate forward using compound interest: value = base_value * (1 + rate)^(days/365)
         const calculatedBalance = uploadBalance * Math.pow(1 + interestRateDecimal, day / 365);
         
-        // Check if entry for this date already exists
+        // Check if entry for this date already exists (use date-only for cross-DB compatibility)
         db.get(
           'SELECT id FROM account_history WHERE account_id = ? AND DATE(recorded_at) = DATE(?)',
-          [accountId, date.toISOString()],
+          [accountId, date.toISOString().split('T')[0]],
           (checkErr, existing) => {
             if (!existing) {
               // Insert calculated entry
