@@ -1,5 +1,9 @@
+import dns from 'dns';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
+
+// Force IPv4 for SMTP – Railway often can't reach Gmail over IPv6 (ENETUNREACH)
+dns.setDefaultResultOrder('ipv4first');
 
 const EMAIL_TIMEOUT_MS = 15000; // 15s – avoid hanging on slow/failing SMTP
 

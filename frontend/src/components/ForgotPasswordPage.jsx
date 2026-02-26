@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
           {devLink ? (
             <div className="space-y-2">
               <p className="text-amber-200 text-sm text-center">
-                No email configured. Use this link to reset your password (dev mode):
+                Email could not be sent. Use this link to reset your password:
               </p>
               <a
                 href={devLink}
