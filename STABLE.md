@@ -29,6 +29,12 @@
 
 ---
 
+## TODO
+
+- **Email verification**: Currently registration skips email verification (users can sign in immediately). Add verification flow: send verification email on register, require verify before login.
+
+---
+
 ## Run this stable version
 
 - Backend: `cd backend && npm run dev` (requires `OPENAI_API_KEY`; optional `EXCHANGE_RATE_USD_TO_EUR`).

@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import * as api from '../services/api';
 import AuthCard from './AuthCard';
 
 export default function Register({ onSwitchToLogin }) {
-  const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -28,7 +28,7 @@ export default function Register({ onSwitchToLogin }) {
     setLoading(true);
     try {
       const res = await api.register(email, password, confirmPassword, displayName);
-      navigate('/check-email', { state: { email, devLink: res.devLink } });
+      login(res.token, res.user);
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'Registration failed. Please try again.';
       setError(msg);

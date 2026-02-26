@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getDatabase } from '../database.js';
-import { sendVerificationEmail, sendPasswordResetEmail } from '../services/emailService.js';
+import { sendPasswordResetEmail } from '../services/emailService.js';
 import { logError } from '../lib/errorLog.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
@@ -35,14 +35,14 @@ export async function register(req, res) {
   }
 
   const hash = await bcrypt.hash(password, 10);
-  const verificationToken = randomToken();
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const displayNameVal = (displayName || '').trim() || null;
 
+  // TODO: Add email verification – require verify before login, send verification email on register
   db.run(
     `INSERT INTO users (email, password_hash, display_name, email_verified, email_verification_token, email_verification_expires)
-     VALUES (?, ?, ?, 0, ?, ?)`,
-    [emailNorm, hash, (displayName || '').trim() || null, verificationToken, expiresAt],
-    async function (err) {
+     VALUES (?, ?, ?, 1, NULL, NULL)`,
+    [emailNorm, hash, displayNameVal],
+    function (err) {
       if (err) {
         const msg = (err.message || '').toLowerCase();
         if (msg.includes('unique') || msg.includes('duplicate key')) {
@@ -55,21 +55,15 @@ export async function register(req, res) {
         return res.status(500).json({ error: 'Registration failed. Please try again.' });
       }
 
-      const emailResult = await sendVerificationEmail(emailNorm, verificationToken, APP_URL);
-      if (emailResult.devLink) {
-        console.log('📧 Verification link (dev):', emailResult.devLink);
-        return res.status(201).json({
-          success: true,
-          message: 'Check your email to verify your account',
-          email: emailNorm,
-          devLink: emailResult.devLink,
-        });
-      }
-
+      const jwtToken = jwt.sign(
+        { userId: this.lastID, email: emailNorm },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN }
+      );
       res.status(201).json({
         success: true,
-        message: 'Check your email to verify your account',
-        email: emailNorm,
+        token: jwtToken,
+        user: { id: this.lastID, email: emailNorm, displayName: displayNameVal },
       });
     }
   );
@@ -142,13 +136,6 @@ export async function login(req, res) {
       try {
         const ok = await bcrypt.compare(password, user.password_hash);
         if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
-
-        if (!user.email_verified) {
-          return res.status(403).json({
-            error: 'Please verify your email before signing in',
-            code: 'EMAIL_NOT_VERIFIED',
-          });
-        }
 
         const token = jwt.sign(
           { userId: user.id, email: user.email },

@@ -141,14 +141,11 @@ export async function sendVerificationEmail(email, token, appUrl) {
 
 /**
  * Send password reset email.
- * Returns devLink only when no email is configured (local dev). When configured but send fails, no devLink.
+ * Returns devLink when email send fails (e.g. Resend recipient not allowed, SMTP blocked) so user can still reset.
  */
 export async function sendPasswordResetEmail(email, token, appUrl) {
   const base = (appUrl || '').replace(/\/+$/, '');
   const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
-  if (!process.env.RESEND_API_KEY && !process.env.SMTP_HOST) {
-    return { sent: false, devLink: resetUrl };
-  }
   const html = `
     <h2>Reset your password</h2>
     <p>You requested a password reset for Trading Sync. Click the link below to set a new password:</p>
@@ -158,5 +155,8 @@ export async function sendPasswordResetEmail(email, token, appUrl) {
     <p>If you didn't request this, you can ignore this email.</p>
   `;
   const result = await sendEmail({ to: email, subject: 'Reset your Trading Sync password', html });
+  if (!result.sent) {
+    return { ...result, devLink: resetUrl };
+  }
   return result;
 }
