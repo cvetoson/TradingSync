@@ -1,8 +1,22 @@
 import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 const EMAIL_TIMEOUT_MS = 15000; // 15s – avoid hanging on slow/failing SMTP
 
 let transporter = null;
+let resendClient = null;
+let lastEmailError = null;
+
+export function getLastEmailError() {
+  return lastEmailError;
+}
+
+function getResend() {
+  if (!resendClient && process.env.RESEND_API_KEY) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resendClient;
+}
 
 async function getTransporter() {
   if (transporter) return transporter;
@@ -22,53 +36,66 @@ async function getTransporter() {
       greetingTimeout: 5000,
     });
   } else {
-    // Dev fallback: create Ethereal test account (fake SMTP)
-    const testAccount = await nodemailer.createTestAccount();
-    transporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false,
-      auth: {
-        user: testAccount.user,
-        pass: testAccount.pass,
-      },
-    });
-    console.log('📧 Email: using Ethereal test account. Check console for verification/reset links.');
+    transporter = null;
   }
-
   return transporter;
 }
 
 /**
- * Send an email. Returns { sent: true, previewUrl? } or { sent: false, error, devLink? }
- * Wraps sendMail in a timeout so we never hang.
+ * Send an email. Returns { sent: true } or { sent: false, error }.
+ * Uses SMTP if configured, else Resend (RESEND_API_KEY), else fails.
  */
 export async function sendEmail({ to, subject, html, text }) {
-  try {
-    const transport = await getTransporter();
-    const from = process.env.EMAIL_FROM || 'Trading Sync <noreply@tradingsync.app>';
-    const sendPromise = transport.sendMail({
-      from,
-      to,
-      subject,
-      html: html || text,
-      text: text || html?.replace(/<[^>]*>/g, '') || '',
-    });
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Email send timed out')), EMAIL_TIMEOUT_MS)
-    );
-    const info = await Promise.race([sendPromise, timeoutPromise]);
+  const from = process.env.EMAIL_FROM || process.env.RESEND_FROM || 'Trading Sync <noreply@tradingsync.app>';
 
-    const previewUrl = nodemailer.getTestMessageUrl?.(info);
-    if (previewUrl) {
-      console.log('📧 Email preview:', previewUrl);
+  // 1. Try SMTP first (Gmail, etc.)
+  const transport = await getTransporter();
+  if (transport) {
+    try {
+      const sendPromise = transport.sendMail({
+        from,
+        to,
+        subject,
+        html: html || text,
+        text: text || html?.replace(/<[^>]*>/g, '') || '',
+      });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Email send timed out')), EMAIL_TIMEOUT_MS)
+      );
+      await Promise.race([sendPromise, timeoutPromise]);
+      return { sent: true };
+    } catch (err) {
+      lastEmailError = err.message;
+      console.error('SMTP error:', err.message);
+      return { sent: false, error: err.message };
     }
-
-    return { sent: true, previewUrl };
-  } catch (err) {
-    console.error('Email send error:', err.message);
-    return { sent: false, error: err.message };
   }
+
+  // 2. Fall back to Resend
+  const resend = getResend();
+  if (resend) {
+    try {
+      const { error } = await resend.emails.send({
+        from: from.includes('<') ? from : `Trading Sync <${from}>`,
+        to: [to],
+        subject,
+        html: html || text || '',
+      });
+      if (error) {
+        lastEmailError = error.message;
+        console.error('Resend error:', error.message);
+        return { sent: false, error: error.message };
+      }
+      return { sent: true };
+    } catch (err) {
+      lastEmailError = err.message;
+      console.error('Resend error:', err.message);
+      return { sent: false, error: err.message };
+    }
+  }
+
+  lastEmailError = 'No email configured';
+  return { sent: false, error: 'No email configured' };
 }
 
 /**
@@ -78,7 +105,7 @@ export async function sendEmail({ to, subject, html, text }) {
 export async function sendVerificationEmail(email, token, appUrl) {
   const base = (appUrl || '').replace(/\/+$/, '');
   const verifyUrl = `${base}/verify-email?token=${encodeURIComponent(token)}`;
-  if (!process.env.SMTP_HOST) {
+  if (!process.env.RESEND_API_KEY && !process.env.SMTP_HOST) {
     return { sent: false, devLink: verifyUrl };
   }
   const html = `
@@ -101,7 +128,7 @@ export async function sendVerificationEmail(email, token, appUrl) {
 export async function sendPasswordResetEmail(email, token, appUrl) {
   const base = (appUrl || '').replace(/\/+$/, '');
   const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
-  if (!process.env.SMTP_HOST) {
+  if (!process.env.RESEND_API_KEY && !process.env.SMTP_HOST) {
     return { sent: false, devLink: resetUrl };
   }
   const html = `

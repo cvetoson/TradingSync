@@ -17,7 +17,7 @@ export default function CheckEmailPage({ email, devLink }) {
           {devLink ? (
             <div className="space-y-2 mb-6">
               <p className="text-amber-200 text-sm">
-                No email configured. Use this link to verify (dev mode):
+                Email could not be sent. Use this link to verify:
               </p>
               <a
                 href={devLink}

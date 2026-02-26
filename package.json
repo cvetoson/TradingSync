@@ -10,7 +10,9 @@
     "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "build": "cd frontend && npm run build",
     "start": "npm run build && cd backend && NODE_ENV=production node server.js",
-    "seed": "cd backend && node -r dotenv/config scripts/seedDefaultUser.js"
+    "seed": "cd backend && node -r dotenv/config scripts/seedDefaultUser.js",
+    "verify-email": "cd backend && node -r dotenv/config scripts/verifyUserEmail.js",
+    "migrate-to-postgres": "cd backend && node -r dotenv/config scripts/migrateSqliteToPostgres.js"
   },
   "keywords": ["trading", "portfolio", "sync", "dashboard"],
   "author": "",

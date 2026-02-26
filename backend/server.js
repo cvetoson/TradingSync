@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { initDatabase, isPostgreSQL } from './database.js';
 import { getRecentErrors } from './lib/errorLog.js';
+import { getLastEmailError, sendEmail } from './services/emailService.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
 import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword } from './routes/auth.js';
 import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
@@ -97,16 +98,34 @@ async function start() {
   });
 
   // Debug endpoint – for AI/remote troubleshooting (no secrets)
-  // Share this URL when something fails so we can see recentErrors
   app.get('/api/debug', (req, res) => {
     res.json({
       status: 'ok',
       database: isPostgreSQL() ? 'PostgreSQL' : 'SQLite',
       nodeEnv: process.env.NODE_ENV || 'development',
-      hasSmtp: !!(process.env.SMTP_HOST && process.env.SMTP_USER),
+      hasSmtp: !!(process.env.RESEND_API_KEY || (process.env.SMTP_HOST && process.env.SMTP_USER)),
+      smtpConfigured: !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
       appUrl: process.env.APP_URL || '(not set)',
       recentErrors: getRecentErrors(),
+      lastEmailError: getLastEmailError() || null,
     });
+  });
+
+  // Test email – only when EMAIL_TEST_ENABLED=true. GET /api/test-email?to=you@example.com
+  app.get('/api/test-email', async (req, res) => {
+    if (process.env.EMAIL_TEST_ENABLED !== 'true') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const to = req.query.to;
+    if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      return res.status(400).json({ error: 'Add ?to=your@email.com' });
+    }
+    const result = await sendEmail({
+      to,
+      subject: 'Trading Sync – test email',
+      html: '<p>If you received this, email is working.</p>',
+    });
+    res.json({ sent: result.sent, error: result.error || null, lastEmailError: getLastEmailError() });
   });
 
   // SPA fallback: serve index.html for non-API routes in production
