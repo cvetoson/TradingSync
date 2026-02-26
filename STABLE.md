@@ -1,13 +1,26 @@
 # TradingSyncApp – Stable version 3.6
 
 **Version**: 3.6.0  
-**Date**: February 23, 2026  
-**Status**: Stable – production-ready.
+**Date**: February 11, 2026  
+**Status**: Stable – production-ready (localhost + Railway).
 
 ---
 
 ## What’s in this stable release
 
+### Auth & email (recent)
+- **Registration without email verification**: Users can sign in immediately after registering. TODO: add verification flow later.
+- **Password reset fallback**: If email send fails (SMTP blocked, Resend recipient not allowed), the reset link is shown on the page so users can still reset.
+- **Email**: Gmail SMTP + Resend fallback; IPv4-first for Railway.
+
+### Screenshot upload
+- **Uploads directory**: Created automatically on startup (fixes Railway).
+- **Multer error handling**: File-too-large and other upload errors return clear messages.
+- **Better error display**: Upload modal shows actual API error (e.g. invalid OpenAI key) instead of generic 500.
+- **Debug endpoint**: `/api/debug` includes `hasOpenAI` to verify API key.
+- **AI**: GPT-4o by default; override with `OPENAI_MODEL` env var (e.g. `gpt-4o-mini`).
+
+### Core features
 - **Platform & Instrument views** (v3.6): Toggle between "By Platform" and "By Instrument" in the pie chart. Platform view groups by provider (Revolut, Iuvo, etc.); Instrument view groups by type (ETF & Stocks, Crypto, P2P, etc.).
 - **Platform detail with category tabs**: Click a platform to see investment categories (Shares, Crypto, P2P, etc.) as tabs; each tab lists accounts of that type.
 - **Holdings tabs**: In account detail, filter holdings by All, Shares, Crypto, Gold & Silver, or Bonds.

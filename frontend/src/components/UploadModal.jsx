@@ -72,7 +72,8 @@ export default function UploadModal({ onClose, onSuccess }) {
       await uploadScreenshot(file, investmentCategory, accountType);
       onSuccess();
     } catch (err) {
-      setError(err.message || 'Upload failed. Please try again.');
+      const msg = err.response?.data?.error || err.message || 'Upload failed. Please try again.';
+      setError(msg);
     } finally {
       setUploading(false);
     }

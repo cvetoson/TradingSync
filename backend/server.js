@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -46,6 +47,13 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
+// Ensure uploads directory exists (multer needs it)
+const uploadsDir = join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('📁 Created uploads directory');
+}
+
 // Initialize database and start server
 async function start() {
   const usePostgres = isPostgreSQL();
@@ -69,7 +77,22 @@ async function start() {
   app.get('/api/auth/me', requireAuth, getProfile);
   app.put('/api/auth/profile', requireAuth, updateProfile);
   app.put('/api/auth/change-password', requireAuth, changePassword);
-  app.post('/api/upload', requireAuth, upload.single('screenshot'), uploadScreenshot);
+  app.post('/api/upload', requireAuth, (req, res, next) => {
+    upload.single('screenshot')(req, res, (multerErr) => {
+      if (multerErr) {
+        console.error('[UPLOAD] Multer error:', multerErr);
+        const msg = multerErr.code === 'LIMIT_FILE_SIZE' ? 'File too large (max 10MB)' : multerErr.message || 'File upload failed';
+        return res.status(400).json({ error: msg });
+      }
+      uploadScreenshot(req, res).catch((err) => {
+        console.error('[UPLOAD] Handler error:', err?.message, err?.stack);
+        if (!res.headersSent) {
+          const msg = err?.message || 'Upload failed';
+          res.status(500).json({ error: msg });
+        }
+      });
+    });
+  });
   app.get('/api/portfolio/summary', requireAuth, getPortfolioSummary);
   app.get('/api/accounts', requireAuth, getAccounts);
   app.post('/api/accounts', requireAuth, createAccount);
@@ -103,6 +126,7 @@ async function start() {
       status: 'ok',
       database: isPostgreSQL() ? 'PostgreSQL' : 'SQLite',
       nodeEnv: process.env.NODE_ENV || 'development',
+      hasOpenAI: !!process.env.OPENAI_API_KEY,
       hasSmtp: !!(process.env.RESEND_API_KEY || (process.env.SMTP_HOST && process.env.SMTP_USER)),
       smtpConfigured: !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
       appUrl: process.env.APP_URL || '(not set)',
