@@ -71,11 +71,27 @@ export async function sendEmail({ to, subject, html, text }) {
     } catch (err) {
       lastEmailError = err.message;
       console.error('SMTP error:', err.message);
+      // Try Resend as fallback when SMTP fails (Gmail often blocks cloud IPs)
+      const resend = getResend();
+      if (resend) {
+        try {
+          const { error } = await resend.emails.send({
+            from: from.includes('<') ? from : `Trading Sync <${from}>`,
+            to: [to],
+            subject,
+            html: html || text || '',
+          });
+          if (!error) return { sent: true };
+          lastEmailError = error.message;
+        } catch (e) {
+          lastEmailError = e.message;
+        }
+      }
       return { sent: false, error: err.message };
     }
   }
 
-  // 2. Fall back to Resend
+  // 2. Use Resend when no SMTP
   const resend = getResend();
   if (resend) {
     try {
