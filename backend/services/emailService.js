@@ -120,14 +120,12 @@ export async function sendVerificationEmail(email, token, appUrl) {
     <p>This link expires in 24 hours.</p>
     <p>If you didn't create an account, you can ignore this email.</p>
   `;
-  const result = await sendEmail({ to: email, subject: 'Verify your Trading Sync email', html });
-  if (!result.sent) return { ...result, devLink: verifyUrl };
-  return result;
+  return sendEmail({ to: email, subject: 'Verify your Trading Sync email', html });
 }
 
 /**
  * Send password reset email.
- * Returns devLink when no SMTP or when send fails (fallback so user can still reset).
+ * Returns devLink only when no email is configured (local dev). When configured but send fails, no devLink.
  */
 export async function sendPasswordResetEmail(email, token, appUrl) {
   const base = (appUrl || '').replace(/\/+$/, '');
@@ -144,6 +142,5 @@ export async function sendPasswordResetEmail(email, token, appUrl) {
     <p>If you didn't request this, you can ignore this email.</p>
   `;
   const result = await sendEmail({ to: email, subject: 'Reset your Trading Sync password', html });
-  if (!result.sent) return { ...result, devLink: resetUrl };
   return result;
 }
