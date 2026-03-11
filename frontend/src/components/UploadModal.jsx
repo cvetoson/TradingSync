@@ -122,7 +122,7 @@ export default function UploadModal({ onClose, onSuccess }) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-md shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-gray-800">Add New</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -137,14 +137,14 @@ export default function UploadModal({ onClose, onSuccess }) {
           <button
             type="button"
             onClick={() => { setMode('upload'); setError(''); }}
-            className={`flex-1 py-2 text-sm font-medium rounded-t-lg transition-colors ${mode === 'upload' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`flex-1 py-2 text-sm font-medium rounded-t-md transition-colors ${mode === 'upload' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Upload Screenshot
           </button>
           <button
             type="button"
             onClick={() => { setMode('manual'); setError(''); }}
-            className={`flex-1 py-2 text-sm font-medium rounded-t-lg transition-colors ${mode === 'manual' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`flex-1 py-2 text-sm font-medium rounded-t-md transition-colors ${mode === 'manual' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Add Manually
           </button>
@@ -157,7 +157,7 @@ export default function UploadModal({ onClose, onSuccess }) {
               <select
                 value={investmentCategory}
                 onChange={(e) => setInvestmentCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               >
                 <option value="">Select investment category</option>
@@ -173,7 +173,7 @@ export default function UploadModal({ onClose, onSuccess }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Screenshot</label>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+              <div className="border-2 border-dashed border-gray-300 rounded-md p-6 text-center hover:border-blue-400 transition-colors">
                 <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" id="file-upload" required />
                 <label htmlFor="file-upload" className="cursor-pointer">
                   {file ? (
@@ -197,12 +197,12 @@ export default function UploadModal({ onClose, onSuccess }) {
             </div>
             {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">{error}</div>}
             <div className="flex gap-3 pt-4">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors" disabled={uploading}>Cancel</button>
-              <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={uploading}>
+              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors" disabled={uploading}>Cancel</button>
+              <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={uploading}>
                 {uploading ? 'Uploading...' : 'Upload'}
               </button>
             </div>
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+            <div className="mt-4 p-3 bg-blue-50 rounded-md">
               <p className="text-xs text-blue-800">💡 <strong>Tip:</strong> Upload a clear screenshot of your account balance. The AI will extract your portfolio data automatically.</p>
             </div>
           </form>
@@ -219,7 +219,7 @@ export default function UploadModal({ onClose, onSuccess }) {
                   <select
                     value={selectedAccountId}
                     onChange={(e) => setSelectedAccountId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Select account</option>
                     {holdingsAccounts.map(acc => (
@@ -236,14 +236,14 @@ export default function UploadModal({ onClose, onSuccess }) {
                       placeholder="Account name (e.g. Trading 212)"
                       value={newAccountName}
                       onChange={(e) => setNewAccountName(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <input
                       type="text"
                       placeholder="Platform (e.g. Manual)"
                       value={newAccountPlatform}
                       onChange={(e) => setNewAccountPlatform(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 )}
@@ -256,7 +256,7 @@ export default function UploadModal({ onClose, onSuccess }) {
                 placeholder="e.g. TSLA, BTC, XAU"
                 value={manualSymbol}
                 onChange={(e) => setManualSymbol(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
@@ -268,7 +268,7 @@ export default function UploadModal({ onClose, onSuccess }) {
                 placeholder="e.g. 0.5"
                 value={manualQuantity}
                 onChange={(e) => setManualQuantity(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
@@ -280,7 +280,7 @@ export default function UploadModal({ onClose, onSuccess }) {
                 placeholder="Manual price or leave empty"
                 value={manualPrice}
                 onChange={(e) => setManualPrice(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
@@ -288,7 +288,7 @@ export default function UploadModal({ onClose, onSuccess }) {
               <select
                 value={manualAssetType}
                 onChange={(e) => setManualAssetType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {MANUAL_ASSET_TYPES.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -297,12 +297,12 @@ export default function UploadModal({ onClose, onSuccess }) {
             </div>
             {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">{error}</div>}
             <div className="flex gap-3 pt-4">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors" disabled={uploading}>Cancel</button>
-              <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={uploading}>
+              <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors" disabled={uploading}>Cancel</button>
+              <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={uploading}>
                 {uploading ? 'Adding...' : 'Add Holding'}
               </button>
             </div>
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+            <div className="mt-4 p-3 bg-blue-50 rounded-md">
               <p className="text-xs text-blue-800">💡 <strong>Tip:</strong> Add holdings you know you own (e.g. 0.5 shares of TSLA). Leave price empty to fetch live price automatically.</p>
             </div>
           </form>

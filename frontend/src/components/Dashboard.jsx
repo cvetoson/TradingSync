@@ -1,26 +1,24 @@
 import { useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import AccountCard from './AccountCard';
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7300'];
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
 
 const INSTRUMENT_LABELS = {
-  stocks: 'ETF & Stocks',
-  crypto: 'Cryptocurrency',
-  p2p: 'P2P Lending',
-  precious: 'Gold & Silver',
-  savings: 'Savings & Deposits',
-  bank: 'Fixed Income & Bonds',
-  unknown: 'Other'
+  stocks: 'ETF & Stocks', crypto: 'Cryptocurrency', p2p: 'P2P Lending',
+  precious: 'Gold & Silver', savings: 'Savings & Deposits', bank: 'Fixed Income & Bonds', unknown: 'Other'
 };
 
-export default function Dashboard({ portfolioData, onUploadClick, onRefresh, onViewAccountDetails, onViewPlatformDetails }) {
-  const [viewMode, setViewMode] = useState('platform'); // 'platform' | 'instrument'
+const fmt = (value, currency = 'EUR') =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2 }).format(value);
+
+export default function Dashboard({ portfolioData, onUploadClick, onViewAccountDetails, onViewPlatformDetails }) {
+  const [viewMode, setViewMode] = useState('platform');
+  const [hoverIndex, setHoverIndex] = useState(null);
   const platforms = portfolioData?.platforms || [];
   const accounts = portfolioData?.accounts || [];
   const platformPieData = portfolioData?.pieData || [];
+  const currency = portfolioData?.currency || 'EUR';
 
-  // Group by instrument (account type)
   const instrumentMap = accounts.reduce((acc, a) => {
     const type = (a.accountType || a.account_type || 'unknown').toLowerCase();
     const label = INSTRUMENT_LABELS[type] || type;
@@ -30,124 +28,142 @@ export default function Dashboard({ portfolioData, onUploadClick, onRefresh, onV
     return acc;
   }, {});
   const instrumentPieData = Object.values(instrumentMap).sort((a, b) => b.value - a.value);
-
   const pieData = viewMode === 'platform' ? platformPieData : instrumentPieData;
   const hasData = platformPieData.length > 0;
 
   if (!portfolioData || !hasData) {
     return (
-      <div className="bg-white rounded-lg shadow-xl p-8 text-center">
-        <div className="mb-6">
-          <svg className="mx-auto h-24 w-24 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      <div className="rounded-xl border p-12 text-center" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <div className="w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-6"
+          style={{ background: 'var(--bg-inner)' }}>
+          <svg className="w-8 h-8" style={{ color: 'var(--text-3)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
         </div>
-        <h2 className="text-2xl font-semibold text-gray-700 mb-4">No Portfolio Data Yet</h2>
-        <p className="text-gray-500 mb-6">Upload screenshots from your trading platforms to get started</p>
-        <button
-          onClick={onUploadClick}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-        >
-          Add First
+        <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-1)' }}>No Portfolio Data Yet</h2>
+        <p className="text-sm mb-6" style={{ color: 'var(--text-3)' }}>Upload screenshots from your trading platforms to get started</p>
+        <button onClick={onUploadClick} className="bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 px-5 rounded-lg text-sm transition">
+          Add First Account
         </button>
       </div>
     );
   }
 
   const totalValue = portfolioData.totalValue;
-  const formattedTotal = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: portfolioData.currency || 'EUR',
-    minimumFractionDigits: 2
-  }).format(totalValue);
+  const formattedTotal = fmt(totalValue, currency);
+  const listItems = viewMode === 'platform' ? platforms : instrumentPieData;
 
   return (
-    <div className="space-y-6">
-      {/* Summary Card */}
-      <div className="bg-white rounded-lg shadow-xl p-6">
-        <div className="flex justify-between items-center mb-4">
+    <div className="space-y-5">
+      {/* Portfolio header */}
+      <div className="rounded-xl border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">Total Portfolio Value</h2>
-            <p className="text-sm text-gray-500">Last updated: {new Date(portfolioData.lastUpdated).toLocaleString()}</p>
+            <p className="text-xs uppercase tracking-wider font-medium mb-1" style={{ color: 'var(--text-3)' }}>Total Portfolio Value</p>
+            <div className="text-4xl font-bold tracking-tight" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
+            <p className="text-xs mt-2" style={{ color: 'var(--text-4)' }}>
+              Last updated: {new Date(portfolioData.lastUpdated).toLocaleString()}
+            </p>
           </div>
           <button
             onClick={onUploadClick}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-md text-sm transition shrink-0"
           >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
             Add New
           </button>
         </div>
-        <div className="text-4xl font-bold text-blue-600">{formattedTotal}</div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pie Chart */}
-        <div className="bg-white rounded-lg shadow-xl p-6 overflow-hidden">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-semibold text-gray-800">
-              {viewMode === 'platform' ? 'Platform' : 'Instrument'}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Donut chart */}
+      <div className="rounded-lg border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+              {viewMode === 'platform' ? 'By Platform' : 'By Instrument'}
             </h3>
-            <div className="flex rounded-lg border border-gray-200 p-0.5">
-              <button
-                type="button"
-                onClick={() => setViewMode('platform')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                  viewMode === 'platform' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                By Platform
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('instrument')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                  viewMode === 'instrument' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                By Instrument
-              </button>
+            <div className="flex rounded-md p-0.5 border" style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}>
+              {['platform', 'instrument'].map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setViewMode(mode)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition capitalize ${
+                    viewMode === mode ? 'bg-blue-600 text-white' : ''
+                  }`}
+                  style={viewMode !== mode ? { color: 'var(--text-3)' } : {}}
+                >
+                  {mode}
+                </button>
+              ))}
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={320}>
-            <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-              <Pie
-                data={pieData}
-                cx="50%"
-                cy="45%"
-                labelLine={true}
-                label={({ name }) => {
-                  const displayName = name.length > 20 ? name.substring(0, 17) + '...' : name;
-                  return displayName;
-                }}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-                onClick={(data) => {
-                  if (!onViewPlatformDetails) return;
-                  if (viewMode === 'platform') {
-                    onViewPlatformDetails(
-                      platforms.find((p) => p.name === data.platform) || { name: data.platform, value: data.value, accounts: data.accounts || [], categories: {} }
-                    );
-                  } else {
-                    const entry = instrumentPieData.find((e) => e.name === data.name);
-                    onViewPlatformDetails(entry ? { name: entry.name, value: entry.value, accounts: entry.accounts, categories: { [entry.type]: entry.accounts } } : { name: data.name, value: data.value, accounts: [], categories: {} });
-                  }
-                }}
-                style={{ cursor: onViewPlatformDetails ? 'pointer' : 'default' }}
-              >
-                {pieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip 
-                formatter={(value) => new Intl.NumberFormat('en-US', {
-                  style: 'currency',
-                  currency: portfolioData.currency || 'EUR'
-                }).format(value)}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 max-h-24 overflow-y-auto">
+
+          <div className="relative">
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%" cy="50%"
+                  innerRadius={72} outerRadius={105} paddingAngle={2}
+                  dataKey="value"
+                  onMouseEnter={(_, idx) => setHoverIndex(idx)}
+                  onMouseLeave={() => setHoverIndex(null)}
+                  onClick={(data) => {
+                    if (!onViewPlatformDetails) return;
+                    if (viewMode === 'platform') {
+                      onViewPlatformDetails(platforms.find(p => p.name === data.platform) || { name: data.platform, value: data.value, accounts: data.accounts || [], categories: {} });
+                    } else {
+                      const entry = instrumentPieData.find(e => e.name === data.name);
+                      onViewPlatformDetails(entry ? { name: entry.name, value: entry.value, accounts: entry.accounts, categories: { [entry.type]: entry.accounts } } : { name: data.name, value: data.value, accounts: [], categories: {} });
+                    }
+                  }}
+                  style={{ cursor: onViewPlatformDetails ? 'pointer' : 'default' }}
+                >
+                  {pieData.map((_, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={COLORS[index % COLORS.length]}
+                      stroke={hoverIndex === index ? 'rgba(255,255,255,0.55)' : 'transparent'}
+                      strokeWidth={hoverIndex === index ? 3 : 1}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    background: 'var(--tooltip-bg)',
+                    border: '1px solid var(--tooltip-border)',
+                    borderRadius: '8px',
+                    color: 'var(--tooltip-text)',
+                    fontSize: '12px',
+                    padding: '6px 8px',
+                  }}
+                  labelStyle={{
+                    color: 'var(--tooltip-text)',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                  }}
+                  itemStyle={{
+                    color: 'var(--tooltip-text)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                  }}
+                  separator=""
+                  formatter={(value) => [fmt(value, currency), '']}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center">
+                <div className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Total</div>
+                <div className="text-lg font-bold mt-0.5" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-x-4 gap-y-2 mt-4">
             {pieData.map((entry, index) => (
               <button
                 key={entry.name}
@@ -155,57 +171,60 @@ export default function Dashboard({ portfolioData, onUploadClick, onRefresh, onV
                 onClick={() => {
                   if (!onViewPlatformDetails) return;
                   if (viewMode === 'platform') {
-                    onViewPlatformDetails(platforms.find((p) => p.name === entry.name) || { name: entry.name, value: entry.value, accounts: entry.accounts || [], categories: {} });
+                    onViewPlatformDetails(platforms.find(p => p.name === entry.name) || { name: entry.name, value: entry.value, accounts: entry.accounts || [], categories: {} });
                   } else {
                     onViewPlatformDetails({ name: entry.name, value: entry.value, accounts: entry.accounts || [], categories: entry.type ? { [entry.type]: entry.accounts } : {} });
                   }
                 }}
-                className="flex items-center gap-1.5 text-sm hover:text-blue-600 transition-colors text-left"
+                className="flex items-center gap-1.5 text-xs transition"
+                style={{ color: 'var(--text-3)' }}
               >
-                <span 
-                  className="inline-block w-3 h-3 rounded-full shrink-0" 
-                  style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                />
-                <span className="truncate max-w-[140px]" title={entry.name}>
-                  {entry.name.length > 18 ? entry.name.substring(0, 15) + '...' : entry.name}
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                <span className="truncate max-w-[120px]" title={entry.name}>
+                  {entry.name.length > 16 ? entry.name.substring(0, 14) + '…' : entry.name}
                 </span>
               </button>
             ))}
           </div>
         </div>
 
-        {/* List: Platforms or Instruments */}
-        <div className="bg-white rounded-lg shadow-xl p-6">
-          <h3 className="text-xl font-semibold text-gray-800 mb-4">
+        {/* Allocation list */}
+        <div className="rounded-lg border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <h3 className="text-sm font-semibold mb-5" style={{ color: 'var(--text-1)' }}>
             {viewMode === 'platform' ? 'Platforms' : 'Instruments'}
           </h3>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {(viewMode === 'platform' ? platforms : instrumentPieData).map((item) => (
-              <button
-                key={item.name}
-                type="button"
-                onClick={() => onViewPlatformDetails && onViewPlatformDetails(
-                  viewMode === 'platform'
-                    ? item
-                    : { name: item.name, value: item.value, accounts: item.accounts || [], categories: item.type ? { [item.type]: item.accounts } : {} }
-                )}
-                className="w-full text-left border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-blue-200 transition-all"
-              >
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-gray-800">{item.name}</span>
-                  <span className="text-lg font-bold text-blue-600">
-                    {new Intl.NumberFormat('en-US', {
-                      style: 'currency',
-                      currency: portfolioData.currency || 'EUR',
-                      minimumFractionDigits: 2
-                    }).format(item.value)}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  {item.accounts?.length || 0} account{(item.accounts?.length || 0) !== 1 ? 's' : ''} · Click to view
-                </p>
-              </button>
-            ))}
+          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+            {listItems.map((item, index) => {
+              const pct = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : '0.0';
+              return (
+                <button
+                  key={item.name}
+                  type="button"
+                  onClick={() => onViewPlatformDetails && onViewPlatformDetails(
+                    viewMode === 'platform' ? item
+                      : { name: item.name, value: item.value, accounts: item.accounts || [], categories: item.type ? { [item.type]: item.accounts } : {} }
+                  )}
+                  className="w-full text-left p-3 rounded-md border transition-all group"
+                  style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-hover)'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                      <span className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{item.name}</span>
+                    </div>
+                    <span className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{fmt(item.value, currency)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: COLORS[index % COLORS.length] }} />
+                    </div>
+                    <span className="text-xs w-10 text-right" style={{ color: 'var(--text-3)' }}>{pct}%</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

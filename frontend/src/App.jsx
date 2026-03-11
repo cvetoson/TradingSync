@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import AccountDetailView from './components/AccountDetailView';
@@ -15,23 +16,27 @@ import SettingsModal from './components/SettingsModal';
 import { getPortfolioSummary, getAccountHoldings } from './services/api';
 
 function AppContent() {
-  const { isAuthenticated, loading, user, logout } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-800">
-        <div className="text-white text-xl">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg-page)]">
+        <div className="flex items-center gap-3 text-[var(--text-3)]">
+          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm">Loading...</span>
+        </div>
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    return showRegister ? (
-      <Register onSwitchToLogin={() => setShowRegister(false)} />
-    ) : (
-      <Login onSwitchToRegister={() => setShowRegister(true)} />
-    );
+    return showRegister
+      ? <Register onSwitchToLogin={() => setShowRegister(false)} />
+      : <Login onSwitchToRegister={() => setShowRegister(true)} />;
   }
 
   return <DashboardContent />;
@@ -54,9 +59,7 @@ function DashboardContent() {
   const [selectedPlatform, setSelectedPlatform] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
-  useEffect(() => {
-    loadPortfolio();
-  }, [refreshTrigger]);
+  useEffect(() => { loadPortfolio(); }, [refreshTrigger]);
 
   const loadPortfolio = async () => {
     try {
@@ -75,129 +78,172 @@ function DashboardContent() {
     setRefreshTrigger(prev => prev + 1);
   };
 
+  const initials = (user?.displayName || user?.email || 'U').charAt(0).toUpperCase();
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-800">
-      <div className="container mx-auto px-4 py-8">
-        <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-4xl font-bold text-white mb-2">Trading Sync</h1>
-            <p className="text-blue-100">Your unified portfolio dashboard</p>
+    <div className="min-h-screen flex" style={{ background: 'var(--bg-page)' }}>
+      {/* Sidebar */}
+      <aside className="w-16 lg:w-56 flex flex-col py-5 shrink-0 border-r"
+        style={{ background: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}>
+        {/* Brand */}
+        <div className="px-3 lg:px-4 mb-8 flex items-center gap-3">
+          <div className="w-8 h-8 bg-blue-600 rounded-md flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowSettings(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm transition"
-              title="Settings"
-            >
-              <span>{user?.displayName || user?.email || 'User'}</span>
-              <svg className="w-4 h-4 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-            <button
-              onClick={logout}
-              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm transition"
-            >
-              Log out
-            </button>
+          <span className="hidden lg:block font-semibold text-sm tracking-tight" style={{ color: 'var(--text-1)' }}>Trading Sync</span>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 px-2 lg:px-3 space-y-1">
+          <div className="flex items-center gap-3 px-2 lg:px-3 py-2.5 rounded-lg"
+            style={{ background: 'var(--sidebar-active-bg)', color: 'var(--sidebar-active-text)' }}>
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+            </svg>
+            <span className="hidden lg:block text-sm font-medium">Portfolio</span>
           </div>
+        </nav>
+
+        {/* Bottom actions */}
+        <div className="px-2 lg:px-3 space-y-1">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-full flex items-center gap-3 px-2 lg:px-3 py-2.5 rounded-lg transition text-sm"
+            style={{ color: 'var(--sidebar-text)' }}
+            title="Settings"
+          >
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span className="hidden lg:block">Settings</span>
+          </button>
+
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-3 px-2 lg:px-3 py-2.5 rounded-lg transition text-sm"
+            style={{ color: 'var(--sidebar-text)' }}
+            title="Log out"
+          >
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span className="hidden lg:block">Log out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
+        {/* Top bar */}
+        <header className="h-14 flex items-center justify-between px-6 shrink-0 border-b"
+          style={{ borderColor: 'var(--border)', background: 'var(--bg-sidebar)' }}>
+          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>Portfolio</h2>
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-2.5"
+            style={{ background: 'transparent' }}
+            title="Open settings"
+          >
+            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+              {initials}
+            </div>
+            <span className="text-sm hidden sm:block" style={{ color: 'var(--text-2)' }}>
+              {user?.displayName || user?.email}
+            </span>
+          </button>
         </header>
 
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="text-white text-xl">Loading portfolio...</div>
-          </div>
-        ) : (
-          <Dashboard 
-            portfolioData={portfolioData} 
-            onUploadClick={() => setShowUploadModal(true)}
-            onRefresh={loadPortfolio}
-            onViewAccountDetails={(account) => setSelectedAccount(account)}
-            onViewPlatformDetails={(platform) => setSelectedPlatform(platform)}
-          />
-        )}
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="flex items-center gap-3" style={{ color: 'var(--text-3)' }}>
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span className="text-sm">Loading portfolio...</span>
+              </div>
+            </div>
+          ) : (
+            <Dashboard
+              portfolioData={portfolioData}
+              onUploadClick={() => setShowUploadModal(true)}
+              onRefresh={loadPortfolio}
+              onViewAccountDetails={(account) => setSelectedAccount(account)}
+              onViewPlatformDetails={(platform) => setSelectedPlatform(platform)}
+            />
+          )}
+        </div>
+      </main>
 
-        {showSettings && (
-          <SettingsModal onClose={() => setShowSettings(false)} />
-        )}
+      {/* Modals */}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onSuccess={handleUploadSuccess} />}
 
-        {showUploadModal && (
-          <UploadModal
-            onClose={() => setShowUploadModal(false)}
-            onSuccess={handleUploadSuccess}
-          />
-        )}
+      {selectedPlatform && (
+        <PlatformDetailView
+          platform={selectedPlatform}
+          currency={portfolioData?.currency || 'EUR'}
+          onClose={() => setSelectedPlatform(null)}
+          onViewAccountDetails={() => {}}
+          onAddNewAccount={() => { setSelectedPlatform(null); setShowUploadModal(true); }}
+          onUpdate={async () => {
+            const data = await getPortfolioSummary();
+            setPortfolioData(data);
+            setSelectedPlatform(prev => {
+              if (!prev || !data?.platforms) return prev;
+              return data.platforms.find(p => p.name === prev.name) || prev;
+            });
+          }}
+        />
+      )}
 
-        {selectedPlatform && (
-          <PlatformDetailView
-            platform={selectedPlatform}
-            currency={portfolioData?.currency || 'EUR'}
-            onClose={() => setSelectedPlatform(null)}
-            onViewAccountDetails={() => {}}
-            onAddNewAccount={() => {
-              setSelectedPlatform(null);
-              setShowUploadModal(true);
-            }}
-            onUpdate={async () => {
-              const data = await getPortfolioSummary();
-              setPortfolioData(data);
-              setSelectedPlatform((prev) => {
-                if (!prev || !data?.platforms) return prev;
-                return data.platforms.find((p) => p.name === prev.name) || prev;
-              });
-            }}
-          />
-        )}
-
-        {selectedAccount && (
-          <AccountDetailView
-            key={selectedAccount.id}
-            account={selectedAccount}
-            currency={portfolioData?.currency || 'EUR'}
-            onClose={async () => {
-              const accountId = selectedAccount?.id;
-              const accType = selectedAccount?.accountType || selectedAccount?.account_type;
-              const isStockCrypto = accType === 'stocks' || accType === 'crypto' || accType === 'precious';
-              setSelectedAccount(null);
-              if (accountId && isStockCrypto) {
-                try {
-                  await getAccountHoldings(accountId);
-                } catch (_) {}
-              }
-              setRefreshTrigger((prev) => prev + 1);
-            }}
-            onAddNewAccount={() => {
-              setSelectedAccount(null);
-              setShowUploadModal(true);
-            }}
-            onUpdate={async () => {
-              const data = await getPortfolioSummary();
-              setPortfolioData(data);
-              setSelectedAccount((prev) => {
-                if (!prev || !data?.accounts) return prev;
-                const updated = data.accounts.find((acc) => acc.id === prev.id);
-                return updated || prev;
-              });
-            }}
-          />
-        )}
-      </div>
+      {selectedAccount && (
+        <AccountDetailView
+          key={selectedAccount.id}
+          account={selectedAccount}
+          currency={portfolioData?.currency || 'EUR'}
+          onClose={async () => {
+            const accountId = selectedAccount?.id;
+            const accType = selectedAccount?.accountType || selectedAccount?.account_type;
+            const isStockCrypto = accType === 'stocks' || accType === 'crypto' || accType === 'precious';
+            setSelectedAccount(null);
+            if (accountId && isStockCrypto) { try { await getAccountHoldings(accountId); } catch (_) {} }
+            setRefreshTrigger(prev => prev + 1);
+          }}
+          onAddNewAccount={() => { setSelectedAccount(null); setShowUploadModal(true); }}
+          onUpdate={async () => {
+            const data = await getPortfolioSummary();
+            setPortfolioData(data);
+            setSelectedAccount(prev => {
+              if (!prev || !data?.accounts) return prev;
+              return data.accounts.find(acc => acc.id === prev.id) || prev;
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function App() {
   return (
-    <AuthProvider>
-      <Routes>
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/check-email" element={<CheckEmailRoute />} />
-        <Route path="/*" element={<AppContent />} />
-      </Routes>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <Routes>
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/check-email" element={<CheckEmailRoute />} />
+          <Route path="/*" element={<AppContent />} />
+        </Routes>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

@@ -16,59 +16,46 @@ export default function PlatformDetailView({ platform, currency, onClose, onView
   const [activeCategory, setActiveCategory] = useState(null);
   const [selectedAccount, setSelectedAccount] = useState(null);
 
-  const categoriesWithAccounts = CATEGORY_TABS.filter(
-    (tab) => platform.categories?.[tab.value]?.length > 0
-  );
+  const categoriesWithAccounts = CATEGORY_TABS.filter(tab => platform.categories?.[tab.value]?.length > 0);
   const defaultCategory = categoriesWithAccounts[0]?.value;
   const currentCategory = activeCategory || defaultCategory;
   const accountsInCategory = platform.categories?.[currentCategory] || [];
 
   const formatCurrency = (value) =>
-    new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'EUR',
-      minimumFractionDigits: 2
-    }).format(value);
-
-  const handleViewAccount = (account) => {
-    setSelectedAccount(account);
-  };
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'EUR', minimumFractionDigits: 2 }).format(value);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.6)' }}>
+      <div className="rounded-xl border shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto"
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <div className="flex justify-between items-start mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">{platform.name}</h2>
-            <p className="text-lg font-semibold text-blue-600 mt-1">
-              {formatCurrency(platform.value)}
-            </p>
+            <h2 className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>{platform.name}</h2>
+            <p className="text-lg font-semibold text-blue-500 mt-0.5">{formatCurrency(platform.value)}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors p-1"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button onClick={onClose} className="p-1 rounded-md transition" style={{ color: 'var(--text-3)' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-inner)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        {/* Investment category tabs */}
-        <div className="border-b border-gray-200 mb-4">
+        <div className="mb-5" style={{ borderBottom: '1px solid var(--border)' }}>
           <nav className="flex gap-1 overflow-x-auto">
-            {categoriesWithAccounts.map((tab) => (
+            {categoriesWithAccounts.map(tab => (
               <button
                 key={tab.value}
                 onClick={() => setActiveCategory(tab.value)}
-                className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                  currentCategory === tab.value
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                className="px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors"
+                style={currentCategory === tab.value
+                  ? { borderColor: '#3b82f6', color: '#3b82f6' }
+                  : { borderColor: 'transparent', color: 'var(--text-3)' }
+                }
               >
                 {tab.label}
-                <span className="ml-1 text-xs text-gray-400">
+                <span className="ml-1 text-xs" style={{ color: 'var(--text-4)' }}>
                   ({platform.categories[tab.value].length})
                 </span>
               </button>
@@ -76,16 +63,9 @@ export default function PlatformDetailView({ platform, currency, onClose, onView
           </nav>
         </div>
 
-        {/* Accounts in selected category */}
         <div className="space-y-3">
-          {accountsInCategory.map((account) => (
-            <AccountCard
-              key={account.id}
-              account={account}
-              currency={currency}
-              onUpdate={onUpdate}
-              onViewDetails={handleViewAccount}
-            />
+          {accountsInCategory.map(account => (
+            <AccountCard key={account.id} account={account} currency={currency} onUpdate={onUpdate} onViewDetails={setSelectedAccount} />
           ))}
         </div>
       </div>

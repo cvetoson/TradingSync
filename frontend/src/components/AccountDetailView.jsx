@@ -414,7 +414,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full p-6 max-h-[95vh] overflow-y-auto my-8">
+      <div className="bg-white rounded-md shadow-xl max-w-6xl w-full p-6 max-h-[95vh] overflow-y-auto my-8">
         {/* Header */}
         <div className="flex justify-between items-start mb-6">
           <div>
@@ -460,19 +460,19 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
 
         {/* Account Summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 rounded-lg p-4">
+          <div className="bg-blue-50 rounded-md p-4">
             <div className="text-sm text-gray-600 mb-1">Current Value</div>
             <div className="text-2xl font-bold text-blue-600">
               {formatCurrency(effectiveBalance)}
             </div>
           </div>
           {(account.interestRate || account.interest_rate) && (
-            <div className="bg-green-50 rounded-lg p-4">
+            <div className="bg-green-50 rounded-md p-4">
               <div className="text-sm text-gray-600 mb-1">Interest Rate</div>
               <div className="text-2xl font-bold text-green-600">{account.interestRate || account.interest_rate}% APY</div>
             </div>
           )}
-          <div className="bg-purple-50 rounded-lg p-4">
+          <div className="bg-purple-50 rounded-md p-4">
             <div className="text-sm text-gray-600 mb-1">Category</div>
             <div className="text-lg font-semibold text-purple-600">
               {getAccountTypeLabel(account.accountType || account.account_type)}
@@ -483,7 +483,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         {/* Holdings (for stock/crypto accounts) */}
         {(account.accountType === 'stocks' || account.accountType === 'crypto' || account.accountType === 'precious' ||
           account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') && (
-          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+          <div className="bg-white border border-gray-200 rounded-md p-6 mb-6">
             <div className="mb-4">
               <h3 className="text-xl font-semibold text-gray-800 mb-3">Holdings</h3>
               <p className="text-xs text-gray-500 mb-2">
@@ -865,7 +865,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
 
         {/* Chart */}
         {!loading && chartData.length > 0 && (
-          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+          <div className="bg-white border border-gray-200 rounded-md p-6 mb-6">
             <h3 className="text-xl font-semibold text-gray-800 mb-4">Value Over Time</h3>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={combinedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -924,7 +924,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         )}
 
         {/* History Table */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="bg-white border border-gray-200 rounded-md p-6">
           <h3 className="text-xl font-semibold text-gray-800 mb-4">Value History</h3>
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading history...</div>
@@ -1027,7 +1027,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
 
       {showVerifyModal && verifyHolding && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+          <div className="bg-white rounded-md shadow-xl max-w-md w-full p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-800">Link to live stock</h3>
               <button type="button" onClick={closeVerifyModal} className="text-gray-400 hover:text-gray-600" disabled={verifyUpdating}>
@@ -1043,7 +1043,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                 onChange={(e) => setVerifySymbolInput(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === 'Enter' && handleVerifySymbol()}
                 placeholder="e.g. 2B76 or TSLA"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 disabled={verifyUpdating}
               />
               <div className="flex gap-2">
@@ -1051,7 +1051,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                   type="button"
                   onClick={handleVerifySymbol}
                   disabled={verifyLoading || !verifySymbolInput.trim() || verifyUpdating}
-                  className="px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                  className="px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                 >
                   {verifyLoading ? 'Checking…' : 'Verify'}
                 </button>
@@ -1060,14 +1060,14 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                     type="button"
                     onClick={handleUpdateSymbolFromVerify}
                     disabled={verifyUpdating || !verifyResult.found}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                   >
                     {verifyUpdating ? 'Updating…' : 'Update'}
                   </button>
                 )}
               </div>
               {verifyResult && (
-                <div className={`text-sm p-3 rounded-lg ${verifyResult.found ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                <div className={`text-sm p-3 rounded-md ${verifyResult.found ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
                   {verifyResult.found ? (
                     <>Live price: <strong>{formatCurrency(verifyResult.price, verifyResult.currency || 'USD')}</strong></>
                   ) : (

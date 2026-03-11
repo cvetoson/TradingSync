@@ -15,7 +15,7 @@ export default class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8">
-          <div className="bg-white rounded-lg shadow-xl p-8 max-w-lg">
+        <div className="bg-white rounded-md shadow-xl p-8 max-w-lg">
             <h1 className="text-xl font-bold text-red-600 mb-4">Something went wrong</h1>
             <pre className="text-sm text-gray-700 overflow-auto max-h-48 bg-gray-50 p-4 rounded">
               {this.state.error?.message || 'Unknown error'}

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import * as api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 export default function SettingsModal({ onClose }) {
   const { user, updateUser } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
@@ -62,18 +64,29 @@ export default function SettingsModal({ onClose }) {
     }
   };
 
+  const inputStyle = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-1)' };
+  const inputCls = 'w-full px-3 py-2 rounded-md text-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-[var(--text-4)]';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.6)' }}
+      onClick={onClose}
+    >
       <div
-        className="bg-slate-800 rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-white/10"
+        className="rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border"
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-white">Settings</h2>
+            <h2 className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>Settings</h2>
             <button
               onClick={onClose}
-              className="p-1 rounded-lg text-blue-200 hover:text-white hover:bg-white/10 transition"
+              className="p-1 rounded-md transition"
+              style={{ color: 'var(--text-3)' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-inner)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               aria-label="Close"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -84,19 +97,20 @@ export default function SettingsModal({ onClose }) {
 
           {/* Profile section */}
           <section className="mb-8">
-            <h3 className="text-sm font-medium text-blue-200 mb-3">Profile</h3>
+            <h3 className="text-xs font-medium mb-3 uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Profile</h3>
             <form onSubmit={handleProfileSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs text-blue-200 mb-1">Email</label>
-                <p className="text-white text-sm">{user?.email}</p>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-3)' }}>Email</label>
+                <p className="text-sm" style={{ color: 'var(--text-1)' }}>{user?.email}</p>
               </div>
               <div>
-                <label className="block text-xs text-blue-200 mb-1">Display name</label>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-3)' }}>Display name</label>
                 <input
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-blue-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={inputCls}
+                  style={inputStyle}
                   placeholder="Your name"
                 />
               </div>
@@ -109,36 +123,68 @@ export default function SettingsModal({ onClose }) {
               <button
                 type="submit"
                 disabled={profileLoading}
-                className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium disabled:opacity-50"
+                className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50 transition"
               >
                 {profileLoading ? 'Saving...' : 'Save profile'}
               </button>
             </form>
           </section>
 
+          {/* Divider */}
+          <div style={{ borderTop: '1px solid var(--border)', marginBottom: '2rem' }} />
+
+          {/* Theme section */}
+          <section className="mb-8">
+            <h3 className="text-xs font-medium mb-3 uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Appearance</h3>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex items-center gap-2 text-xs transition px-3 py-2 rounded-md border"
+              style={{ color: 'var(--text-3)', borderColor: 'var(--border)', background: 'var(--bg-inner)' }}
+            >
+              {theme === 'dark' ? (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  <span>Dark mode (default)</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                  <span>Light mode</span>
+                </>
+              )}
+            </button>
+          </section>
+
           {/* Change password section */}
           <section>
-            <h3 className="text-sm font-medium text-blue-200 mb-3">Change password</h3>
+            <h3 className="text-xs font-medium mb-3 uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Change password</h3>
             <form onSubmit={handlePasswordSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs text-blue-200 mb-1">Current password</label>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-3)' }}>Current password</label>
                 <input
                   type="password"
                   value={oldPassword}
                   onChange={(e) => setOldPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-blue-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={inputCls}
+                  style={inputStyle}
                   placeholder="••••••••"
                   required
                   autoComplete="current-password"
                 />
               </div>
               <div>
-                <label className="block text-xs text-blue-200 mb-1">New password (min 8 characters)</label>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-3)' }}>New password (min 8 characters)</label>
                 <input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-blue-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={inputCls}
+                  style={inputStyle}
                   placeholder="••••••••"
                   required
                   minLength={8}
@@ -146,12 +192,13 @@ export default function SettingsModal({ onClose }) {
                 />
               </div>
               <div>
-                <label className="block text-xs text-blue-200 mb-1">Confirm new password</label>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-3)' }}>Confirm new password</label>
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-blue-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={inputCls}
+                  style={inputStyle}
                   placeholder="••••••••"
                   required
                   minLength={8}
@@ -167,7 +214,7 @@ export default function SettingsModal({ onClose }) {
               <button
                 type="submit"
                 disabled={passwordLoading}
-                className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium disabled:opacity-50"
+                className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium disabled:opacity-50 transition"
               >
                 {passwordLoading ? 'Updating...' : 'Change password'}
               </button>

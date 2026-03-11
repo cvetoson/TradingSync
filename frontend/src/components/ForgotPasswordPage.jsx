@@ -41,7 +41,7 @@ export default function ForgotPasswordPage() {
               </p>
               <a
                 href={devLink}
-                className="block w-full text-center py-2.5 px-4 rounded-lg bg-amber-500/30 hover:bg-amber-500/50 text-amber-100 font-medium transition border border-amber-400/50"
+                className="block w-full text-center py-2.5 px-4 rounded-md bg-amber-500/30 hover:bg-amber-500/50 text-amber-100 font-medium transition border border-amber-400/50"
               >
                 Reset password →
               </a>
@@ -53,7 +53,7 @@ export default function ForgotPasswordPage() {
           )}
           <Link
             to="/"
-            className="block w-full text-center py-2.5 px-4 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
+            className="block w-full text-center py-2.5 px-4 rounded-md bg-white/10 hover:bg-white/20 text-white transition"
           >
             Back to sign in
           </Link>
@@ -66,7 +66,7 @@ export default function ForgotPasswordPage() {
     <AuthCard subtitle="Reset your password">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="bg-red-500/20 border border-red-400/50 text-red-100 px-4 py-2 rounded-lg text-sm">
+          <div className="bg-red-500/20 border border-red-400/50 text-red-100 px-4 py-2 rounded-md text-sm">
             {error}
           </div>
         )}
@@ -76,7 +76,7 @@ export default function ForgotPasswordPage() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-blue-200 focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+            className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white placeholder-blue-200 focus:ring-2 focus:ring-blue-400 focus:border-transparent"
             placeholder="you@example.com"
             required
             autoComplete="email"
@@ -85,7 +85,7 @@ export default function ForgotPasswordPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2.5 px-4 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full py-2.5 px-4 rounded-md bg-blue-500 hover:bg-blue-600 text-white font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? 'Sending...' : 'Send reset link'}
         </button>

@@ -43,7 +43,7 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+      <div className="bg-white rounded-md shadow-xl max-w-md w-full p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-gray-800">Add Holdings from Screenshot</h2>
           <button
@@ -57,7 +57,7 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
           </button>
         </div>
 
-        <div className="mb-4 p-3 bg-green-50 rounded-lg">
+        <div className="mb-4 p-3 bg-green-50 rounded-md">
           <p className="text-sm text-green-800">
             <strong>{account.accountName || account.platform}</strong>
           </p>
@@ -71,7 +71,7 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Screenshot
             </label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-400 transition-colors">
+            <div className="border-2 border-dashed border-gray-300 rounded-md p-6 text-center hover:border-green-400 transition-colors">
               <input
                 type="file"
                 accept="image/*"
@@ -114,14 +114,14 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
               disabled={uploading}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={uploading || !file}
             >
               {uploading ? 'Adding...' : 'Add Holdings'}
@@ -129,7 +129,7 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
           </div>
         </form>
 
-        <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
+        <div className="mt-4 p-3 bg-yellow-50 rounded-md">
           <p className="text-xs text-yellow-800">
             💡 The AI will extract holdings from the screenshot and add them to this account. Existing holdings are kept.
           </p>

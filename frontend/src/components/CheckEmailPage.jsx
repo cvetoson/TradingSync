@@ -4,7 +4,7 @@ export default function CheckEmailPage({ email, devLink }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 via-blue-600 to-indigo-800 px-4">
       <div className="w-full max-w-md">
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-xl p-8 border border-white/20 text-center">
+        <div className="bg-white/10 backdrop-blur-lg rounded-xl shadow-xl p-8 border border-white/20 text-center">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-500/20 flex items-center justify-center">
             <svg className="w-8 h-8 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -21,7 +21,7 @@ export default function CheckEmailPage({ email, devLink }) {
               </p>
               <a
                 href={devLink}
-                className="inline-block px-4 py-2 rounded-lg bg-amber-500/30 hover:bg-amber-500/50 text-amber-100 font-medium transition border border-amber-400/50"
+                className="inline-block px-4 py-2 rounded-md bg-amber-500/30 hover:bg-amber-500/50 text-amber-100 font-medium transition border border-amber-400/50"
               >
                 Verify my email →
               </a>
@@ -33,7 +33,7 @@ export default function CheckEmailPage({ email, devLink }) {
           )}
           <Link
             to="/"
-            className="inline-block px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
+            className="inline-block px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white transition"
           >
             Back to sign in
           </Link>
