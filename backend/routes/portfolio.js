@@ -2,6 +2,20 @@ import { getDatabase } from '../database.js';
 import { analyzeScreenshot } from '../services/aiService.js';
 import { calculatePortfolioValue } from '../services/calculations.js';
 import { fetchCurrentPrice, getProjectedPrice3M, fetchUsdToEurRate, fetchGbpToEurRate } from '../services/marketData.js';
+import { 
+  validateId, 
+  validateString, 
+  validateNumber, 
+  validateAccountType, 
+  validateSymbol, 
+  validateBalance, 
+  validateInterestRate, 
+  validateQuantity, 
+  validatePrice, 
+  validateCurrency,
+  validateFileUpload,
+  sanitizeDbError 
+} from '../lib/validation.js';
 
 const LSE_GBP_ETF_SYMBOLS = ['EQQQ', 'IITU', 'VUSA', 'VWRL', 'EIMI', 'VFEM', 'XAIX'];
 const LSE_USD_ETF_SYMBOLS = ['ECAR', 'NVDA', 'META', 'SMSD'];
@@ -233,6 +247,12 @@ export async function uploadScreenshot(req, res) {
     if (!req.file) {
       console.error('[UPLOAD] No file uploaded');
       return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Validate file type
+    const fileValidation = validateFileUpload(req.file);
+    if (!fileValidation.valid) {
+      return res.status(400).json({ error: fileValidation.error });
     }
 
     const filePath = req.file.path;
@@ -499,21 +519,41 @@ export function createAccount(req, res) {
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
   const { accountName, platform, accountType } = req.body;
 
-  const name = (accountName || 'Manual').trim();
-  const plat = (platform || 'Manual').trim();
-  const type = (accountType || 'stocks').trim();
+  // Validate account name (optional, defaults to 'Manual')
+  const nameValidation = validateString(accountName || 'Manual', 'Account name', { 
+    required: true, 
+    maxLength: 100 
+  });
+  if (!nameValidation.valid) {
+    return res.status(400).json({ error: nameValidation.error });
+  }
+
+  // Validate platform (optional, defaults to 'Manual')
+  const platformValidation = validateString(platform || 'Manual', 'Platform', { 
+    required: true, 
+    maxLength: 100 
+  });
+  if (!platformValidation.valid) {
+    return res.status(400).json({ error: platformValidation.error });
+  }
+
+  // Validate account type (optional, defaults to 'stocks')
+  const typeValidation = validateAccountType(accountType || 'stocks');
+  if (!typeValidation.valid) {
+    return res.status(400).json({ error: typeValidation.error });
+  }
 
   db.run(
     'INSERT INTO accounts (platform, account_name, account_type, balance, currency, user_id) VALUES (?, ?, ?, 0, ?, ?)',
-    [plat, name, type, 'EUR', userId],
+    [platformValidation.value, nameValidation.value, typeValidation.value, 'EUR', userId],
     function(err) {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to create account') });
       }
       const accountId = this.lastID;
       res.status(201).json({
         success: true,
-        account: { id: accountId, platform: plat, accountName: name, accountType: type }
+        account: { id: accountId, platform: platformValidation.value, accountName: nameValidation.value, accountType: typeValidation.value }
       });
     }
   );
@@ -530,25 +570,44 @@ async function createHoldingHandler(req, res, accountId) {
   const db = getDatabase();
   const { symbol, quantity, price, currency, assetType } = req.body;
 
-  const sym = (symbol || '').trim().toUpperCase();
-  if (!sym) {
-    return res.status(400).json({ error: 'Symbol is required' });
+  // Validate symbol
+  const symbolValidation = validateSymbol(symbol);
+  if (!symbolValidation.valid) {
+    return res.status(400).json({ error: symbolValidation.error });
   }
-  const qty = parseFloat(quantity);
-  if (isNaN(qty) || qty <= 0) {
-    return res.status(400).json({ error: 'Quantity must be a positive number' });
+  const sym = symbolValidation.value;
+
+  // Validate quantity
+  const qtyValidation = validateQuantity(quantity);
+  if (!qtyValidation.valid) {
+    return res.status(400).json({ error: qtyValidation.error });
+  }
+  const qty = qtyValidation.value;
+
+  // Validate currency (optional)
+  const currValidation = validateCurrency(currency, false);
+  if (!currValidation.valid) {
+    return res.status(400).json({ error: currValidation.error });
+  }
+  const curr = currValidation.value;
+
+  // Validate price (optional)
+  const priceValidation = validatePrice(price, false);
+  if (!priceValidation.valid) {
+    return res.status(400).json({ error: priceValidation.error });
   }
 
   const asset = (assetType || 'stock').toLowerCase();
-  const curr = (currency || 'EUR').toUpperCase();
 
   db.get('SELECT id, account_type FROM accounts WHERE id = ?', [accountId], async (accErr, account) => {
-    if (accErr || !account) {
+    if (accErr) {
+      return res.status(500).json({ error: sanitizeDbError(accErr, 'Failed to verify account') });
+    }
+    if (!account) {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    let currentPrice = price != null && price !== '' ? parseFloat(price) : null;
-    if (currentPrice != null && (isNaN(currentPrice) || currentPrice < 0)) currentPrice = null;
+    let currentPrice = priceValidation.value;
 
     // If no price provided, try to fetch live price
     if (currentPrice == null) {
@@ -569,7 +628,7 @@ async function createHoldingHandler(req, res, accountId) {
       [accountId, sym, qty, currentPrice, currentPrice, curr, asset],
       function(insertErr) {
         if (insertErr) {
-          return res.status(500).json({ error: insertErr.message });
+          return res.status(500).json({ error: sanitizeDbError(insertErr, 'Failed to create holding') });
         }
         syncAccountBalanceFromHoldings(accountId);
         res.status(201).json({
@@ -742,9 +801,9 @@ export function getAccounts(req, res) {
     [userId],
     (err, accounts) => {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to load accounts') });
       }
-      res.json(accounts);
+      res.json(accounts || []);
     }
   );
 }
@@ -752,19 +811,25 @@ export function getAccounts(req, res) {
 // Update account name
 export function updateAccountName(req, res) {
   const db = getDatabase();
-  const accountId = req.params.id;
+  const accountId = req.accountId || req.params.id;
   const { accountName } = req.body;
 
-  if (!accountId || !accountName) {
-    return res.status(400).json({ error: 'accountId and accountName are required' });
+  // Validate account name
+  const nameValidation = validateString(accountName, 'Account name', { 
+    required: true, 
+    minLength: 1, 
+    maxLength: 100 
+  });
+  if (!nameValidation.valid) {
+    return res.status(400).json({ error: nameValidation.error });
   }
 
   db.run(
     'UPDATE accounts SET account_name = ? WHERE id = ?',
-    [accountName.trim(), accountId],
+    [nameValidation.value, accountId],
     function(err) {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to update account name') });
       }
       
       if (this.changes === 0) {
@@ -775,7 +840,7 @@ export function updateAccountName(req, res) {
         success: true,
         message: 'Account name updated successfully',
         accountId: accountId,
-        accountName: accountName.trim()
+        accountName: nameValidation.value
       });
     }
   );
@@ -784,25 +849,21 @@ export function updateAccountName(req, res) {
 // Update account type
 export function updateAccountType(req, res) {
   const db = getDatabase();
-  const accountId = req.params.id;
+  const accountId = req.accountId || req.params.id;
   const { accountType } = req.body;
 
-  const validTypes = ['p2p', 'stocks', 'crypto', 'precious', 'bank', 'savings', 'unknown'];
-  
-  if (!accountId || !accountType) {
-    return res.status(400).json({ error: 'accountId and accountType are required' });
-  }
-
-  if (!validTypes.includes(accountType)) {
-    return res.status(400).json({ error: `accountType must be one of: ${validTypes.join(', ')}` });
+  // Validate account type
+  const typeValidation = validateAccountType(accountType);
+  if (!typeValidation.valid) {
+    return res.status(400).json({ error: typeValidation.error });
   }
 
   db.run(
     'UPDATE accounts SET account_type = ? WHERE id = ?',
-    [accountType, accountId],
+    [typeValidation.value, accountId],
     function(err) {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to update account type') });
       }
       
       if (this.changes === 0) {
@@ -813,7 +874,7 @@ export function updateAccountType(req, res) {
         success: true,
         message: 'Account type updated successfully',
         accountId: accountId,
-        accountType: accountType
+        accountType: typeValidation.value
       });
     }
   );
@@ -822,19 +883,25 @@ export function updateAccountType(req, res) {
 // Update account platform
 export function updateAccountPlatform(req, res) {
   const db = getDatabase();
-  const accountId = req.params.id;
+  const accountId = req.accountId || req.params.id;
   const { platform } = req.body;
 
-  if (!accountId || !platform) {
-    return res.status(400).json({ error: 'accountId and platform are required' });
+  // Validate platform name
+  const platformValidation = validateString(platform, 'Platform', { 
+    required: true, 
+    minLength: 1, 
+    maxLength: 100 
+  });
+  if (!platformValidation.valid) {
+    return res.status(400).json({ error: platformValidation.error });
   }
 
   db.run(
     'UPDATE accounts SET platform = ? WHERE id = ?',
-    [platform.trim(), accountId],
+    [platformValidation.value, accountId],
     function(err) {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to update platform') });
       }
       
       if (this.changes === 0) {
@@ -845,7 +912,7 @@ export function updateAccountPlatform(req, res) {
         success: true,
         message: 'Platform name updated successfully',
         accountId: accountId,
-        platform: platform.trim()
+        platform: platformValidation.value
       });
     }
   );
@@ -854,24 +921,23 @@ export function updateAccountPlatform(req, res) {
 // Update account balance
 export function updateAccountBalance(req, res) {
   const db = getDatabase();
-  const accountId = req.params.id;
+  const accountId = req.accountId || req.params.id;
   const { balance } = req.body;
 
-  if (!accountId || balance === undefined || balance === null) {
-    return res.status(400).json({ error: 'accountId and balance are required' });
+  // Validate balance
+  const balanceValidation = validateBalance(balance);
+  if (!balanceValidation.valid) {
+    return res.status(400).json({ error: balanceValidation.error });
   }
 
-  const balanceValue = parseFloat(balance);
-  if (isNaN(balanceValue)) {
-    return res.status(400).json({ error: 'balance must be a valid number' });
-  }
+  const balanceValue = balanceValidation.value;
 
   db.run(
     'UPDATE accounts SET balance = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
     [balanceValue, accountId],
     function(err) {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to update balance') });
       }
       
       if (this.changes === 0) {
@@ -885,7 +951,6 @@ export function updateAccountBalance(req, res) {
         (historyErr) => {
           if (historyErr) {
             console.error('Error creating history entry:', historyErr);
-            // Don't fail the whole operation if history save fails
           }
         }
       );
@@ -903,28 +968,23 @@ export function updateAccountBalance(req, res) {
 // Update account interest rate
 export function updateAccountInterestRate(req, res) {
   const db = getDatabase();
-  const accountId = req.params.id;
+  const accountId = req.accountId || req.params.id;
   const { interestRate } = req.body;
 
-  if (!accountId) {
-    return res.status(400).json({ error: 'accountId is required' });
+  // Validate interest rate (optional field)
+  const rateValidation = validateInterestRate(interestRate, false);
+  if (!rateValidation.valid) {
+    return res.status(400).json({ error: rateValidation.error });
   }
 
-  // Allow null/empty interest rate
-  const interestRateValue = interestRate === null || interestRate === '' || interestRate === undefined 
-    ? null 
-    : parseFloat(interestRate);
-
-  if (interestRateValue !== null && isNaN(interestRateValue)) {
-    return res.status(400).json({ error: 'interestRate must be a valid number or null' });
-  }
+  const interestRateValue = rateValidation.value;
 
   db.run(
     'UPDATE accounts SET interest_rate = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
     [interestRateValue, accountId],
     function(err) {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to update interest rate') });
       }
       
       if (this.changes === 0) {
@@ -944,18 +1004,14 @@ export function updateAccountInterestRate(req, res) {
 // Get account holdings
 export function getAccountHoldings(req, res) {
   const db = getDatabase();
-  const accountId = req.params.id;
-
-  if (!accountId) {
-    return res.status(400).json({ error: 'accountId is required' });
-  }
+  const accountId = req.accountId || req.params.id;
 
   db.all(
     'SELECT * FROM holdings WHERE account_id = ? ORDER BY symbol ASC',
     [accountId],
     async (err, holdings) => {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to load holdings') });
       }
 
       try {
@@ -1135,14 +1191,11 @@ export function getAccountHoldings(req, res) {
 // Get 3-month value projection for stocks/crypto account (for chart)
 export async function getHoldingsProjection(req, res) {
   const db = getDatabase();
-  const accountId = req.params.id;
-  if (!accountId) {
-    return res.status(400).json({ error: 'accountId is required' });
-  }
+  const accountId = req.accountId || req.params.id;
   const usdToEur = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || (await fetchUsdToEurRate()) || 0.846;
 
   db.get('SELECT * FROM accounts WHERE id = ?', [accountId], async (err, account) => {
-    if (err) return res.status(500).json({ error: err.message });
+    if (err) return res.status(500).json({ error: sanitizeDbError(err, 'Failed to load account') });
     if (!account) return res.status(404).json({ error: 'Account not found' });
     const accountType = (account.account_type || account.accountType || '').toLowerCase();
     if (accountType !== 'stocks' && accountType !== 'crypto' && accountType !== 'precious') {
@@ -1199,11 +1252,7 @@ export async function getHoldingsProjection(req, res) {
 // Get account history with daily changes
 export function getAccountHistory(req, res) {
   const db = getDatabase();
-  const accountId = req.params.id;
-
-  if (!accountId) {
-    return res.status(400).json({ error: 'accountId is required' });
-  }
+  const accountId = req.accountId || req.params.id;
 
   // Get account details
   db.get(
@@ -1211,7 +1260,7 @@ export function getAccountHistory(req, res) {
     [accountId],
     (err, account) => {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to load account') });
       }
 
       if (!account) {
@@ -1227,7 +1276,7 @@ export function getAccountHistory(req, res) {
         [accountId],
         (historyErr, history) => {
           if (historyErr) {
-            return res.status(500).json({ error: historyErr.message });
+            return res.status(500).json({ error: sanitizeDbError(historyErr, 'Failed to load history') });
           }
           
           // Ensure history is an array
@@ -1274,10 +1323,13 @@ export async function updateAccountWithScreenshot(req, res) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const accountId = parseInt(req.params.id);
-    if (!accountId) {
-      return res.status(400).json({ error: 'Invalid account ID' });
+    // Validate file type
+    const fileValidation = validateFileUpload(req.file);
+    if (!fileValidation.valid) {
+      return res.status(400).json({ error: fileValidation.error });
     }
+
+    const accountId = req.accountId || req.params.id;
 
     const filePath = req.file.path;
     const db = getDatabase();
@@ -1288,7 +1340,7 @@ export async function updateAccountWithScreenshot(req, res) {
       [accountId],
       async (err, existingAccount) => {
         if (err) {
-          return res.status(500).json({ error: err.message });
+          return res.status(500).json({ error: sanitizeDbError(err, 'Failed to load account') });
         }
 
         if (!existingAccount) {
@@ -1460,16 +1512,19 @@ export async function addHoldingsFromScreenshot(req, res) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const accountId = parseInt(req.params.id);
-    if (!accountId) {
-      return res.status(400).json({ error: 'Invalid account ID' });
+    // Validate file type
+    const fileValidation = validateFileUpload(req.file);
+    if (!fileValidation.valid) {
+      return res.status(400).json({ error: fileValidation.error });
     }
+
+    const accountId = req.accountId || req.params.id;
 
     const filePath = req.file.path;
     const db = getDatabase();
 
     db.get('SELECT * FROM accounts WHERE id = ?', [accountId], async (err, account) => {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) return res.status(500).json({ error: sanitizeDbError(err, 'Failed to load account') });
       if (!account) return res.status(404).json({ error: 'Account not found' });
 
       const accountType = account.account_type || account.accountType || '';
@@ -1513,12 +1568,15 @@ export async function addHoldingsFromScreenshot(req, res) {
 
 // Verify symbol: fetch live price to confirm ticker is valid (for "Screenshot" → "Live" flow)
 export async function verifyHoldingSymbol(req, res) {
-  const symbol = (req.query.symbol || req.body?.symbol || '').trim().toUpperCase();
+  const symbolParam = req.query.symbol || req.body?.symbol || '';
   const assetType = (req.query.assetType || req.body?.assetType || 'stock').toLowerCase();
 
-  if (!symbol) {
-    return res.status(400).json({ found: false, error: 'Symbol is required' });
+  // Validate symbol
+  const symbolValidation = validateSymbol(symbolParam);
+  if (!symbolValidation.valid) {
+    return res.status(400).json({ found: false, error: symbolValidation.error });
   }
+  const symbol = symbolValidation.value;
 
   const isIsin = /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(symbol);
 
@@ -1545,12 +1603,15 @@ export async function verifyHoldingSymbol(req, res) {
 // Update holding symbol
 export function updateHoldingSymbol(req, res) {
   const db = getDatabase();
-  const holdingId = req.params.id;
+  const holdingId = req.holdingId || req.params.id;
   const { symbol } = req.body;
 
-  if (!holdingId || !symbol) {
-    return res.status(400).json({ error: 'holdingId and symbol are required' });
+  // Validate symbol
+  const symbolValidation = validateSymbol(symbol);
+  if (!symbolValidation.valid) {
+    return res.status(400).json({ error: symbolValidation.error });
   }
+  const sym = symbolValidation.value;
 
   // First get the holding to know its asset type
   db.get(
@@ -1558,7 +1619,7 @@ export function updateHoldingSymbol(req, res) {
     [holdingId],
     async (err, holding) => {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to find holding') });
       }
       
       if (!holding) {
@@ -1568,15 +1629,15 @@ export function updateHoldingSymbol(req, res) {
       // Update symbol
       db.run(
         'UPDATE holdings SET symbol = ? WHERE id = ?',
-        [symbol.trim(), holdingId],
+        [sym, holdingId],
         async (updateErr) => {
           if (updateErr) {
-            return res.status(500).json({ error: updateErr.message });
+            return res.status(500).json({ error: sanitizeDbError(updateErr, 'Failed to update symbol') });
           }
 
           // Automatically fetch current price for the new symbol
           try {
-            const currentPrice = await fetchCurrentPrice(symbol.trim(), holding.asset_type || 'stock');
+            const currentPrice = await fetchCurrentPrice(sym, holding.asset_type || 'stock');
             if (currentPrice) {
               db.run(
                 'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
@@ -1584,15 +1645,14 @@ export function updateHoldingSymbol(req, res) {
               );
             }
           } catch (priceErr) {
-            console.error('Error fetching price for symbol:', symbol, priceErr);
-            // Continue anyway - price fetch failure shouldn't block symbol update
+            console.error('Error fetching price for symbol:', sym, priceErr);
           }
 
           res.json({
             success: true,
             message: 'Holding symbol updated successfully. Price will be fetched automatically.',
             holdingId: holdingId,
-            symbol: symbol.trim()
+            symbol: sym
           });
         }
       );
@@ -1627,24 +1687,27 @@ async function syncAccountBalanceFromHoldings(accountId, totalEur = null) {
 // Update holding quantity
 export function updateHoldingQuantity(req, res) {
   const db = getDatabase();
-  const holdingId = req.params.id;
+  const holdingId = req.holdingId || req.params.id;
   const { quantity } = req.body;
 
-  if (!holdingId || quantity === undefined || quantity === null) {
-    return res.status(400).json({ error: 'holdingId and quantity are required' });
+  // Validate quantity (allow 0 for "sold all")
+  const qtyValidation = validateNumber(quantity, 'Quantity', { 
+    required: true, 
+    allowNegative: false, 
+    min: 0, 
+    max: 999999999999 
+  });
+  if (!qtyValidation.valid) {
+    return res.status(400).json({ error: qtyValidation.error });
   }
-
-  const quantityValue = parseFloat(quantity);
-  if (isNaN(quantityValue) || quantityValue < 0) {
-    return res.status(400).json({ error: 'quantity must be a valid positive number' });
-  }
+  const quantityValue = qtyValidation.value;
 
   db.run(
     'UPDATE holdings SET quantity = ? WHERE id = ?',
     [quantityValue, holdingId],
     function(err) {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to update quantity') });
       }
       if (this.changes === 0) {
         return res.status(404).json({ error: 'Holding not found' });
@@ -1665,21 +1728,22 @@ export function updateHoldingQuantity(req, res) {
 // Update holding price (optional: currency = 'USD' | 'EUR')
 export function updateHoldingPrice(req, res) {
   const db = getDatabase();
-  const holdingId = req.params.id;
+  const holdingId = req.holdingId || req.params.id;
   const { price, currency: currencyParam } = req.body;
 
-  if (!holdingId || price === undefined || price === null) {
-    return res.status(400).json({ error: 'holdingId and price are required' });
+  // Validate price
+  const priceValidation = validatePrice(price, true);
+  if (!priceValidation.valid) {
+    return res.status(400).json({ error: priceValidation.error });
   }
+  const priceValue = priceValidation.value;
 
-  const priceValue = parseFloat(price);
-  if (isNaN(priceValue) || priceValue < 0) {
-    return res.status(400).json({ error: 'price must be a valid positive number' });
+  // Validate currency (optional)
+  const currValidation = validateCurrency(currencyParam, false);
+  if (!currValidation.valid) {
+    return res.status(400).json({ error: currValidation.error });
   }
-
-  const currency = (currencyParam && ['USD', 'EUR'].includes(String(currencyParam).toUpperCase()))
-    ? String(currencyParam).toUpperCase()
-    : null;
+  const currency = currencyParam ? currValidation.value : null;
 
   const sql = currency
     ? 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?'
@@ -1689,7 +1753,7 @@ export function updateHoldingPrice(req, res) {
   db.run(sql, params,
     function(err) {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to update price') });
       }
       if (this.changes === 0) {
         return res.status(404).json({ error: 'Holding not found' });
@@ -1710,18 +1774,19 @@ export function updateHoldingPrice(req, res) {
 // Delete a single holding
 export function deleteHolding(req, res) {
   const db = getDatabase();
-  const holdingId = req.params.id;
-  if (!holdingId) {
-    return res.status(400).json({ error: 'Holding ID is required' });
-  }
+  const holdingId = req.holdingId || req.params.id;
+  
   db.get('SELECT account_id FROM holdings WHERE id = ?', [holdingId], (getErr, row) => {
-    if (getErr || !row) {
+    if (getErr) {
+      return res.status(500).json({ error: sanitizeDbError(getErr, 'Failed to find holding') });
+    }
+    if (!row) {
       return res.status(404).json({ error: 'Holding not found' });
     }
     const accountId = row.account_id;
     db.run('DELETE FROM holdings WHERE id = ?', [holdingId], function(err) {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: sanitizeDbError(err, 'Failed to delete holding') });
       }
       if (this.changes === 0) {
         return res.status(404).json({ error: 'Holding not found' });
@@ -1735,16 +1800,12 @@ export function deleteHolding(req, res) {
 // Delete history entry
 export function deleteHistoryEntry(req, res) {
   const db = getDatabase();
-  const historyId = req.params.id;
-
-  if (!historyId) {
-    return res.status(400).json({ error: 'History ID is required' });
-  }
+  const historyId = req.historyId || req.params.id;
 
   // First, check if history entry exists
   db.get('SELECT * FROM account_history WHERE id = ?', [historyId], (err, historyEntry) => {
     if (err) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: sanitizeDbError(err, 'Failed to find history entry') });
     }
 
     if (!historyEntry) {
@@ -1754,7 +1815,7 @@ export function deleteHistoryEntry(req, res) {
     // Delete the history entry
     db.run('DELETE FROM account_history WHERE id = ?', [historyId], function(deleteErr) {
       if (deleteErr) {
-        return res.status(500).json({ error: deleteErr.message });
+        return res.status(500).json({ error: sanitizeDbError(deleteErr, 'Failed to delete history entry') });
       }
 
       if (this.changes === 0) {
@@ -1773,20 +1834,16 @@ export function deleteHistoryEntry(req, res) {
 // Delete account
 export function deleteAccount(req, res) {
   console.log('[DELETE] Starting account deletion');
-  console.log('[DELETE] Account ID:', req.params.id);
   const db = getDatabase();
-  const accountId = req.params.id;
-
-  if (!accountId) {
-    return res.status(400).json({ error: 'Account ID is required' });
-  }
+  const accountId = req.accountId || req.params.id;
+  console.log('[DELETE] Account ID:', accountId);
 
   // First, check if account exists
   console.log('[DELETE] Checking if account exists...');
   db.get('SELECT * FROM accounts WHERE id = ?', [accountId], (err, account) => {
     if (err) {
       console.error('[DELETE] Database error checking account:', err);
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: sanitizeDbError(err, 'Failed to find account') });
     }
 
     if (!account) {
@@ -1802,7 +1859,6 @@ export function deleteAccount(req, res) {
     db.run('DELETE FROM account_history WHERE account_id = ?', [accountId], (historyErr) => {
       if (historyErr) {
         console.error('[DELETE] Error deleting account history:', historyErr);
-        // Continue even if history deletion fails
       } else {
         console.log('[DELETE] Account history deleted');
       }
@@ -1811,7 +1867,6 @@ export function deleteAccount(req, res) {
       db.run('DELETE FROM screenshots WHERE account_id = ?', [accountId], (screenshotErr) => {
         if (screenshotErr) {
           console.error('[DELETE] Error deleting screenshots:', screenshotErr);
-          // Continue even if screenshot deletion fails
         } else {
           console.log('[DELETE] Screenshots deleted');
         }
@@ -1820,7 +1875,6 @@ export function deleteAccount(req, res) {
         db.run('DELETE FROM holdings WHERE account_id = ?', [accountId], (holdingsErr) => {
           if (holdingsErr) {
             console.error('[DELETE] Error deleting holdings:', holdingsErr);
-            // Continue even if holdings deletion fails
           } else {
             console.log('[DELETE] Holdings deleted');
           }
@@ -1829,7 +1883,6 @@ export function deleteAccount(req, res) {
           db.run('DELETE FROM transactions WHERE account_id = ?', [accountId], (transactionsErr) => {
             if (transactionsErr) {
               console.error('[DELETE] Error deleting transactions:', transactionsErr);
-              // Continue even if transactions deletion fails
             } else {
               console.log('[DELETE] Transactions deleted');
             }
@@ -1839,7 +1892,7 @@ export function deleteAccount(req, res) {
             db.run('DELETE FROM accounts WHERE id = ?', [accountId], function(deleteErr) {
               if (deleteErr) {
                 console.error('[DELETE] Error deleting account:', deleteErr);
-                return res.status(500).json({ error: deleteErr.message });
+                return res.status(500).json({ error: sanitizeDbError(deleteErr, 'Failed to delete account') });
               }
 
               if (this.changes === 0) {
