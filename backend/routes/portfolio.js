@@ -1605,6 +1605,14 @@ export function updateHoldingSymbol(req, res) {
 async function syncAccountBalanceFromHoldings(accountId, totalEur = null) {
   if (!accountId) return;
   const db = getDatabase();
+  const acctRow = await new Promise((resolve) => {
+    db.get('SELECT account_type FROM accounts WHERE id = ?', [accountId], (e, row) => resolve(row));
+  });
+  const acctType = acctRow?.account_type || '';
+  const balanceManagedTypes = ['p2p', 'savings', 'bank'];
+  if (balanceManagedTypes.includes(acctType)) {
+    return;
+  }
   if (totalEur != null && typeof totalEur === 'number' && !Number.isNaN(totalEur)) {
     await dbRun(db, 'UPDATE accounts SET balance = ? WHERE id = ?', [totalEur, accountId]);
     return;
