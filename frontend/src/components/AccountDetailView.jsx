@@ -536,7 +536,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  Add holding
+                  Add holding (manual)
                 </button>
               </div>
             ) : (
@@ -856,7 +856,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  Add holding
+                  Add holding (manual)
                 </button>
               </div>
             )}
