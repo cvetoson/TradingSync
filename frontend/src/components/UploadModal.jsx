@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { uploadScreenshot, getAccounts, createAccount, createHolding } from '../services/api';
+import { uploadScreenshot, getAccounts, createAccount, createHolding, updateAccountInterestRate } from '../services/api';
 
 const INVESTMENT_CATEGORIES = [
   { value: 'auto', label: 'Auto Detect', description: 'Let AI automatically detect the investment type from the screenshot', accountType: 'unknown' },
@@ -12,11 +12,13 @@ const INVESTMENT_CATEGORIES = [
   { value: 'alternative', label: 'Alternative Investments', description: 'Other investment types and platforms', accountType: 'unknown' }
 ];
 
-const MANUAL_ASSET_TYPES = [
-  { value: 'stock', label: 'Stock / ETF' },
-  { value: 'crypto', label: 'Cryptocurrency' },
-  { value: 'precious', label: 'Gold & Silver' }
-];
+// Same categories as upload (excluding Auto Detect); value for form state, accountType for createAccount, assetType for createHolding
+const MANUAL_ACCOUNT_TYPES = INVESTMENT_CATEGORIES.filter(c => c.value !== 'auto').map(cat => ({
+  value: cat.value,
+  label: cat.label,
+  accountType: cat.accountType,
+  assetType: cat.accountType === 'precious' ? 'precious' : cat.accountType === 'crypto' ? 'crypto' : cat.value === 'fixed-income' ? 'bond' : 'stock'
+}));
 
 export default function UploadModal({ onClose, onSuccess }) {
   const [mode, setMode] = useState('upload'); // 'upload' | 'manual'
@@ -34,7 +36,10 @@ export default function UploadModal({ onClose, onSuccess }) {
   const [manualSymbol, setManualSymbol] = useState('');
   const [manualQuantity, setManualQuantity] = useState('');
   const [manualPrice, setManualPrice] = useState('');
-  const [manualAssetType, setManualAssetType] = useState('stock');
+  const [manualAmount, setManualAmount] = useState('');
+  const [manualP2PInterestRate, setManualP2PInterestRate] = useState('');
+  const [manualPreciousPreset, setManualPreciousPreset] = useState('XAG'); // 'XAG' | 'XAU' | 'other'
+  const [manualAccountType, setManualAccountType] = useState('equities');
 
   useEffect(() => {
     if (mode === 'manual') {
@@ -79,19 +84,13 @@ export default function UploadModal({ onClose, onSuccess }) {
     }
   };
 
+  const isAmountOnlyCategory = ['p2p', 'savings'].includes(manualAccountType);
+  const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500';
+  const labelClass = 'block text-sm font-medium text-gray-700 mb-1';
+
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    const symbol = manualSymbol.trim().toUpperCase();
-    const qty = parseFloat(manualQuantity);
-    if (!symbol) {
-      setError('Please enter a symbol (e.g. TSLA, BTC)');
-      return;
-    }
-    if (isNaN(qty) || qty <= 0) {
-      setError('Please enter a valid quantity');
-      return;
-    }
     if (!createNewAccount && !selectedAccountId) {
       setError('Please select an account or create a new one');
       return;
@@ -101,15 +100,63 @@ export default function UploadModal({ onClose, onSuccess }) {
       return;
     }
 
+    const selectedType = MANUAL_ACCOUNT_TYPES.find(t => t.value === manualAccountType);
+    const accountTypeForAccount = selectedType?.accountType || 'stocks';
+    const assetTypeForHolding = selectedType?.assetType || 'stock';
+
+    let symbol, qty, price;
+    if (isAmountOnlyCategory) {
+      const amount = parseFloat(manualAmount);
+      if (isNaN(amount) || amount < 0) {
+        setError('Please enter a valid amount');
+        return;
+      }
+      symbol = 'CASH_BALANCE';
+      qty = 1;
+      price = amount;
+    } else {
+      if (manualAccountType === 'precious') {
+        symbol = manualPreciousPreset === 'other' ? manualSymbol.trim().toUpperCase() : manualPreciousPreset;
+        if (!symbol) {
+          setError('Please enter a symbol for other precious metals (e.g. XPT)');
+          return;
+        }
+      } else {
+        symbol = manualSymbol.trim().toUpperCase();
+        if (!symbol) {
+          setError('Please enter a symbol (e.g. TSLA, BTC, ISIN for bonds)');
+          return;
+        }
+      }
+      qty = parseFloat(manualQuantity);
+      if (isNaN(qty) || qty <= 0) {
+        setError('Please enter a valid quantity');
+        return;
+      }
+      if (manualAccountType === 'alternative') {
+        const p = manualPrice !== '' && manualPrice != null ? parseFloat(manualPrice) : NaN;
+        if (isNaN(p) || p < 0) {
+          setError('Please enter a price for alternative investments');
+          return;
+        }
+        price = p;
+      } else {
+        price = manualPrice !== '' && manualPrice != null ? parseFloat(manualPrice) : undefined;
+      }
+    }
+
     setUploading(true);
     try {
       let accountId = selectedAccountId;
       if (createNewAccount) {
-        const accountType = manualAssetType === 'crypto' ? 'crypto' : manualAssetType === 'precious' ? 'precious' : 'stocks';
-        const { account } = await createAccount(newAccountName.trim(), newAccountPlatform.trim() || 'Manual', accountType);
+        const { account } = await createAccount(newAccountName.trim(), newAccountPlatform.trim() || 'Manual', accountTypeForAccount);
         accountId = account.id;
+        if (accountTypeForAccount === 'p2p' && manualP2PInterestRate !== '' && manualP2PInterestRate != null) {
+          const ir = parseFloat(manualP2PInterestRate);
+          if (!isNaN(ir) && ir >= 0) await updateAccountInterestRate(accountId, ir);
+        }
       }
-      await createHolding(accountId, symbol, qty, manualPrice || undefined, undefined, manualAssetType);
+      await createHolding(accountId, symbol, qty, price, undefined, assetTypeForHolding);
       onSuccess();
     } catch (err) {
       setError(err.message || 'Failed to add holding. Please try again.');
@@ -118,7 +165,7 @@ export default function UploadModal({ onClose, onSuccess }) {
     }
   };
 
-  const holdingsAccounts = accounts.filter(a => ['stocks', 'crypto', 'precious'].includes(a.account_type || ''));
+  const holdingsAccounts = accounts.filter(a => ['stocks', 'crypto', 'precious', 'p2p', 'savings', 'bank', 'unknown'].includes(a.account_type || ''));
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -209,101 +256,166 @@ export default function UploadModal({ onClose, onSuccess }) {
         ) : (
           <form onSubmit={handleManualSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Account</label>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={createNewAccount} onChange={(e) => { setCreateNewAccount(e.target.checked); setSelectedAccountId(''); }} className="rounded" />
-                  <span className="text-sm">Create new account</span>
-                </label>
-                {!createNewAccount ? (
-                  <select
-                    value={selectedAccountId}
-                    onChange={(e) => setSelectedAccountId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select account</option>
-                    {holdingsAccounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.account_name || acc.platform} ({acc.account_type || 'stocks'})
-                      </option>
-                    ))}
-                    {holdingsAccounts.length === 0 && <option value="" disabled>No accounts yet — create one below</option>}
-                  </select>
-                ) : (
-                  <div className="space-y-2 pl-6">
-                    <input
-                      type="text"
-                      placeholder="Account name (e.g. Trading 212)"
-                      value={newAccountName}
-                      onChange={(e) => setNewAccountName(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Platform (e.g. Manual)"
-                      value={newAccountPlatform}
-                      onChange={(e) => setNewAccountPlatform(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Symbol</label>
-              <input
-                type="text"
-                placeholder="e.g. TSLA, BTC, XAU"
-                value={manualSymbol}
-                onChange={(e) => setManualSymbol(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
-              <input
-                type="number"
-                step="any"
-                min="0"
-                placeholder="e.g. 0.5"
-                value={manualQuantity}
-                onChange={(e) => setManualQuantity(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Price (optional — leave empty for live price)</label>
-              <input
-                type="number"
-                step="any"
-                min="0"
-                placeholder="Manual price or leave empty"
-                value={manualPrice}
-                onChange={(e) => setManualPrice(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Asset type</label>
+              <label className={labelClass}>Investment category</label>
               <select
-                value={manualAssetType}
-                onChange={(e) => setManualAssetType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={manualAccountType}
+                onChange={(e) => setManualAccountType(e.target.value)}
+                className={inputClass}
               >
-                {MANUAL_ASSET_TYPES.map(t => (
+                {MANUAL_ACCOUNT_TYPES.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
             </div>
-            {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">{error}</div>}
-            <div className="flex gap-3 pt-4">
+            <div>
+              <label className={labelClass}>Account</label>
+              <label className="flex items-center gap-2 cursor-pointer mb-2">
+                <input type="checkbox" checked={createNewAccount} onChange={(e) => { setCreateNewAccount(e.target.checked); setSelectedAccountId(''); }} className="rounded" />
+                <span className="text-sm">Create new account</span>
+              </label>
+              {!createNewAccount ? (
+                <select
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Select account</option>
+                  {holdingsAccounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.account_name || acc.platform} ({acc.account_type || 'stocks'})
+                    </option>
+                  ))}
+                  {holdingsAccounts.length === 0 && <option value="" disabled>No accounts yet — create one below</option>}
+                </select>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Account name (e.g. Trading 212)"
+                    value={newAccountName}
+                    onChange={(e) => setNewAccountName(e.target.value)}
+                    className={inputClass}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Platform (e.g. Manual)"
+                    value={newAccountPlatform}
+                    onChange={(e) => setNewAccountPlatform(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              )}
+            </div>
+
+            {isAmountOnlyCategory ? (
+              <>
+                <div>
+                  <label className={labelClass}>Amount (€)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="e.g. 1000"
+                    value={manualAmount}
+                    onChange={(e) => setManualAmount(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                {manualAccountType === 'p2p' && (
+                  <div>
+                    <label className={labelClass}>Interest rate (%) — optional</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="e.g. 12.5"
+                      value={manualP2PInterestRate}
+                      onChange={(e) => setManualP2PInterestRate(e.target.value)}
+                      className={inputClass}
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {manualAccountType === 'precious' && (
+                  <div>
+                    <label className={labelClass}>Gold & Silver type</label>
+                    <select
+                      value={manualPreciousPreset}
+                      onChange={(e) => setManualPreciousPreset(e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="XAG">Silver (XAG)</option>
+                      <option value="XAU">Gold (XAU)</option>
+                      <option value="other">Other (enter symbol below)</option>
+                    </select>
+                  </div>
+                )}
+                {(manualAccountType !== 'precious' || manualPreciousPreset === 'other') && (
+                  <div>
+                    <label className={labelClass}>
+                      {manualAccountType === 'fixed-income' ? 'ISIN or bond name' : manualAccountType === 'precious' ? 'Symbol (e.g. XPT for platinum)' : 'Symbol'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={manualAccountType === 'fixed-income' ? 'e.g. XS2829209720' : manualAccountType === 'precious' ? 'e.g. XPT' : 'e.g. TSLA, BTC, XAU'}
+                      value={manualSymbol}
+                      onChange={(e) => setManualSymbol(e.target.value.toUpperCase())}
+                      className={inputClass}
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className={labelClass}>
+                    {manualAccountType === 'fixed-income' ? 'Number of bonds' : 'Quantity'}
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder={manualAccountType === 'fixed-income' ? 'e.g. 10' : 'e.g. 0.5'}
+                    value={manualQuantity}
+                    onChange={(e) => setManualQuantity(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>
+                    {manualAccountType === 'fixed-income' ? 'Price per bond (optional)' : manualAccountType === 'alternative' ? 'Price (required)' : 'Price (optional — leave empty for live price)'}
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder={manualAccountType === 'alternative' ? 'e.g. 100' : 'Leave empty for live price'}
+                    value={manualPrice}
+                    onChange={(e) => setManualPrice(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              </>
+            )}
+
+            {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">{error}</div>}
+            <div className="flex gap-3 pt-2">
               <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors" disabled={uploading}>Cancel</button>
               <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={uploading}>
-                {uploading ? 'Adding...' : 'Add Holding'}
+                {uploading ? 'Adding...' : isAmountOnlyCategory ? 'Add balance' : 'Add holding'}
               </button>
             </div>
-            <div className="mt-4 p-3 bg-blue-50 rounded-md">
-              <p className="text-xs text-blue-800">💡 <strong>Tip:</strong> Add holdings you know you own (e.g. 0.5 shares of TSLA). Leave price empty to fetch live price automatically.</p>
+            <div className="p-3 bg-blue-50 rounded-md">
+              <p className="text-xs text-blue-800">
+                {isAmountOnlyCategory
+                  ? <>💡 <strong>Tip:</strong> Enter the current balance and, for P2P, optional interest rate so projections stay accurate.</>
+                  : manualAccountType === 'fixed-income'
+                    ? <>💡 <strong>Tip:</strong> For bonds, use ISIN or name, number of bonds, and optional price per bond (or leave price empty if you only track quantity).</>
+                    : manualAccountType === 'precious'
+                      ? <>💡 <strong>Tip:</strong> Pick Silver (XAG) or Gold (XAU), or choose Other and enter a symbol (e.g. XPT). Leave price empty for live price.</>
+                      : manualAccountType === 'alternative'
+                        ? <>💡 <strong>Tip:</strong> For alternative investments, enter quantity and price (required).</>
+                        : <>💡 <strong>Tip:</strong> Add holdings you know you own (e.g. 0.5 shares of TSLA). Leave price empty to fetch live price automatically.</>}
+              </p>
             </div>
           </form>
         )}

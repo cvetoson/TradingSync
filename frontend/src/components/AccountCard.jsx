@@ -23,13 +23,19 @@ export default function AccountCard({ account, currency, onUpdate, onViewDetails
   return (
     <>
       <div
-        className="rounded-lg p-4 border transition-colors relative group"
+        className="rounded-lg p-4 border transition-colors relative group cursor-pointer"
         style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}
         onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-hover)'}
         onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+        onClick={() => onViewDetails && onViewDetails(account)}
+        title="Click to view detailed history"
+        role="button"
+        tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onViewDetails && onViewDetails(account); } }}
       >
         <button
-          onClick={() => setShowDetailsModal(true)}
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setShowDetailsModal(true); }}
           className="absolute top-3.5 right-3.5 transition-opacity opacity-0 group-hover:opacity-100"
           style={{ color: 'var(--text-3)' }}
           title="Edit account details"
@@ -42,10 +48,8 @@ export default function AccountCard({ account, currency, onUpdate, onViewDetails
 
         <div className="pr-6">
           <h4
-            className="font-semibold text-sm leading-tight cursor-pointer transition"
+            className="font-semibold text-sm leading-tight transition"
             style={{ color: 'var(--text-1)' }}
-            onClick={() => onViewDetails && onViewDetails(account)}
-            title="Click to view detailed history"
           >
             {account.accountName || account.platform || typeConfig.label}
           </h4>

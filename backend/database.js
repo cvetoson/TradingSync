@@ -1,11 +1,14 @@
 import sqlite3 from 'sqlite3';
 import pg from 'pg';
 import fs from 'fs';
+import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+// Load backend/.env before reading env (server.js imports us before its dotenv.config runs)
+dotenv.config({ path: join(__dirname, '.env') });
 
 // Railway: DATABASE_PUBLIC_URL = reachable from local machine (use for dev/seed)
 // DATABASE_URL/DATABASE_PRIVATE_URL = internal (Railway only, use in production)
@@ -105,6 +108,32 @@ async function initPostgres() {
     )
   `);
 
+  // Ensure new auth columns exist on existing PostgreSQL databases (backwards compatible)
+  const userColsRes = await run(
+    `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'users'
+    `
+  );
+  const userCols = (userColsRes.rows || []).map((r) => r.column_name);
+  if (!userCols.includes('email_verified')) {
+    await run(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0`);
+    await run(`UPDATE users SET email_verified = 1 WHERE email_verified IS NULL`);
+  }
+  if (!userCols.includes('email_verification_token')) {
+    await run(`ALTER TABLE users ADD COLUMN email_verification_token TEXT`);
+  }
+  if (!userCols.includes('email_verification_expires')) {
+    await run(`ALTER TABLE users ADD COLUMN email_verification_expires TIMESTAMP`);
+  }
+  if (!userCols.includes('password_reset_token')) {
+    await run(`ALTER TABLE users ADD COLUMN password_reset_token TEXT`);
+  }
+  if (!userCols.includes('password_reset_expires')) {
+    await run(`ALTER TABLE users ADD COLUMN password_reset_expires TIMESTAMP`);
+  }
+
   await run(`
     CREATE TABLE IF NOT EXISTS accounts (
       id SERIAL PRIMARY KEY,
@@ -190,63 +219,63 @@ export function initDatabase() {
   const db = getDatabase();
 
   return new Promise((resolve, reject) => {
-    db.serialize(() => {
-      db.run(`
-        CREATE TABLE IF NOT EXISTS users (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          email TEXT UNIQUE NOT NULL,
-          password_hash TEXT NOT NULL,
-          display_name TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
-      db.run(`
-        CREATE TABLE IF NOT EXISTS accounts (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          platform TEXT NOT NULL,
-          account_name TEXT,
-          account_type TEXT,
-          balance REAL DEFAULT 0,
-          interest_rate REAL,
-          currency TEXT DEFAULT 'EUR',
-          last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-          screenshot_path TEXT,
-          raw_data TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          user_id INTEGER REFERENCES users(id)
-        )
-      `);
-
-      db.all(`PRAGMA table_info(accounts)`, (err, cols) => {
-        if (!err && cols && !cols.some((c) => c.name === 'user_id')) {
-          db.run(`ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id)`);
-        }
-      });
-
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        display_name TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (createErr) => {
+      if (createErr) return reject(createErr);
       db.all(`PRAGMA table_info(users)`, (err, cols) => {
-        if (!err && cols) {
-          if (!cols.some((c) => c.name === 'email_verified')) {
-            db.run(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0`);
-            db.run(`UPDATE users SET email_verified = 1`);
-          }
-          if (!cols.some((c) => c.name === 'email_verification_token')) {
-            db.run(`ALTER TABLE users ADD COLUMN email_verification_token TEXT`);
-          }
-          if (!cols.some((c) => c.name === 'email_verification_expires')) {
-            db.run(`ALTER TABLE users ADD COLUMN email_verification_expires DATETIME`);
-          }
-          if (!cols.some((c) => c.name === 'password_reset_token')) {
-            db.run(`ALTER TABLE users ADD COLUMN password_reset_token TEXT`);
-          }
-          if (!cols.some((c) => c.name === 'password_reset_expires')) {
-            db.run(`ALTER TABLE users ADD COLUMN password_reset_expires DATETIME`);
-          }
+        if (err) return reject(err);
+        const has = (name) => cols.some((c) => c.name === name);
+        const steps = [];
+        if (!has('email_verified')) {
+          steps.push((next) => db.run(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0`, next));
+          steps.push((next) => db.run(`UPDATE users SET email_verified = 1 WHERE email_verified IS NULL`, next));
         }
+        if (!has('email_verification_token')) steps.push((next) => db.run(`ALTER TABLE users ADD COLUMN email_verification_token TEXT`, next));
+        if (!has('email_verification_expires')) steps.push((next) => db.run(`ALTER TABLE users ADD COLUMN email_verification_expires DATETIME`, next));
+        if (!has('password_reset_token')) steps.push((next) => db.run(`ALTER TABLE users ADD COLUMN password_reset_token TEXT`, next));
+        if (!has('password_reset_expires')) steps.push((next) => db.run(`ALTER TABLE users ADD COLUMN password_reset_expires DATETIME`, next));
+        function runStep(i) {
+          if (i >= steps.length) return runRestOfInit();
+          steps[i]((e) => { if (e) return reject(e); runStep(i + 1); });
+        }
+        runStep(0);
       });
+    });
 
-      db.run(`
+    function runRestOfInit() {
+      db.serialize(() => {
+        db.run(`
+          CREATE TABLE IF NOT EXISTS accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            platform TEXT NOT NULL,
+            account_name TEXT,
+            account_type TEXT,
+            balance REAL DEFAULT 0,
+            interest_rate REAL,
+            currency TEXT DEFAULT 'EUR',
+            last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+            screenshot_path TEXT,
+            raw_data TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            user_id INTEGER REFERENCES users(id)
+          )
+        `);
+
+        db.all(`PRAGMA table_info(accounts)`, (err, cols) => {
+          if (!err && cols && !cols.some((c) => c.name === 'user_id')) {
+            db.run(`ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id)`);
+          }
+        });
+
+        db.run(`
         CREATE TABLE IF NOT EXISTS holdings (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           account_id INTEGER,
@@ -313,6 +342,7 @@ export function initDatabase() {
         }
       );
     });
+  }
   });
 }
 
