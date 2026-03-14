@@ -6,8 +6,6 @@ import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import AccountDetailView from './components/AccountDetailView';
 import PlatformDetailView from './components/PlatformDetailView';
-import AnalyticsPage from './components/AnalyticsPage';
-import ReportsPage from './components/ReportsPage';
 import Login from './components/Login';
 import Register from './components/Register';
 import CheckEmailPage from './components/CheckEmailPage';
@@ -60,7 +58,6 @@ function DashboardContent() {
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [selectedPlatform, setSelectedPlatform] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [activePage, setActivePage] = useState('portfolio');
 
   useEffect(() => { loadPortfolio(); }, [refreshTrigger]);
 
@@ -100,26 +97,13 @@ function DashboardContent() {
 
         {/* Nav */}
         <nav className="flex-1 px-2 lg:px-3 space-y-1">
-          {[
-            { id: 'portfolio', label: 'Portfolio', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /> },
-            { id: 'analytics', label: 'Analytics', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /> },
-            { id: 'reports', label: 'Reports', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /> },
-          ].map(item => (
-            <button
-              key={item.id}
-              onClick={() => setActivePage(item.id)}
-              className="w-full flex items-center gap-3 px-2 lg:px-3 py-2.5 rounded-lg transition text-sm"
-              style={activePage === item.id
-                ? { background: 'var(--sidebar-active-bg)', color: 'var(--sidebar-active-text)' }
-                : { color: 'var(--sidebar-text)' }}
-              title={item.label}
-            >
-              <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {item.icon}
-              </svg>
-              <span className="hidden lg:block font-medium">{item.label}</span>
-            </button>
-          ))}
+          <div className="flex items-center gap-3 px-2 lg:px-3 py-2.5 rounded-lg"
+            style={{ background: 'var(--sidebar-active-bg)', color: 'var(--sidebar-active-text)' }}>
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+            </svg>
+            <span className="hidden lg:block text-sm font-medium">Portfolio</span>
+          </div>
         </nav>
 
         {/* Bottom actions */}
@@ -156,9 +140,7 @@ function DashboardContent() {
         {/* Top bar */}
         <header className="h-14 flex items-center justify-between px-6 shrink-0 border-b"
           style={{ borderColor: 'var(--border)', background: 'var(--bg-sidebar)' }}>
-          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>
-            {activePage === 'portfolio' ? 'Portfolio' : activePage === 'analytics' ? 'Analytics' : 'Reports'}
-          </h2>
+          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>Portfolio</h2>
           <button
             type="button"
             onClick={() => setShowSettings(true)}
@@ -187,10 +169,6 @@ function DashboardContent() {
                 <span className="text-sm">Loading portfolio...</span>
               </div>
             </div>
-          ) : activePage === 'analytics' ? (
-            <AnalyticsPage portfolioData={portfolioData} currency={portfolioData?.currency || 'EUR'} />
-          ) : activePage === 'reports' ? (
-            <ReportsPage portfolioData={portfolioData} currency={portfolioData?.currency || 'EUR'} />
           ) : (
             <Dashboard
               portfolioData={portfolioData}
