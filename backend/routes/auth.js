@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { getDatabase } from '../database.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
 import { logError } from '../lib/errorLog.js';
+import { validateId, validateEmail, validatePassword, validateString, sanitizeDbError } from '../lib/validation.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
@@ -17,56 +18,70 @@ export async function register(req, res) {
   const db = getDatabase();
   const { email, password, confirmPassword, displayName } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+  // Validate email
+  const emailValidation = validateEmail(email);
+  if (!emailValidation.valid) {
+    return res.status(400).json({ error: emailValidation.error });
+  }
+
+  // Validate password
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.valid) {
+    return res.status(400).json({ error: passwordValidation.error });
   }
 
   if (password !== confirmPassword) {
     return res.status(400).json({ error: 'Passwords do not match' });
   }
 
-  const emailNorm = String(email).trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
-    return res.status(400).json({ error: 'Invalid email format' });
+  // Validate display name (optional)
+  const displayNameValidation = validateString(displayName, 'Display name', { 
+    required: false, 
+    maxLength: 100 
+  });
+  if (!displayNameValidation.valid) {
+    return res.status(400).json({ error: displayNameValidation.error });
   }
 
-  if (String(password).length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
-  }
+  const emailNorm = emailValidation.value;
+  const displayNameVal = displayNameValidation.value;
 
-  const hash = await bcrypt.hash(password, 10);
-  const displayNameVal = (displayName || '').trim() || null;
+  try {
+    const hash = await bcrypt.hash(password, 10);
 
-  // TODO: Add email verification – require verify before login, send verification email on register
-  db.run(
-    `INSERT INTO users (email, password_hash, display_name, email_verified, email_verification_token, email_verification_expires)
-     VALUES (?, ?, ?, 1, NULL, NULL)`,
-    [emailNorm, hash, displayNameVal],
-    function (err) {
-      if (err) {
-        const msg = (err.message || '').toLowerCase();
-        if (msg.includes('unique') || msg.includes('duplicate key')) {
-          logError('POST /auth/register', 'duplicate_email', 409);
-          return res.status(409).json({
-            error: 'This email is already registered. Sign in or use Forgot password to reset.',
-          });
+    db.run(
+      `INSERT INTO users (email, password_hash, display_name, email_verified, email_verification_token, email_verification_expires)
+       VALUES (?, ?, ?, 1, NULL, NULL)`,
+      [emailNorm, hash, displayNameVal],
+      function (err) {
+        if (err) {
+          const msg = (err.message || '').toLowerCase();
+          if (msg.includes('unique') || msg.includes('duplicate key')) {
+            logError('POST /auth/register', 'duplicate_email', 409);
+            return res.status(409).json({
+              error: 'This email is already registered. Sign in or use Forgot password to reset.',
+            });
+          }
+          logError('POST /auth/register', err.message, 500);
+          return res.status(500).json({ error: 'Registration failed. Please try again.' });
         }
-        logError('POST /auth/register', err.message, 500);
-        return res.status(500).json({ error: 'Registration failed. Please try again.' });
-      }
 
-      const jwtToken = jwt.sign(
-        { userId: this.lastID, email: emailNorm },
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRES_IN }
-      );
-      res.status(201).json({
-        success: true,
-        token: jwtToken,
-        user: { id: this.lastID, email: emailNorm, displayName: displayNameVal },
-      });
-    }
-  );
+        const jwtToken = jwt.sign(
+          { userId: this.lastID, email: emailNorm },
+          JWT_SECRET,
+          { expiresIn: JWT_EXPIRES_IN }
+        );
+        res.status(201).json({
+          success: true,
+          token: jwtToken,
+          user: { id: this.lastID, email: emailNorm, displayName: displayNameVal },
+        });
+      }
+    );
+  } catch (hashError) {
+    logError('POST /auth/register', hashError.message, 500);
+    return res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
 }
 
 export async function verifyEmail(req, res) {
@@ -256,7 +271,7 @@ export async function getProfile(req, res) {
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
   db.get('SELECT id, email, display_name FROM users WHERE id = ?', [userId], (err, user) => {
-    if (err) return res.status(500).json({ error: err.message });
+    if (err) return res.status(500).json({ error: sanitizeDbError(err, 'Failed to load profile') });
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ id: user.id, email: user.email, displayName: user.display_name });
   });
@@ -268,9 +283,18 @@ export async function updateProfile(req, res) {
   const { displayName } = req.body;
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
-  const name = (displayName ?? '').trim() || null;
+  // Validate display name
+  const displayNameValidation = validateString(displayName, 'Display name', { 
+    required: false, 
+    maxLength: 100 
+  });
+  if (!displayNameValidation.valid) {
+    return res.status(400).json({ error: displayNameValidation.error });
+  }
+
+  const name = displayNameValidation.value;
   db.run('UPDATE users SET display_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [name, userId], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
+    if (err) return res.status(500).json({ error: sanitizeDbError(err, 'Failed to update profile') });
     if (this.changes === 0) return res.status(404).json({ error: 'User not found' });
     res.json({ success: true, displayName: name });
   });
@@ -282,28 +306,37 @@ export async function changePassword(req, res) {
   const { oldPassword, newPassword, confirmPassword } = req.body;
 
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
-  if (!oldPassword || !newPassword) {
-    return res.status(400).json({ error: 'Old password and new password are required' });
+  
+  if (!oldPassword) {
+    return res.status(400).json({ error: 'Current password is required' });
   }
+  
+  // Validate new password
+  const passwordValidation = validatePassword(newPassword);
+  if (!passwordValidation.valid) {
+    return res.status(400).json({ error: passwordValidation.error });
+  }
+  
   if (newPassword !== confirmPassword) {
     return res.status(400).json({ error: 'New passwords do not match' });
   }
-  if (String(newPassword).length < 8) {
-    return res.status(400).json({ error: 'New password must be at least 8 characters' });
-  }
 
   db.get('SELECT password_hash FROM users WHERE id = ?', [userId], async (err, user) => {
-    if (err) return res.status(500).json({ error: err.message });
+    if (err) return res.status(500).json({ error: sanitizeDbError(err, 'Failed to change password') });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const ok = await bcrypt.compare(oldPassword, user.password_hash);
-    if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+    try {
+      const ok = await bcrypt.compare(oldPassword, user.password_hash);
+      if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
 
-    const hash = await bcrypt.hash(newPassword, 10);
-    db.run('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [hash, userId], function (updateErr) {
-      if (updateErr) return res.status(500).json({ error: updateErr.message });
-      res.json({ success: true, message: 'Password updated' });
-    });
+      const hash = await bcrypt.hash(newPassword, 10);
+      db.run('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [hash, userId], function (updateErr) {
+        if (updateErr) return res.status(500).json({ error: sanitizeDbError(updateErr, 'Failed to update password') });
+        res.json({ success: true, message: 'Password updated' });
+      });
+    } catch (hashError) {
+      return res.status(500).json({ error: 'Failed to change password' });
+    }
   });
 }
 
@@ -346,22 +379,37 @@ export function optionalAuth(req, res, next) {
 }
 
 export function requireAccountAuth(req, res, next) {
-  const accountId = req.params.id;
-  if (!accountId) return next();
+  const accountIdParam = req.params.id;
+  if (!accountIdParam) return next();
+  
+  const idValidation = validateId(accountIdParam);
+  if (!idValidation.valid) {
+    return res.status(400).json({ error: idValidation.error });
+  }
+  
+  const accountId = idValidation.value;
   const userId = req.userId;
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
   const db = getDatabase();
   db.get('SELECT id FROM accounts WHERE id = ? AND (user_id = ? OR user_id IS NULL)', [accountId, userId], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
+    if (err) return res.status(500).json({ error: sanitizeDbError(err, 'Failed to verify account access') });
     if (!row) return res.status(404).json({ error: 'Account not found' });
+    req.accountId = accountId;
     next();
   });
 }
 
 export function requireHistoryAuth(req, res, next) {
-  const historyId = req.params.id;
-  if (!historyId) return next();
+  const historyIdParam = req.params.id;
+  if (!historyIdParam) return next();
+  
+  const idValidation = validateId(historyIdParam);
+  if (!idValidation.valid) {
+    return res.status(400).json({ error: idValidation.error });
+  }
+  
+  const historyId = idValidation.value;
   const userId = req.userId;
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
@@ -370,16 +418,24 @@ export function requireHistoryAuth(req, res, next) {
     'SELECT h.id FROM account_history h JOIN accounts a ON h.account_id = a.id WHERE h.id = ? AND (a.user_id = ? OR a.user_id IS NULL)',
     [historyId, userId],
     (err, row) => {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) return res.status(500).json({ error: sanitizeDbError(err, 'Failed to verify history access') });
       if (!row) return res.status(404).json({ error: 'History entry not found' });
+      req.historyId = historyId;
       next();
     }
   );
 }
 
 export function requireHoldingAuth(req, res, next) {
-  const holdingId = req.params.id;
-  if (!holdingId) return next();
+  const holdingIdParam = req.params.id;
+  if (!holdingIdParam) return next();
+  
+  const idValidation = validateId(holdingIdParam);
+  if (!idValidation.valid) {
+    return res.status(400).json({ error: idValidation.error });
+  }
+  
+  const holdingId = idValidation.value;
   const userId = req.userId;
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
@@ -388,8 +444,9 @@ export function requireHoldingAuth(req, res, next) {
     'SELECT h.id FROM holdings h JOIN accounts a ON h.account_id = a.id WHERE h.id = ? AND (a.user_id = ? OR a.user_id IS NULL)',
     [holdingId, userId],
     (err, row) => {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) return res.status(500).json({ error: sanitizeDbError(err, 'Failed to verify holding access') });
       if (!row) return res.status(404).json({ error: 'Holding not found' });
+      req.holdingId = holdingId;
       next();
     }
   );
