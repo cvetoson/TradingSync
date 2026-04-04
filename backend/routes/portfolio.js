@@ -1,7 +1,7 @@
 import { getDatabase } from '../database.js';
 import { analyzeScreenshot } from '../services/aiService.js';
 import { calculatePortfolioValue } from '../services/calculations.js';
-import { fetchCurrentPrice, getProjectedPrice3M, fetchUsdToEurRate, fetchGbpToEurRate } from '../services/marketData.js';
+import { fetchCurrentPrice, fetchCurrentPriceWithCurrency, getProjectedPrice3M, fetchUsdToEurRate, fetchGbpToEurRate, fetchChfToEurRate } from '../services/marketData.js';
 import { 
   validateId, 
   validateString, 
@@ -29,8 +29,27 @@ function dbRun(db, sql, params) {
   });
 }
 
+/** Insert a balance snapshot into account_history (best-effort). */
+async function insertAccountHistorySnapshot(accountId) {
+  if (!accountId) return;
+  const db = getDatabase();
+  try {
+    const row = await new Promise((resolve) => {
+      db.get('SELECT balance, interest_rate, currency FROM accounts WHERE id = ?', [accountId], (_e, r) => resolve(r || null));
+    });
+    if (!row) return;
+    await dbRun(
+      db,
+      'INSERT INTO account_history (account_id, balance, interest_rate, currency) VALUES (?, ?, ?, ?)',
+      [accountId, row.balance ?? 0, row.interest_rate ?? null, row.currency ?? 'EUR']
+    );
+  } catch (e) {
+    // best-effort only
+  }
+}
+
 /** Compute holding value in EUR from raw DB data; applies pence→GBP for LSE European ETFs */
-function holdingValueInEur(h, usdToEur, gbpToEur) {
+function holdingValueInEur(h, usdToEur, gbpToEur, chfToEur = null) {
   const q = Number(h.quantity) || 0;
   let p = Number(h.current_price) ?? Number(h.purchase_price) ?? 0;
   const sym = String(h.symbol || '').trim().toUpperCase();
@@ -41,6 +60,7 @@ function holdingValueInEur(h, usdToEur, gbpToEur) {
   let value = q * p;
   if (currency === 'USD' || isUsdLseEtf) value *= usdToEur;
   else if (currency === 'GBP' || isPence) value *= gbpToEur;
+  else if (currency === 'CHF') value *= (chfToEur || 0.95);
   return value;
 }
 
@@ -630,11 +650,16 @@ async function createHoldingHandler(req, res, accountId) {
         if (insertErr) {
           return res.status(500).json({ error: sanitizeDbError(insertErr, 'Failed to create holding') });
         }
-        syncAccountBalanceFromHoldings(accountId);
-        res.status(201).json({
-          success: true,
-          holding: { id: this.lastID, symbol: sym, quantity: qty, currentPrice }
-        });
+        // Keep account balance + history in sync for manual actions
+        syncAccountBalanceFromHoldings(accountId)
+          .then(() => insertAccountHistorySnapshot(accountId))
+          .catch(() => {})
+          .finally(() => {
+            res.status(201).json({
+              success: true,
+              holding: { id: this.lastID, symbol: sym, quantity: qty, currentPrice }
+            });
+          });
       }
     );
   });
@@ -1019,9 +1044,10 @@ export function getAccountHoldings(req, res) {
         const normalizedSymbol = (s) => String(s || '').trim().toUpperCase();
         const num = (v) => (v != null && v !== '' ? Number(v) : 0);
         // Live rate from Yahoo (USDEUR=X) so e.g. 79.67 USD → 67.40 EUR; fallback env or current default
-        const [fetchedRate, gbpToEur] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate()]);
+        const [fetchedRate, gbpToEur, chfToEur] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate(), fetchChfToEurRate()]);
         const USD_TO_EUR = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || fetchedRate || 0.846;
         const GBP_TO_EUR = gbpToEur || 1.17;
+        const CHF_TO_EUR = chfToEur || 0.95;
         const holdingsWithPrices = await Promise.all(
           (holdings || []).map(async (holding) => {
             const quantity = num(holding.quantity);
@@ -1070,8 +1096,11 @@ export function getAccountHoldings(req, res) {
               priceCurrency = (holding.currency || 'EUR').toUpperCase();
             } else if (shouldFetchPrice) {
               let fetchedPrice = null;
+              let fetchedCurrency = null;
               try {
-                fetchedPrice = await fetchCurrentPrice(holding.symbol, holding.asset_type);
+                const quote = await fetchCurrentPriceWithCurrency(holding.symbol, holding.asset_type);
+                fetchedPrice = quote?.price ?? null;
+                fetchedCurrency = quote?.currency ?? null;
                 currentPrice = fetchedPrice;
               } catch (e) {
                 currentPrice = null;
@@ -1079,31 +1108,21 @@ export function getAccountHoldings(req, res) {
               if (currentPrice != null) {
                 priceCameFromFetch = true;
                 priceLastUpdated = new Date().toISOString();
-                const holdingCurrency = (holding.currency || 'USD').toUpperCase();
-                const assetType = (holding.asset_type || holding.assetType || '').toLowerCase();
                 const symInner = normalizedSymbol(holding.symbol);
-                // Yahoo returns: LSE GBP ETFs = pence; LSE USD ETFs (ECAR) + US stocks (NVDA, META) + XAG/XAU/crypto = USD
-                // EUR native (IFX.DE, TEF.MC, MLAA.PA) = EUR; do NOT convert
-                const isGbpPrice = LSE_GBP_ETF_SYMBOLS.includes(symInner);
-                const isChfPrice = LSE_CHF_SYMBOLS.includes(symInner); // marketData already returns EUR
-                const isEurNative = EUR_NATIVE_SYMBOLS.includes(symInner); // XETRA/Madrid/Paris = EUR
-                const isUsdPrice = (symInner === 'XAG' || symInner === 'XAU') || assetType === 'crypto' ||
-                  LSE_USD_ETF_SYMBOLS.includes(symInner) || (!isGbpPrice && !isChfPrice && !isEurNative); // Default: non-GBP/CHF/EUR = USD
-                if (isChfPrice || isEurNative) {
-                  priceCurrency = 'EUR';
-                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
-                } else if (isGbpPrice && holdingCurrency === 'EUR') {
-                  currentPrice = currentPrice * GBP_TO_EUR;
-                  priceCurrency = 'EUR';
-                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
-                } else if (isUsdPrice) {
-                  currentPrice = currentPrice * USD_TO_EUR;
-                  priceCurrency = 'EUR';
-                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
-                } else {
-                  priceCurrency = holdingCurrency;
-                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, holding.id]);
-                }
+                // Keep native currency in DB; convert to EUR only for totals at response-time.
+                // For CHF symbols: marketData returns CHF price with currency=CHF (no forced conversion).
+                // For LSE GBP ETFs: marketData normalizes pence->GBP with currency=GBP.
+                // For EUR native symbols: currency=EUR.
+                // For most US stocks/crypto/precious: currency=USD.
+                const quoteCurrency = (fetchedCurrency || holding.currency || 'USD').toUpperCase();
+                // Force known EUR-native symbols to EUR (prevents stale incorrect currency stored earlier)
+                const effectiveCurrency = EUR_NATIVE_SYMBOLS.includes(symInner) ? 'EUR' : quoteCurrency;
+                priceCurrency = effectiveCurrency;
+                holding._updatePromise = dbRun(
+                  db,
+                  'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
+                  [currentPrice, effectiveCurrency, holding.id]
+                );
               } else {
                 // Fetch failed - use cached price from last successful fetch if available; show "Live (X ago)" not yellow Screenshot
                 let cachedPrice = holding.current_price != null ? Number(holding.current_price) : null;
@@ -1125,15 +1144,10 @@ export function getAccountHoldings(req, res) {
               }
             }
 
-            // When using CACHED price only: LSE GBP ETF may be stored in pence; convert. Skip when we just fetched (already in EUR).
+            // When using CACHED price only: LSE GBP ETF may be stored in pence; convert.
             if (!priceCameFromFetch && currentPrice != null && currentPrice >= 1000 && currentPrice < 50000 && LSE_GBP_ETF_SYMBOLS.includes(sym)) {
               currentPrice = currentPrice / 100;
-              if ((holding.currency || 'EUR').toUpperCase() === 'EUR') {
-                currentPrice = currentPrice * GBP_TO_EUR;
-                priceCurrency = 'EUR';
-              } else {
-                priceCurrency = 'GBP';
-              }
+              priceCurrency = 'GBP';
             }
             const purchasePriceNum = holding.purchase_price != null ? Number(holding.purchase_price) : 0;
             let totalValue = 0;
@@ -1145,7 +1159,11 @@ export function getAccountHoldings(req, res) {
             const gainLoss = totalValue - purchaseValue;
             const gainLossPercent = purchaseValue > 0 ? (gainLoss / purchaseValue) * 100 : 0;
 
-            const totalValueEur = priceCurrency === 'USD' ? totalValue * USD_TO_EUR : priceCurrency === 'GBP' ? totalValue * GBP_TO_EUR : totalValue;
+            const totalValueEur =
+              priceCurrency === 'USD' ? totalValue * USD_TO_EUR :
+              priceCurrency === 'GBP' ? totalValue * GBP_TO_EUR :
+              priceCurrency === 'CHF' ? totalValue * CHF_TO_EUR :
+              totalValue;
 
             return {
               ...holding,
@@ -1548,7 +1566,9 @@ export async function addHoldingsFromScreenshot(req, res) {
 
         const currency = extractedData.currency || account.currency || 'EUR';
         await saveHoldingsMerge(accountId, holdings, currency);
-        syncAccountBalanceFromHoldings(accountId);
+        // After modifying holdings, recompute balance and write a history snapshot
+        await syncAccountBalanceFromHoldings(accountId).catch(() => {});
+        await insertAccountHistorySnapshot(accountId).catch(() => {});
 
         res.json({
           success: true,
@@ -1581,13 +1601,15 @@ export async function verifyHoldingSymbol(req, res) {
   const isIsin = /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(symbol);
 
   try {
-    const price = await fetchCurrentPrice(symbol, assetType);
+    const quote = await fetchCurrentPriceWithCurrency(symbol, assetType);
+    const price = quote?.price;
+    const currency = quote?.currency || null;
     if (price != null && !Number.isNaN(Number(price))) {
       return res.json({
         found: true,
         symbol,
         price: Number(price),
-        currency: 'USD'
+        currency: currency || 'USD'
       });
     }
     const error = isIsin
@@ -1669,16 +1691,17 @@ async function syncAccountBalanceFromHoldings(accountId, totalEur = null) {
     await dbRun(db, 'UPDATE accounts SET balance = ? WHERE id = ?', [totalEur, accountId]);
     return;
   }
-  const [usdRate, gbpRate] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate()]);
+  const [usdRate, gbpRate, chfRate] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate(), fetchChfToEurRate()]);
   const usdToEur = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || usdRate || 0.846;
   const gbpToEur = gbpRate || 1.17;
+  const chfToEur = chfRate || 0.95;
   db.all(
     'SELECT symbol, quantity, current_price, purchase_price, currency FROM holdings WHERE account_id = ?',
     [accountId],
     (err, holdings) => {
       if (err) return;
       const list = holdings || [];
-      const total = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpToEur), 0);
+      const total = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpToEur, chfToEur), 0);
       db.run('UPDATE accounts SET balance = ? WHERE id = ?', [total, accountId], () => {});
     }
   );
@@ -1713,7 +1736,11 @@ export function updateHoldingQuantity(req, res) {
         return res.status(404).json({ error: 'Holding not found' });
       }
       db.get('SELECT account_id FROM holdings WHERE id = ?', [holdingId], (_e, row) => {
-        if (row) syncAccountBalanceFromHoldings(row.account_id);
+        if (row) {
+          syncAccountBalanceFromHoldings(row.account_id)
+            .then(() => insertAccountHistorySnapshot(row.account_id))
+            .catch(() => {});
+        }
       });
       res.json({
         success: true,
@@ -1759,7 +1786,11 @@ export function updateHoldingPrice(req, res) {
         return res.status(404).json({ error: 'Holding not found' });
       }
       db.get('SELECT account_id FROM holdings WHERE id = ?', [holdingId], (_e, row) => {
-        if (row) syncAccountBalanceFromHoldings(row.account_id);
+        if (row) {
+          syncAccountBalanceFromHoldings(row.account_id)
+            .then(() => insertAccountHistorySnapshot(row.account_id))
+            .catch(() => {});
+        }
       });
       res.json({
         success: true,
@@ -1791,8 +1822,12 @@ export function deleteHolding(req, res) {
       if (this.changes === 0) {
         return res.status(404).json({ error: 'Holding not found' });
       }
-      syncAccountBalanceFromHoldings(accountId);
-      res.json({ success: true, message: 'Holding removed', holdingId });
+      syncAccountBalanceFromHoldings(accountId)
+        .then(() => insertAccountHistorySnapshot(accountId))
+        .catch(() => {})
+        .finally(() => {
+          res.json({ success: true, message: 'Holding removed', holdingId });
+        });
     });
   });
 }

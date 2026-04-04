@@ -543,13 +543,18 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
               <div className="overflow-x-auto">
                 {(() => {
                   const getHoldingType = (h) => ((h.asset_type || h.assetType || 'stock') || '').toLowerCase();
-                  const filteredHoldings = holdingsTab === 'all'
+                  const filteredHoldingsRaw = holdingsTab === 'all'
                     ? holdings
                     : holdings.filter((h) => {
                         const t = getHoldingType(h);
                         if (holdingsTab === 'stock') return ['stock', 'etf'].includes(t);
                         return t === holdingsTab;
                       });
+                  const filteredHoldings = [...filteredHoldingsRaw].sort((a, b) => {
+                    const av = Number(a.totalValueEur ?? a.totalValue ?? 0);
+                    const bv = Number(b.totalValueEur ?? b.totalValue ?? 0);
+                    return bv - av;
+                  });
                   return (
                 <table className="w-full">
                   <thead>

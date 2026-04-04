@@ -49,6 +49,12 @@ async function yahooChartPrice(ticker, withMeta = false) {
   }
 }
 
+// (removed duplicate fetchCurrentPriceWithCurrency; see later implementation below)
+
+// Simple in-memory FX cache to reduce Yahoo calls
+const _fxToEurCache = new Map(); // key: CUR (e.g. 'USD'), value: { rate, atMs }
+const FX_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
 /**
  * Fetch current USD to EUR rate from Yahoo (USDEUR=X = EUR per 1 USD).
  * Used for XAG/XAU and other USD→EUR conversions so values match Yahoo/Revolut.
@@ -86,8 +92,39 @@ export async function fetchChfToEurRate() {
 }
 
 /**
+ * Fetch FX rate to EUR for an arbitrary currency code.
+ * Returns EUR per 1 unit of currency (e.g. USDEUR=X, RONEUR=X).
+ * @param {string} currencyCode - e.g. 'USD', 'GBP', 'CHF', 'RON'
+ * @returns {Promise<number|null>}
+ */
+export async function fetchFxToEurRate(currencyCode) {
+  const cur = String(currencyCode || '').trim().toUpperCase();
+  if (!cur || cur === 'EUR') return 1;
+
+  const cached = _fxToEurCache.get(cur);
+  if (cached && (Date.now() - cached.atMs) < FX_CACHE_TTL_MS) return cached.rate;
+
+  // Yahoo uses e.g. USDEUR=X, GBPEUR=X, CHFEUR=X, RONEUR=X (when available)
+  try {
+    const ticker = `${cur}EUR=X`;
+    const rate = await yahooChartPrice(ticker);
+    // Basic sanity bounds: rate must be positive and not absurdly huge.
+    if (rate != null && Number.isFinite(rate) && rate > 0 && rate < 1000) {
+      _fxToEurCache.set(cur, { rate, atMs: Date.now() });
+      return rate;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetches current price for a stock, bond (or ISIN), or crypto symbol
  * Uses Yahoo Finance API (free). For ISINs/bonds, tries search then chart.
+ *
+ * IMPORTANT: this returns a NUMBER only (legacy). Prefer fetchCurrentPriceWithCurrency
+ * if you need correct native currency.
  */
 export async function fetchCurrentPrice(symbol, assetType = 'stock') {
   try {
@@ -151,12 +188,6 @@ export async function fetchCurrentPrice(symbol, assetType = 'stock') {
       // SMSD.L (Samsung GDR): Yahoo price ~1072 vs broker ~2205 USD/GDR; multiplier 2205/1072≈2.06 so 0.115*price→€213
       const SMSD_GDR_MULTIPLIER = 2.06;
       if (price != null && sym === 'SMSD' && usedLseTicker) price = price * SMSD_GDR_MULTIPLIER;
-      // LSE CHF (Swiss): convert to EUR for consistent output
-      if (price != null && lseChfEtfs.includes(sym)) {
-        const chfToEur = await fetchChfToEurRate();
-        const CHF_TO_EUR = chfToEur || 0.95;
-        price = price * CHF_TO_EUR;
-      }
       if (price != null && preciousTickers) return price;
       for (let i = 1; price == null && preciousTickers && i < preciousTickers.length; i++) {
         price = await yahooChartPrice(preciousTickers[i]);
@@ -206,6 +237,160 @@ export async function fetchCurrentPrice(symbol, assetType = 'stock') {
     return null;
   } catch (error) {
     console.error(`Error fetching price for ${symbol}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Fetch current price + native currency for a symbol.
+ * - Stocks/ETFs/Bonds: Yahoo chart meta currency.
+ * - LSE GBP ETFs may return pence values; we normalize to GBP while keeping currency=GBP.
+ * - Crypto: CoinGecko USD.
+ *
+ * @returns {Promise<{price:number, currency:string, ticker?:string} | null>}
+ */
+export async function fetchCurrentPriceWithCurrency(symbol, assetType = 'stock') {
+  try {
+    const effectiveType = (assetType === 'precious') ? 'stock' : assetType;
+    const sym = String(symbol).trim().toUpperCase();
+
+    if (effectiveType === 'stock' || effectiveType === 'etf' || effectiveType === 'bond') {
+      const preciousTickers = sym === 'XAG' ? ['XAGUSD', 'SI=F'] : sym === 'XAU' ? ['XAUUSD', 'GC=F'] : null;
+      const lseGbpEtfs = ['EQQQ', 'IITU', 'VUSA', 'VWRL', 'EIMI', 'VFEM', 'XAIX'];
+      const lseUsdEtfs = ['ECAR', 'NVDA', 'META', 'SMSD'];
+      const lseUsdStocks = ['LASE'];
+      const lseChfStocks = ['ABBN'];
+      const xetraStocks = ['IFX'];
+      const madridStocks = ['TEF'];
+      const parisStocks = ['MLAA'];
+      const tryUsFirst = ['META', 'NVDA'];
+      const tryLseFirst = lseGbpEtfs.includes(sym) || lseUsdEtfs.includes(sym) || lseChfStocks.includes(sym) || lseUsdStocks.includes(sym);
+
+      let ticker = preciousTickers ? preciousTickers[0] : sym;
+      const isIsin = looksLikeIsin(sym);
+      if ((isIsin || assetType === 'bond') && !preciousTickers) {
+        const resolved = await yahooSearchTicker(sym);
+        if (resolved) ticker = resolved;
+      }
+
+      /** @type {{price:number, currency:string}|null} */
+      let meta = null;
+      let usedLseTicker = false;
+
+      if (tryUsFirst.includes(sym) && !preciousTickers) {
+        meta = await yahooChartPrice(sym, true);
+        if (!meta) {
+          meta = await yahooChartPrice(sym + '.L', true);
+          usedLseTicker = !!meta;
+          if (meta) ticker = sym + '.L';
+        } else {
+          ticker = sym;
+        }
+      } else if (lseChfStocks.includes(sym) && !preciousTickers) {
+        meta = await yahooChartPrice(sym + '.SW', true);
+        if (meta) ticker = sym + '.SW';
+        if (!meta) {
+          meta = await yahooChartPrice(sym + '.L', true);
+          usedLseTicker = !!meta;
+          if (meta) ticker = sym + '.L';
+        }
+        if (!meta) {
+          meta = await yahooChartPrice(sym, true);
+          if (meta) ticker = sym;
+        }
+      } else if (tryLseFirst && !preciousTickers) {
+        meta = await yahooChartPrice(sym + '.L', true);
+        usedLseTicker = !!meta;
+        if (meta) ticker = sym + '.L';
+        if (!meta) {
+          meta = await yahooChartPrice(sym, true);
+          if (meta) ticker = sym;
+        }
+      } else if (xetraStocks.includes(sym) && !preciousTickers) {
+        meta = await yahooChartPrice(sym + '.DE', true);
+        if (meta) ticker = sym + '.DE';
+        if (!meta) {
+          meta = await yahooChartPrice(sym, true);
+          if (meta) ticker = sym;
+        }
+      } else if (madridStocks.includes(sym) && !preciousTickers) {
+        meta = await yahooChartPrice(sym + '.MC', true);
+        if (meta) ticker = sym + '.MC';
+        if (!meta) {
+          meta = await yahooChartPrice(sym, true);
+          if (meta) ticker = sym;
+        }
+      } else if (parisStocks.includes(sym) && !preciousTickers) {
+        meta = await yahooChartPrice(sym + '.PA', true);
+        if (meta) ticker = sym + '.PA';
+        if (!meta) {
+          meta = await yahooChartPrice(sym, true);
+          if (meta) ticker = sym;
+        }
+      } else {
+        meta = await yahooChartPrice(ticker, true);
+      }
+
+      // Precious fallback tickers
+      if (!meta && preciousTickers) {
+        for (let i = 1; i < preciousTickers.length && !meta; i++) {
+          meta = await yahooChartPrice(preciousTickers[i], true);
+          if (meta) ticker = preciousTickers[i];
+        }
+      }
+      if (!meta) return null;
+
+      let price = Number(meta.price);
+      let currency = (meta.currency || '').toUpperCase() || null;
+
+      // Normalize LSE GBP ETF pence -> GBP, keep currency GBP
+      if (usedLseTicker && lseGbpEtfs.includes(sym) && price >= 1000 && price < 50000) {
+        price = price / 100;
+      }
+
+      // SMSD.L GDR adjustment (keep currency as returned by Yahoo)
+      const SMSD_GDR_MULTIPLIER = 2.06;
+      if (usedLseTicker && sym === 'SMSD' && price != null) {
+        price = price * SMSD_GDR_MULTIPLIER;
+      }
+
+      // If Yahoo doesn't provide currency for some reason, infer from known lists
+      if (!currency) {
+        if (preciousTickers) currency = 'USD';
+        else if (lseChfStocks.includes(sym)) currency = 'CHF';
+        else if (lseGbpEtfs.includes(sym)) currency = 'GBP';
+        else if (xetraStocks.includes(sym) || madridStocks.includes(sym) || parisStocks.includes(sym)) currency = 'EUR';
+        else currency = 'USD';
+      }
+
+      return { price, currency, ticker };
+    }
+
+    if (assetType === 'crypto') {
+      const SYMBOL_TO_COINGECKO_ID = {
+        btc: 'bitcoin', eth: 'ethereum', usdt: 'tether', bnb: 'binancecoin', sol: 'solana',
+        usdc: 'usd-coin', xrp: 'ripple', ada: 'cardano', doge: 'dogecoin', avax: 'avalanche-2',
+        trx: 'tron', dot: 'polkadot', link: 'chainlink', matic: 'matic-network', shib: 'shiba-inu',
+        dai: 'dai', ltc: 'litecoin', bch: 'bitcoin-cash', xlm: 'stellar', uni: 'uniswap',
+        atom: 'cosmos', etc: 'ethereum-classic', xmr: 'monero', near: 'near', fil: 'filecoin',
+        apt: 'aptos', arb: 'arbitrum', op: 'optimism', inj: 'injective-protocol', stx: 'blockstack',
+        pepe: 'pepe', wld: 'worldcoin-wld', sui: 'sui', zro: 'layerzero'
+      };
+      const symbolLower = String(symbol || '').toLowerCase();
+      const coinId = SYMBOL_TO_COINGECKO_ID[symbolLower] || symbolLower;
+      const response = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coinId)}&vs_currencies=usd`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } }
+      );
+      if (!response.ok) return null;
+      const data = await response.json();
+      const result = data && data[coinId] && data[coinId].usd;
+      if (result == null) return null;
+      return { price: Number(result), currency: 'USD' };
+    }
+
+    return null;
+  } catch (e) {
     return null;
   }
 }
