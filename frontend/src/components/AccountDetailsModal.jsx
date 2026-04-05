@@ -1,5 +1,44 @@
 import { useState, useEffect } from 'react';
-import { updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, deleteAccount } from '../services/api';
+import { updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, updateAccountTag, deleteAccount } from '../services/api';
+
+/** Parse amount from free text: 10000, 10,000, 10.000 (EU thousands), 1.234,56 (EU), 1,234.56 (US). Separators optional. */
+function parseMoneyInput(raw) {
+  const s = String(raw ?? '')
+    .trim()
+    .replace(/\s/g, '')
+    .replace(/\u202f/g, '');
+  if (s === '') return NaN;
+  const lastComma = s.lastIndexOf(',');
+  const lastDot = s.lastIndexOf('.');
+  if (lastComma !== -1 && lastDot !== -1) {
+    if (lastComma > lastDot) {
+      return parseFloat(s.replace(/\./g, '').replace(',', '.'));
+    }
+    return parseFloat(s.replace(/,/g, ''));
+  }
+  if (lastDot !== -1 && lastComma === -1) {
+    const parts = s.split('.');
+    if (parts.length > 1 && parts.every((p) => /^\d+$/.test(p))) {
+      const lastSeg = parts[parts.length - 1];
+      if (parts.length === 2 && lastSeg.length <= 2) {
+        return parseFloat(`${parts[0]}.${lastSeg}`);
+      }
+      return parseFloat(parts.join(''));
+    }
+    return parseFloat(s.replace(/,/g, ''));
+  }
+  if (lastComma !== -1) {
+    const parts = s.split(',');
+    if (parts.length === 2) {
+      const after = parts[1];
+      if (after.length <= 2 && parts[0].length > 0) {
+        return parseFloat(parts[0].replace(/\./g, '') + '.' + after);
+      }
+    }
+    return parseFloat(s.replace(/,/g, ''));
+  }
+  return parseFloat(s);
+}
 
 const ACCOUNT_TYPES = [
   { value: 'p2p',     label: 'P2P Lending',           color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30', ring: 'ring-emerald-500' },
@@ -17,6 +56,7 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
   const [accountType, setAccountType] = useState(account.accountType || account.account_type || 'unknown');
   const [currentValue, setCurrentValue] = useState((account.currentValue || account.balance || 0).toString());
   const [interestRate, setInterestRate] = useState((account.interestRate || account.interest_rate || '').toString());
+  const [tag, setTag] = useState(account.tag != null ? String(account.tag) : '');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -27,6 +67,7 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
     setAccountType(account.accountType || account.account_type || 'unknown');
     setCurrentValue((account.currentValue || account.balance || 0).toString());
     setInterestRate((account.interestRate || account.interest_rate || '').toString());
+    setTag(account.tag != null ? String(account.tag) : '');
   }, [account]);
 
   const handleSave = async () => {
@@ -35,13 +76,27 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
       const updates = [];
       if (accountName.trim() !== (account.accountName || '')) { await updateAccountName(account.id, accountName.trim()); updates.push('name'); }
       if (platform.trim() !== (account.platform || '')) { await updateAccountPlatform(account.id, platform.trim()); updates.push('platform'); }
-      if (accountType !== account.accountType) { await updateAccountType(account.id, accountType); updates.push('type'); }
-      const newBalance = parseFloat(currentValue);
+      const prevType = account.accountType || account.account_type || 'unknown';
+      if (accountType !== prevType) { await updateAccountType(account.id, accountType); updates.push('type'); }
+      const newBalance = parseMoneyInput(currentValue);
       const oldBalance = account.currentValue || account.balance || 0;
-      if (!isNaN(newBalance) && newBalance !== oldBalance) { await updateAccountBalance(account.id, newBalance); updates.push('balance'); }
-      const newIR = interestRate.trim() === '' ? null : parseFloat(interestRate);
+      if (Number.isNaN(newBalance)) {
+        alert('Please enter a valid amount for Current Value (e.g. 10000 or 10,000).');
+        setIsSaving(false);
+        return;
+      }
+      if (newBalance !== oldBalance) { await updateAccountBalance(account.id, newBalance); updates.push('balance'); }
+      const newIR = interestRate.trim() === '' ? null : parseMoneyInput(interestRate);
+      if (interestRate.trim() !== '' && Number.isNaN(newIR)) {
+        alert('Please enter a valid interest rate (e.g. 7.5 or 7,5).');
+        setIsSaving(false);
+        return;
+      }
       const oldIR = account.interestRate || account.interest_rate || null;
-      if (newIR !== oldIR && (newIR === null || !isNaN(newIR))) { await updateAccountInterestRate(account.id, newIR); updates.push('interestRate'); }
+      if (newIR !== oldIR && (newIR === null || !Number.isNaN(newIR))) { await updateAccountInterestRate(account.id, newIR); updates.push('interestRate'); }
+      const newTag = tag.trim();
+      const oldTag = (account.tag != null ? String(account.tag) : '').trim();
+      if (newTag !== oldTag) { await updateAccountTag(account.id, newTag); updates.push('tag'); }
       if (updates.length > 0 && onUpdate) onUpdate();
       onClose();
     } catch (error) {
@@ -71,7 +126,7 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
   const labelCls = "block text-xs font-medium mb-1.5 uppercase tracking-wider";
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+    <div className="fixed inset-0 flex items-center justify-center z-[100] p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
       <div className="rounded-xl border shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
         style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <div className="flex justify-between items-center mb-6">
@@ -94,6 +149,11 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
             <p className="mt-1 text-xs" style={{ color: 'var(--text-4)' }}>The name of the app or platform where this account is held</p>
           </div>
           <div>
+            <label className={labelCls} style={{ color: 'var(--text-3)' }}>Tag (optional)</label>
+            <input type="text" value={tag} onChange={e => setTag(e.target.value)} className={inputCls} style={inputStyle} placeholder="e.g. Tag 1, invested for family" />
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-4)' }}>Group accounts on the Dashboard allocation chart (By Tag).</p>
+          </div>
+          <div>
             <label className={labelCls} style={{ color: 'var(--text-3)' }}>Investment Category</label>
             <div className="grid grid-cols-2 gap-2">
               {ACCOUNT_TYPES.map(type => (
@@ -110,13 +170,34 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
               <label className={labelCls} style={{ color: 'var(--text-3)' }}>Current Value</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }}>{currency || 'EUR'}</span>
-                <input type="number" step="0.01" value={currentValue} onChange={e => setCurrentValue(e.target.value)} className={`${inputCls} pl-12`} style={inputStyle} placeholder="0.00" />
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={currentValue}
+                  onChange={(e) => setCurrentValue(e.target.value)}
+                  className={`${inputCls} pl-12`}
+                  style={inputStyle}
+                  placeholder="10000 or 10,000"
+                />
               </div>
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-4)' }}>
+                Plain number or with thousands separators (e.g. <span className="font-mono">10000</span> or <span className="font-mono">10,000</span>). EU decimals like <span className="font-mono">1.234,56</span> are accepted.
+              </p>
             </div>
             <div>
               <label className={labelCls} style={{ color: 'var(--text-3)' }}>Interest Rate (% APY)</label>
               <div className="relative">
-                <input type="number" step="0.01" value={interestRate} onChange={e => setInterestRate(e.target.value)} className={`${inputCls} pr-8`} style={inputStyle} placeholder="0.00" />
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={interestRate}
+                  onChange={(e) => setInterestRate(e.target.value)}
+                  className={`${inputCls} pr-8`}
+                  style={inputStyle}
+                  placeholder="e.g. 7.5 or 7,5"
+                />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: 'var(--text-3)' }}>%</span>
               </div>
             </div>
@@ -146,7 +227,7 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
       </div>
 
       {showDeleteConfirm && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background: 'rgba(0,0,0,0.7)' }}>
+        <div className="fixed inset-0 flex items-center justify-center z-[110] p-4" style={{ background: 'rgba(0,0,0,0.7)' }}>
           <div className="rounded-xl border shadow-2xl max-w-sm w-full p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
             <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--text-1)' }}>Delete Account</h3>
             <p className="text-sm mb-6" style={{ color: 'var(--text-2)' }}>

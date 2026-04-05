@@ -102,7 +102,7 @@ export default function ReportsPage({ portfolioData, currency }) {
   const handlePortfolioSummary = () => {
     setLoading('summary', true);
     try {
-      const header = csvRow(['Name', 'Platform', 'Type', 'Balance', 'Currency', 'Last Updated']);
+      const header = csvRow(['Name', 'Platform', 'Type', 'Tag', 'Balance', 'Currency', 'Last Updated']);
       const rows = accounts.map(a => {
         const type = (a.accountType || a.account_type || 'unknown').toLowerCase();
         const label = INSTRUMENT_LABELS[type] || type;
@@ -110,6 +110,7 @@ export default function ReportsPage({ portfolioData, currency }) {
           a.accountName || a.platform || 'Unknown',
           a.platform || '',
           label,
+          a.tag || '',
           a.balance ?? a.currentValue ?? 0,
           cur,
           a.lastUpdated || a.updated_at || new Date().toISOString()

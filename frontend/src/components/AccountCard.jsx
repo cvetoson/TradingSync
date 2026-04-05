@@ -54,6 +54,15 @@ export default function AccountCard({ account, currency, onUpdate, onViewDetails
             {account.accountName || account.platform || typeConfig.label}
           </h4>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{account.platform || 'Unknown Platform'}</p>
+          {account.tag && (
+            <span
+              className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium max-w-full truncate"
+              style={{ background: 'var(--bg-card)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+              title={account.tag}
+            >
+              {account.tag}
+            </span>
+          )}
         </div>
 
         <div className="mt-3">

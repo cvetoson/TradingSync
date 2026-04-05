@@ -17,6 +17,17 @@ import ResetPasswordPage from './components/ResetPasswordPage';
 import SettingsModal from './components/SettingsModal';
 import { getPortfolioSummary, getAccountHoldings } from './services/api';
 
+/** PlatformDetailView category tab → UploadModal manual form `manualAccountType` value */
+const PLATFORM_CATEGORY_TO_MANUAL = {
+  stocks: 'equities',
+  crypto: 'crypto',
+  p2p: 'p2p',
+  precious: 'precious',
+  savings: 'savings',
+  bank: 'fixed-income',
+  unknown: 'alternative'
+};
+
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
@@ -56,6 +67,7 @@ function DashboardContent() {
   const [portfolioData, setPortfolioData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadPrefill, setUploadPrefill] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [selectedPlatform, setSelectedPlatform] = useState(null);
@@ -78,6 +90,7 @@ function DashboardContent() {
 
   const handleUploadSuccess = () => {
     setShowUploadModal(false);
+    setUploadPrefill(null);
     setRefreshTrigger(prev => prev + 1);
   };
 
@@ -194,7 +207,7 @@ function DashboardContent() {
           ) : (
             <Dashboard
               portfolioData={portfolioData}
-              onUploadClick={() => setShowUploadModal(true)}
+              onUploadClick={() => { setUploadPrefill(null); setShowUploadModal(true); }}
               onRefresh={loadPortfolio}
               onViewAccountDetails={(account) => setSelectedAccount(account)}
               onViewPlatformDetails={(platform) => setSelectedPlatform(platform)}
@@ -205,7 +218,13 @@ function DashboardContent() {
 
       {/* Modals */}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
-      {showUploadModal && <UploadModal onClose={() => setShowUploadModal(false)} onSuccess={handleUploadSuccess} />}
+      {showUploadModal && (
+        <UploadModal
+          prefill={uploadPrefill}
+          onClose={() => { setShowUploadModal(false); setUploadPrefill(null); }}
+          onSuccess={handleUploadSuccess}
+        />
+      )}
 
       {selectedPlatform && (
         <PlatformDetailView
@@ -213,7 +232,18 @@ function DashboardContent() {
           currency={portfolioData?.currency || 'EUR'}
           onClose={() => setSelectedPlatform(null)}
           onViewAccountDetails={() => {}}
-          onAddNewAccount={() => { setSelectedPlatform(null); setShowUploadModal(true); }}
+          onAddNewAccount={(opts) => {
+            if (opts?.platform && opts?.category) {
+              setUploadPrefill({
+                platform: opts.platform,
+                manualAccountType: PLATFORM_CATEGORY_TO_MANUAL[opts.category] || 'p2p'
+              });
+            } else {
+              setUploadPrefill(null);
+            }
+            setSelectedPlatform(null);
+            setShowUploadModal(true);
+          }}
           onUpdate={async () => {
             const data = await getPortfolioSummary();
             setPortfolioData(data);
@@ -238,7 +268,7 @@ function DashboardContent() {
             if (accountId && isStockCrypto) { try { await getAccountHoldings(accountId); } catch (_) {} }
             setRefreshTrigger(prev => prev + 1);
           }}
-          onAddNewAccount={() => { setSelectedAccount(null); setShowUploadModal(true); }}
+          onAddNewAccount={() => { setUploadPrefill(null); setSelectedAccount(null); setShowUploadModal(true); }}
           onUpdate={async () => {
             const data = await getPortfolioSummary();
             setPortfolioData(data);

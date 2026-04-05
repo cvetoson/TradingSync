@@ -194,10 +194,15 @@ export default function AnalyticsPage({ portfolioData, currency }) {
 
   return (
     <div className="space-y-5">
-      {/* Portfolio Performance Over Time */}
+      {/* Recorded portfolio value from history (uploads / manual updates)—not continuous market performance */}
       <div className="rounded-xl border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Portfolio Performance Over Time</h3>
+        <div className="flex items-start justify-between gap-4 mb-5">
+          <div>
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Recorded portfolio value over time</h3>
+            <p className="text-xs mt-1 max-w-md" style={{ color: 'var(--text-3)' }}>
+              From your uploads and account updates—when data was saved—not a live measure of how holdings moved in the market.
+            </p>
+          </div>
           <div className="flex rounded-md p-0.5 border" style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}>
             {TIME_RANGES.map(r => (
               <button
@@ -236,7 +241,7 @@ export default function AnalyticsPage({ portfolioData, currency }) {
               <Tooltip
                 contentStyle={tooltipStyle}
                 labelStyle={{ color: 'var(--text-2)', fontSize: '11px', fontWeight: 500 }}
-                formatter={(value) => [fmt(value, cur), 'Portfolio Value']}
+                formatter={(value) => [fmt(value, cur), 'Recorded value']}
               />
               <Legend wrapperStyle={{ fontSize: '12px', color: 'var(--text-2)' }} />
               <Line
@@ -246,7 +251,7 @@ export default function AnalyticsPage({ portfolioData, currency }) {
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 4, fill: '#3b82f6' }}
-                name="Portfolio Value"
+                name="Recorded value"
               />
             </LineChart>
           </ResponsiveContainer>

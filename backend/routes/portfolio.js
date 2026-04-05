@@ -1,12 +1,12 @@
 import { getDatabase } from '../database.js';
 import { analyzeScreenshot } from '../services/aiService.js';
 import { calculatePortfolioValue } from '../services/calculations.js';
-import { fetchCurrentPrice, getProjectedPrice3M, fetchUsdToEurRate, fetchGbpToEurRate } from '../services/marketData.js';
+import { fetchCurrentPrice, getProjectedPrice3M, fetchUsdToEurRate, fetchGbpToEurRate, fetchHkdToEurRate, yahooSearchTicker } from '../services/marketData.js';
 
 const LSE_GBP_ETF_SYMBOLS = ['EQQQ', 'IITU', 'VUSA', 'VWRL', 'EIMI', 'VFEM', 'XAIX'];
 const LSE_USD_ETF_SYMBOLS = ['ECAR', 'NVDA', 'META', 'SMSD'];
 const LSE_CHF_SYMBOLS = ['ABBN']; // Swiss stocks; marketData returns EUR (CHF converted)
-const EUR_NATIVE_SYMBOLS = ['IFX', 'TEF', 'MLAA']; // XETRA/Madrid/Paris - Yahoo returns EUR, do NOT convert
+const EUR_NATIVE_SYMBOLS = ['IFX', 'TEF', 'MLAA', 'DTE']; // XETRA/Madrid/Paris; DTE fetched as DTE.DE (IBIS/Xetra ~€31), not US DTE (~$150)
 
 /** Yahoo chart for these is already EUR (e.g. 2B76.DE iShares UCITS); must not apply USD→EUR. */
 function isEurNativeSymbol(sym, assetTypeLower) {
@@ -14,6 +14,8 @@ function isEurNativeSymbol(sym, assetTypeLower) {
   if (EUR_NATIVE_SYMBOLS.includes(s)) return true;
   const t = (assetTypeLower || 'stock').toLowerCase();
   if (t === 'bond' || t === 'crypto' || t === 'precious') return false;
+  // Pure numeric 3–5 digit symbols (e.g. 1211 SEHK) are not German WKN; WKN is alphanumeric like 2B76.
+  if (/^\d{3,5}$/.test(s)) return false;
   return /^[0-9][A-Z0-9]{3}$/.test(s);
 }
 
@@ -25,18 +27,21 @@ function dbRun(db, sql, params) {
 }
 
 /** Compute holding value in EUR from raw DB data; applies pence→GBP for LSE European ETFs */
-function holdingValueInEur(h, usdToEur, gbpToEur) {
+function holdingValueInEur(h, usdToEur, gbpToEur, hkdToEur) {
   const q = Number(h.quantity) || 0;
   let p = Number(h.current_price) ?? Number(h.purchase_price) ?? 0;
   const sym = String(h.symbol || '').trim().toUpperCase();
   const assetT = (h.asset_type || h.assetType || 'stock').toLowerCase();
-  const currency = isEurNativeSymbol(sym, assetT) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
+  let currency = isEurNativeSymbol(sym, assetT) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
+  if (sym.endsWith('.HK')) currency = 'HKD';
   const isPence = LSE_GBP_ETF_SYMBOLS.includes(sym) && p >= 1000 && p < 50000;
   const isUsdLseEtf = LSE_USD_ETF_SYMBOLS.includes(sym);
   if (isPence) p = p / 100;
   let value = q * p;
+  const hk = hkdToEur != null && hkdToEur > 0 ? hkdToEur : 0.11;
   if (currency === 'USD' || isUsdLseEtf) value *= usdToEur;
   else if (currency === 'GBP' || isPence) value *= gbpToEur;
+  else if (currency === 'HKD') value *= hk;
   return value;
 }
 
@@ -688,8 +693,9 @@ export function getPortfolioSummary(req, res) {
 
             // For stock/crypto/precious accounts, if we have holdings, use the sum of holdings in EUR (match detail view)
             if ((account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') && (account.holdings_count || 0) > 0) {
-              const [gbpToEur] = await Promise.all([fetchGbpToEurRate()]);
+              const [gbpToEur, hkdToEur] = await Promise.all([fetchGbpToEurRate(), fetchHkdToEurRate()]);
               const gbpRate = gbpToEur || 1.17;
+              const hkdRate = hkdToEur || 0.11;
               const holdingsResult = await new Promise((resolve) => {
                 db.all(
                   'SELECT symbol, quantity, current_price, purchase_price, currency FROM holdings WHERE account_id = ?',
@@ -700,7 +706,7 @@ export function getPortfolioSummary(req, res) {
                       return;
                     }
                     const list = holdings || [];
-                    const totalValueEur = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpRate), 0);
+                    const totalValueEur = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpRate, hkdRate), 0);
                     resolve({ totalValueEur });
                   }
                 );
@@ -728,7 +734,8 @@ export function getPortfolioSummary(req, res) {
               currency: account.currency,
               interestRate: account.interest_rate,
               lastUpdated: account.last_updated,
-              holdingsCount: account.holdings_count
+              holdingsCount: account.holdings_count,
+              tag: account.tag || null
             };
           } catch (e) {
             console.error('getPortfolioSummary account error:', account?.id, e);
@@ -742,7 +749,8 @@ export function getPortfolioSummary(req, res) {
               currency: account.currency,
               interestRate: account.interest_rate,
               lastUpdated: account.last_updated,
-              holdingsCount: account.holdings_count
+              holdingsCount: account.holdings_count,
+              tag: account.tag || null
             };
           }
         })
@@ -894,6 +902,39 @@ export function updateAccountType(req, res) {
   );
 }
 
+// Update account tag (optional label, e.g. "Tag 1", "Family" — free text, empty clears)
+export function updateAccountTag(req, res) {
+  const db = getDatabase();
+  const accountId = req.params.id;
+  const { tag } = req.body;
+
+  if (!accountId || tag === undefined) {
+    return res.status(400).json({ error: 'accountId and tag are required (use empty string to clear)' });
+  }
+
+  const normalized = typeof tag === 'string' ? tag.trim() : '';
+  const value = normalized.length > 0 ? normalized : null;
+
+  db.run(
+    'UPDATE accounts SET tag = ? WHERE id = ?',
+    [value, accountId],
+    function(err) {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+      res.json({
+        success: true,
+        message: 'Tag updated successfully',
+        accountId,
+        tag: value
+      });
+    }
+  );
+}
+
 // Update account platform
 export function updateAccountPlatform(req, res) {
   const db = getDatabase();
@@ -1038,9 +1079,10 @@ export function getAccountHoldings(req, res) {
         const normalizedSymbol = (s) => String(s || '').trim().toUpperCase();
         const num = (v) => (v != null && v !== '' ? Number(v) : 0);
         // Live rate from Yahoo (USDEUR=X) so e.g. 79.67 USD → 67.40 EUR; fallback env or current default
-        const [fetchedRate, gbpToEur] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate()]);
+        const [fetchedRate, gbpToEur, hkdToEur] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate(), fetchHkdToEurRate()]);
         const USD_TO_EUR = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || fetchedRate || 0.846;
         const GBP_TO_EUR = gbpToEur || 1.17;
+        const HKD_TO_EUR = hkdToEur || 0.11;
         const holdingsWithPrices = await Promise.all(
           (holdings || []).map(async (holding) => {
             const quantity = num(holding.quantity);
@@ -1072,11 +1114,13 @@ export function getAccountHoldings(req, res) {
             const forceRefetchSmsd = sym === 'SMSD' && currentPrice != null && currentPrice > 500;
             // META trades ~$600; cached €34 implies wrong ticker/source - force refetch
             const forceRefetchMeta = sym === 'META' && currentPrice != null && currentPrice < 100;
+            // DTE: plain Yahoo "DTE" is US utility (~$150→~€128); Xetra/IBIS listing is DTE.DE (~€31)
+            const forceRefetchDte = sym === 'DTE' && currentPrice != null && currentPrice > 45;
             // ABBN (ABB Swiss) ~CHF 80 = €76; cached €64 was USD conversion - force refetch for correct CHF→EUR
             const forceRefetchAbbn = sym === 'ABBN' && currentPrice != null && (currentPrice < 70 || currentPrice > 100);
             // EUR-native (IFX, TEF, MLAA): if stored as USD, was wrongly converted - force refetch to correct
             const forceRefetchEurNative = isEurNativeSymbol(sym, assetTypeLower) && (holding.currency || 'EUR').toUpperCase() === 'USD';
-            const shouldFetchPrice = currentPrice == null || !isPriceRecent || forceRefetchCrypto || forceRefetchWrongPrice || forceRefetchCorruptedLseGbp || forceRefetchSmsd || forceRefetchMeta || forceRefetchAbbn || forceRefetchEurNative;
+            const shouldFetchPrice = currentPrice == null || !isPriceRecent || forceRefetchCrypto || forceRefetchWrongPrice || forceRefetchCorruptedLseGbp || forceRefetchSmsd || forceRefetchMeta || forceRefetchAbbn || forceRefetchEurNative || forceRefetchDte;
             let priceFetchFailed = false;
             let priceLastUpdated = holding.last_updated || null;
             let priceCurrency = (holding.currency || 'EUR').toUpperCase();
@@ -1101,13 +1145,20 @@ export function getAccountHoldings(req, res) {
                 const holdingCurrency = (holding.currency || 'USD').toUpperCase();
                 const assetType = (holding.asset_type || holding.assetType || '').toLowerCase();
                 const symInner = normalizedSymbol(holding.symbol);
+                const isIsinSym = /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(symInner);
+                let listTickerForCurrency = symInner;
+                if (!isIsinSym && assetType !== 'bond' && /^\d{3,5}$/.test(symInner)) {
+                  const resolved = await yahooSearchTicker(symInner);
+                  if (resolved) listTickerForCurrency = normalizedSymbol(resolved);
+                }
+                const isHkdHolding = holdingCurrency === 'HKD' || listTickerForCurrency.endsWith('.HK');
                 // Yahoo returns: LSE GBP ETFs = pence; LSE USD ETFs (ECAR) + US stocks (NVDA, META) + XAG/XAU/crypto = USD
                 // EUR native (IFX.DE, TEF.MC, MLAA.PA) = EUR; do NOT convert
                 const isGbpPrice = LSE_GBP_ETF_SYMBOLS.includes(symInner);
                 const isChfPrice = LSE_CHF_SYMBOLS.includes(symInner); // marketData already returns EUR
                 const isEurNative = isEurNativeSymbol(symInner, assetType); // XETRA/Madrid/Paris + WKN-style e.g. 2B76 = EUR
                 const isUsdPrice = (symInner === 'XAG' || symInner === 'XAU') || assetType === 'crypto' ||
-                  LSE_USD_ETF_SYMBOLS.includes(symInner) || (!isGbpPrice && !isChfPrice && !isEurNative); // Default: non-GBP/CHF/EUR = USD
+                  LSE_USD_ETF_SYMBOLS.includes(symInner) || (!isGbpPrice && !isChfPrice && !isEurNative && !isHkdHolding); // Default: non-GBP/CHF/EUR/HKD = USD
                 if (isChfPrice || isEurNative) {
                   priceCurrency = 'EUR';
                   holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
@@ -1115,6 +1166,9 @@ export function getAccountHoldings(req, res) {
                   currentPrice = currentPrice * GBP_TO_EUR;
                   priceCurrency = 'EUR';
                   holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
+                } else if (isHkdHolding) {
+                  priceCurrency = 'HKD';
+                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'HKD', holding.id]);
                 } else if (isUsdPrice) {
                   currentPrice = currentPrice * USD_TO_EUR;
                   priceCurrency = 'EUR';
@@ -1164,7 +1218,10 @@ export function getAccountHoldings(req, res) {
             const gainLoss = totalValue - purchaseValue;
             const gainLossPercent = purchaseValue > 0 ? (gainLoss / purchaseValue) * 100 : 0;
 
-            const totalValueEur = priceCurrency === 'USD' ? totalValue * USD_TO_EUR : priceCurrency === 'GBP' ? totalValue * GBP_TO_EUR : totalValue;
+            const totalValueEur = priceCurrency === 'USD' ? totalValue * USD_TO_EUR
+              : priceCurrency === 'GBP' ? totalValue * GBP_TO_EUR
+                : priceCurrency === 'HKD' ? totalValue * HKD_TO_EUR
+                  : totalValue;
 
             return {
               ...holding,
@@ -1215,6 +1272,8 @@ export async function getHoldingsProjection(req, res) {
     return res.status(400).json({ error: 'accountId is required' });
   }
   const usdToEur = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || (await fetchUsdToEurRate()) || 0.846;
+  const gbpToEur = (await fetchGbpToEurRate()) || 1.17;
+  const hkdToEur = (await fetchHkdToEurRate()) || 0.11;
 
   db.get('SELECT * FROM accounts WHERE id = ?', [accountId], async (err, account) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -1242,15 +1301,22 @@ export async function getHoldingsProjection(req, res) {
           if (price == null || q <= 0) continue;
           const sym = String(h.symbol || '').trim().toUpperCase();
           const hAsset = (h.asset_type || h.assetType || 'stock').toLowerCase();
-          const currency = isEurNativeSymbol(sym, hAsset) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
+          let currency = isEurNativeSymbol(sym, hAsset) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
+          if (sym.endsWith('.HK')) currency = 'HKD';
           const valueNow = q * price;
-          const valueNowEur = currency === 'USD' ? valueNow * usdToEur : valueNow;
+          let valueNowEur = valueNow;
+          if (currency === 'USD' || LSE_USD_ETF_SYMBOLS.includes(sym)) valueNowEur = valueNow * usdToEur;
+          else if (currency === 'GBP') valueNowEur = valueNow * gbpToEur;
+          else if (currency === 'HKD') valueNowEur = valueNow * hkdToEur;
           totalNowEur += valueNowEur;
 
           const proj = await getProjectedPrice3M(h.symbol, price, h.asset_type || 'stock');
           const price3M = proj ? proj.projectedPrice : price;
           const value3M = q * price3M;
-          const value3MEur = currency === 'USD' ? value3M * usdToEur : value3M;
+          let value3MEur = value3M;
+          if (currency === 'USD' || LSE_USD_ETF_SYMBOLS.includes(sym)) value3MEur = value3M * usdToEur;
+          else if (currency === 'GBP') value3MEur = value3M * gbpToEur;
+          else if (currency === 'HKD') value3MEur = value3M * hkdToEur;
           total3MEur += value3MEur;
           perHolding.push({ symbol: h.symbol, currentPrice: price, projectedPrice3M: price3M, source: proj ? proj.source : null });
         }
@@ -1603,11 +1669,19 @@ export async function verifyHoldingSymbol(req, res) {
     const price = await fetchCurrentPrice(symbol, assetType);
     if (price != null && !Number.isNaN(Number(price))) {
       const eurNative = isEurNativeSymbol(symbol, assetType);
+      let currency = eurNative ? 'EUR' : 'USD';
+      if (!eurNative) {
+        if (symbol.endsWith('.HK')) currency = 'HKD';
+        else if (/^\d{3,5}$/.test(symbol)) {
+          const r = await yahooSearchTicker(symbol);
+          if (r && String(r).toUpperCase().endsWith('.HK')) currency = 'HKD';
+        }
+      }
       return res.json({
         found: true,
         symbol,
         price: Number(price),
-        currency: eurNative ? 'EUR' : 'USD'
+        currency
       });
     }
     const error = isIsin
@@ -1695,16 +1769,17 @@ async function syncAccountBalanceFromHoldings(accountId, totalEur = null) {
     await dbRun(db, 'UPDATE accounts SET balance = ? WHERE id = ?', [totalEur, accountId]);
     return;
   }
-  const [usdRate, gbpRate] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate()]);
+  const [usdRate, gbpRate, hkdRate] = await Promise.all([fetchUsdToEurRate(), fetchGbpToEurRate(), fetchHkdToEurRate()]);
   const usdToEur = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || usdRate || 0.846;
   const gbpToEur = gbpRate || 1.17;
+  const hkdToEur = hkdRate || 0.11;
   db.all(
     'SELECT symbol, quantity, current_price, purchase_price, currency FROM holdings WHERE account_id = ?',
     [accountId],
     (err, holdings) => {
       if (err) return;
       const list = holdings || [];
-      const total = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpToEur), 0);
+      const total = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpToEur, hkdToEur), 0);
       db.run('UPDATE accounts SET balance = ? WHERE id = ?', [total, accountId], () => {});
     }
   );
@@ -1763,7 +1838,7 @@ export function updateHoldingPrice(req, res) {
     return res.status(400).json({ error: 'price must be a valid positive number' });
   }
 
-  const currency = (currencyParam && ['USD', 'EUR'].includes(String(currencyParam).toUpperCase()))
+  const currency = (currencyParam && ['USD', 'EUR', 'HKD', 'GBP'].includes(String(currencyParam).toUpperCase()))
     ? String(currencyParam).toUpperCase()
     : null;
 

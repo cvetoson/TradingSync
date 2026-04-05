@@ -68,6 +68,27 @@ export default function PlatformDetailView({ platform, currency, onClose, onView
             <AccountCard key={account.id} account={account} currency={currency} onUpdate={onUpdate} onViewDetails={setSelectedAccount} />
           ))}
         </div>
+
+        {onAddNewAccount && (
+          <div className="mt-6 pt-5" style={{ borderTop: '1px solid var(--border)' }}>
+            <button
+              type="button"
+              onClick={() => onAddNewAccount({ platform: platform.name, category: currentCategory })}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
+              style={{ background: 'var(--bg-inner)', color: 'var(--text-1)', border: '1px solid var(--border)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add account on {platform.name}
+            </button>
+            <p className="text-xs mt-2 max-w-lg" style={{ color: 'var(--text-3)' }}>
+              Opens Add New with Add Manually selected; platform name and this tab’s category are pre-filled. You can change them before saving.
+            </p>
+          </div>
+        )}
       </div>
 
       {selectedAccount && (

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
@@ -11,9 +11,37 @@ const INSTRUMENT_LABELS = {
 const fmt = (value, currency = 'EUR') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2 }).format(value);
 
+const UNTAGGED_LABEL = 'Untagged';
+
+/** Group accounts by custom tag for pie + drill-down (categories = account types for PlatformDetailView tabs). */
+function buildTagPieData(accountList) {
+  const map = {};
+  for (const a of accountList) {
+    const raw = (a.tag || '').trim();
+    const label = raw.length > 0 ? raw : UNTAGGED_LABEL;
+    if (!map[label]) {
+      map[label] = { name: label, value: 0, accounts: [], categories: {} };
+    }
+    map[label].value += a.currentValue ?? a.balance ?? 0;
+    map[label].accounts.push(a);
+    const typ = (a.accountType || a.account_type || 'unknown').toLowerCase();
+    if (!map[label].categories[typ]) map[label].categories[typ] = [];
+    map[label].categories[typ].push(a);
+  }
+  return Object.values(map).sort((x, y) => y.value - x.value);
+}
+
+const VIEW_MODES = [
+  { id: 'platform', label: 'Platform' },
+  { id: 'instrument', label: 'Instrument' },
+  { id: 'tag', label: 'Tag' }
+];
+
 export default function Dashboard({ portfolioData, onUploadClick, onViewAccountDetails, onViewPlatformDetails }) {
   const [viewMode, setViewMode] = useState('platform');
   const [hoverIndex, setHoverIndex] = useState(null);
+  /** Sort order for the right-hand allocation list only (pie chart order unchanged). */
+  const [allocationSort, setAllocationSort] = useState('value');
   const platforms = portfolioData?.platforms || [];
   const accounts = portfolioData?.accounts || [];
   const platformPieData = portfolioData?.pieData || [];
@@ -28,7 +56,9 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
     return acc;
   }, {});
   const instrumentPieData = Object.values(instrumentMap).sort((a, b) => b.value - a.value);
-  const pieData = viewMode === 'platform' ? platformPieData : instrumentPieData;
+  const tagPieData = buildTagPieData(accounts);
+  const pieData =
+    viewMode === 'platform' ? platformPieData : viewMode === 'instrument' ? instrumentPieData : tagPieData;
   const hasData = platformPieData.length > 0;
 
   if (!portfolioData || !hasData) {
@@ -51,7 +81,25 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
 
   const totalValue = portfolioData.totalValue;
   const formattedTotal = fmt(totalValue, currency);
-  const listItems = viewMode === 'platform' ? platforms : instrumentPieData;
+  const listItems =
+    viewMode === 'platform' ? platforms : viewMode === 'instrument' ? instrumentPieData : tagPieData;
+
+  const sortedListItems = useMemo(() => {
+    const arr = [...listItems];
+    if (allocationSort === 'value') {
+      arr.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+    } else if (allocationSort === 'name') {
+      arr.sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' }));
+    } else {
+      arr.sort((a, b) => String(b.name).localeCompare(String(a.name), undefined, { sensitivity: 'base' }));
+    }
+    return arr;
+  }, [listItems, allocationSort]);
+
+  const pieColorIndex = (item) => {
+    const i = pieData.findIndex((e) => e.name === item.name);
+    return i >= 0 ? i : 0;
+  };
 
   return (
     <div className="space-y-5">
@@ -82,20 +130,20 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
       <div className="rounded-lg border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
-              {viewMode === 'platform' ? 'By Platform' : 'By Instrument'}
+              {viewMode === 'platform' ? 'By Platform' : viewMode === 'instrument' ? 'By Instrument' : 'By Tag'}
             </h3>
-            <div className="flex rounded-md p-0.5 border" style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}>
-              {['platform', 'instrument'].map(mode => (
+            <div className="flex rounded-md p-0.5 border flex-wrap gap-0.5 justify-end" style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}>
+              {VIEW_MODES.map(({ id, label }) => (
                 <button
-                  key={mode}
+                  key={id}
                   type="button"
-                  onClick={() => setViewMode(mode)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition capitalize ${
-                    viewMode === mode ? 'bg-blue-600 text-white' : ''
+                  onClick={() => setViewMode(id)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                    viewMode === id ? 'bg-blue-600 text-white' : ''
                   }`}
-                  style={viewMode !== mode ? { color: 'var(--text-3)' } : {}}
+                  style={viewMode !== id ? { color: 'var(--text-3)' } : {}}
                 >
-                  {mode}
+                  {label}
                 </button>
               ))}
             </div>
@@ -115,9 +163,12 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                     if (!onViewPlatformDetails) return;
                     if (viewMode === 'platform') {
                       onViewPlatformDetails(platforms.find(p => p.name === data.platform) || { name: data.platform, value: data.value, accounts: data.accounts || [], categories: {} });
-                    } else {
+                    } else if (viewMode === 'instrument') {
                       const entry = instrumentPieData.find(e => e.name === data.name);
                       onViewPlatformDetails(entry ? { name: entry.name, value: entry.value, accounts: entry.accounts, categories: { [entry.type]: entry.accounts } } : { name: data.name, value: data.value, accounts: [], categories: {} });
+                    } else {
+                      const entry = tagPieData.find(e => e.name === data.name);
+                      onViewPlatformDetails(entry ? { name: entry.name, value: entry.value, accounts: entry.accounts, categories: entry.categories || {} } : { name: data.name, value: data.value, accounts: [], categories: {} });
                     }
                   }}
                   style={{ cursor: onViewPlatformDetails ? 'pointer' : 'default' }}
@@ -172,8 +223,10 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                   if (!onViewPlatformDetails) return;
                   if (viewMode === 'platform') {
                     onViewPlatformDetails(platforms.find(p => p.name === entry.name) || { name: entry.name, value: entry.value, accounts: entry.accounts || [], categories: {} });
-                  } else {
+                  } else if (viewMode === 'instrument') {
                     onViewPlatformDetails({ name: entry.name, value: entry.value, accounts: entry.accounts || [], categories: entry.type ? { [entry.type]: entry.accounts } : {} });
+                  } else {
+                    onViewPlatformDetails({ name: entry.name, value: entry.value, accounts: entry.accounts || [], categories: entry.categories || {} });
                   }
                 }}
                 className="flex items-center gap-1.5 text-xs transition"
@@ -190,19 +243,40 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
 
         {/* Allocation list */}
         <div className="rounded-lg border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-          <h3 className="text-sm font-semibold mb-5" style={{ color: 'var(--text-1)' }}>
-            {viewMode === 'platform' ? 'Platforms' : 'Instruments'}
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+            <h3 className="text-sm font-semibold shrink-0" style={{ color: 'var(--text-1)' }}>
+              {viewMode === 'platform' ? 'Platforms' : viewMode === 'instrument' ? 'Instruments' : 'Tags'}
+            </h3>
+            <label className="flex items-center gap-2 text-xs shrink-0" style={{ color: 'var(--text-3)' }}>
+              <span className="whitespace-nowrap">Sort</span>
+              <select
+                value={allocationSort}
+                onChange={(e) => setAllocationSort(e.target.value)}
+                className="min-w-0 max-w-full rounded-md border px-2 py-1.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ background: 'var(--bg-inner)', color: 'var(--text-1)', borderColor: 'var(--border)' }}
+                aria-label="Sort allocation list"
+              >
+                <option value="value">By value (high → low)</option>
+                <option value="name">Name A–Z</option>
+                <option value="name-desc">Name Z–A</option>
+              </select>
+            </label>
+          </div>
           <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-            {listItems.map((item, index) => {
+            {sortedListItems.map((item) => {
               const pct = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : '0.0';
+              const ci = pieColorIndex(item);
+              const sliceColor = COLORS[ci % COLORS.length];
               return (
                 <button
                   key={item.name}
                   type="button"
                   onClick={() => onViewPlatformDetails && onViewPlatformDetails(
-                    viewMode === 'platform' ? item
-                      : { name: item.name, value: item.value, accounts: item.accounts || [], categories: item.type ? { [item.type]: item.accounts } : {} }
+                    viewMode === 'platform'
+                      ? item
+                      : viewMode === 'instrument'
+                        ? { name: item.name, value: item.value, accounts: item.accounts || [], categories: item.type ? { [item.type]: item.accounts } : {} }
+                        : { name: item.name, value: item.value, accounts: item.accounts || [], categories: item.categories || {} }
                   )}
                   className="w-full text-left p-3 rounded-md border transition-all group"
                   style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}
@@ -211,14 +285,14 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sliceColor }} />
                       <span className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{item.name}</span>
                     </div>
                     <span className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{fmt(item.value, currency)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: COLORS[index % COLORS.length] }} />
+                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: sliceColor }} />
                     </div>
                     <span className="text-xs w-10 text-right" style={{ color: 'var(--text-3)' }}>{pct}%</span>
                   </div>

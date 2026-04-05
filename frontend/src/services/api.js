@@ -146,6 +146,13 @@ export async function updateAccountPlatform(accountId, platform) {
   return response.data;
 }
 
+export async function updateAccountTag(accountId, tag) {
+  const response = await api.put(`/accounts/${accountId}/tag`, {
+    tag: tag ?? ''
+  });
+  return response.data;
+}
+
 export async function getAccountHistory(accountId) {
   const response = await api.get(`/accounts/${accountId}/history`);
   return response.data;

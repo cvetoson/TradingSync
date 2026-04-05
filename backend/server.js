@@ -10,7 +10,7 @@ import { getRecentErrors } from './lib/errorLog.js';
 import { getLastEmailError, sendEmail } from './services/emailService.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
 import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword } from './routes/auth.js';
-import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
+import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountTag, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -103,6 +103,7 @@ async function start() {
   app.put('/api/accounts/:id/name', requireAuth, requireAccountAuth, updateAccountName);
   app.put('/api/accounts/:id/type', requireAuth, requireAccountAuth, updateAccountType);
   app.put('/api/accounts/:id/platform', requireAuth, requireAccountAuth, updateAccountPlatform);
+  app.put('/api/accounts/:id/tag', requireAuth, requireAccountAuth, updateAccountTag);
   app.put('/api/accounts/:id/balance', requireAuth, requireAccountAuth, updateAccountBalance);
   app.put('/api/accounts/:id/interest-rate', requireAuth, requireAccountAuth, updateAccountInterestRate);
   app.put('/api/accounts/:id/update', requireAuth, requireAccountAuth, upload.single('screenshot'), updateAccountWithScreenshot);

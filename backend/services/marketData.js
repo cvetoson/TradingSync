@@ -12,7 +12,7 @@ function looksLikeIsin(s) {
 /**
  * Resolve ISIN or name to a Yahoo ticker via search API
  */
-async function yahooSearchTicker(query) {
+export async function yahooSearchTicker(query) {
   try {
     const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=5&newsCount=0`;
     const res = await fetch(url, { headers: YAHOO_HEADERS });
@@ -186,6 +186,17 @@ export async function fetchChfToEurRate() {
   }
 }
 
+/** Fetch HKD to EUR rate (HKDEUR=X = EUR per 1 HKD). Used for Hong Kong listings (e.g. 1211.HK). */
+export async function fetchHkdToEurRate() {
+  try {
+    const rate = await yahooChartPrice('HKDEUR=X');
+    if (rate != null && rate > 0.05 && rate < 0.2) return rate;
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Fetches current price for a stock, bond (or ISIN), or crypto symbol
  * Uses Yahoo Finance API (free). For ISINs/bonds, tries search then chart.
@@ -202,7 +213,8 @@ export async function fetchCurrentPrice(symbol, assetType = 'stock') {
       const lseUsdEtfs = ['ECAR', 'NVDA', 'META', 'SMSD']; // USD on LSE
       const lseUsdStocks = ['LASE']; // Try .L first (Revolut may quote LSE)
       const lseChfEtfs = ['ABBN']; // Swiss stocks, try .SW first for CHF
-      const xetraStocks = ['IFX']; // XETRA/Germany - try .DE first (Infineon etc.)
+      // XETRA/IBIS: plain "DTE" hits US DTE Energy (~$150); DTE.DE is Deutsche Telekom (~€31).
+      const xetraStocks = ['IFX', 'DTE'];
       const madridStocks = ['TEF']; // Madrid - try .MC first (Telefonica etc.)
       const parisStocks = ['MLAA']; // Paris - try .PA first (L'Agence Automobiliere etc.)
       const tryUsFirst = ['META', 'NVDA'];
@@ -211,6 +223,12 @@ export async function fetchCurrentPrice(symbol, assetType = 'stock') {
       const isIsin = looksLikeIsin(sym);
 
       if ((isIsin || assetType === 'bond') && !preciousTickers) {
+        const resolved = await yahooSearchTicker(sym);
+        if (resolved) ticker = resolved;
+      }
+
+      // Numeric-only symbols (e.g. 1211 on SEHK): Yahoo search resolves to the correct listing (1211.HK)
+      if (!isIsin && assetType !== 'bond' && !preciousTickers && /^\d{3,5}$/.test(sym)) {
         const resolved = await yahooSearchTicker(sym);
         if (resolved) ticker = resolved;
       }
@@ -356,7 +374,7 @@ function getTickersForHistorical(symbol, assetType) {
   const lseUsdEtfs = ['ECAR', 'NVDA', 'META', 'SMSD'];
   const lseUsdStocks = ['LASE'];
   const lseChfEtfs = ['ABBN'];
-  const xetraStocks = ['IFX'];
+  const xetraStocks = ['IFX', 'DTE'];
   const madridStocks = ['TEF'];
   const parisStocks = ['MLAA'];
   const tryUsFirst = ['META', 'NVDA'];
@@ -408,6 +426,10 @@ export async function getProjectedPrice3M(symbol, currentPrice, assetType = 'sto
   if ((isIsin || assetType === 'bond') && tickersToTry.length === 1 && tickersToTry[0] === sym) {
     const resolved = await yahooSearchTicker(sym);
     if (resolved) tickersToTry = [resolved, sym];
+  }
+  if (/^\d{3,5}$/.test(sym) && tickersToTry[0] === sym) {
+    const resolved = await yahooSearchTicker(sym);
+    if (resolved) tickersToTry = [resolved, ...tickersToTry.filter((t) => t !== resolved)];
   }
   if (looksLikeIsin(sym)) {
     const rows = await openfigiIsinMappings(sym);

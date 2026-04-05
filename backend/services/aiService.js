@@ -94,7 +94,7 @@ export async function analyzeScreenshot(filePath, platform, accountType = null) 
       "purchasePrice": <purchase price if visible, or null>,
       "assetType": <"stock", "crypto", "etf", "bond", or "precious" for gold/silver/XAG/XAU>,
       "name": <full name of the asset (e.g., "Tesla", "ASML Holding", "Advanced Micro Devices")>,
-      "currency": <currency of the price/value - DETECT from symbols: € or EUR → "EUR", $ or USD → "USD", £ or GBP → "GBP", Fr or CHF → "CHF">
+      "currency": <currency of the price/value - DETECT from symbols: € or EUR → "EUR", $ or USD → "USD", £ or GBP → "GBP", Fr or CHF → "CHF", HK$ or HKD → "HKD">
     }
   ]
 }
@@ -122,9 +122,12 @@ CRITICAL INSTRUCTIONS:
   - $ or "USD" or "US$" or "USD" → currency: "USD"
   - £ or "GBP" or "£" or "GBp" → currency: "GBP"
   - "CHF" or "Fr" → currency: "CHF"
+  - HK$, HKD, or "元" in a Hong Kong context → currency: "HKD"
+  - **Multi-exchange brokers (IBKR, etc.)**: The "Last" / price column is often in the **listing currency** (SEHK, HKEX → HKD; NASDAQ/NYSE → USD; ASML → EUR; LSE → GBP), even when **cash** or **net liquidation** is shown in EUR. Prefer the **exchange column** (e.g. "1211 SEHK", "TICKER HKEX") for that row's price currency — do **not** set every holding to EUR just because "EUR Cash" or the portfolio summary is in euros.
+  - **IBIS / Xetra (Germany)**: Row labels like "DTE IBIS" mean Deutsche Telekom on Xetra in **EUR** (~30); use symbol **"DTE.DE"** or currency **EUR** — do not confuse with the unrelated US ticker **DTE** (different company, USD).
   - Set "currency" for each account from the displayed balance (e.g., "1,210.14 €" → EUR)
   - Set "currency" for each holding from the value/price column (e.g., "508.65 €" → EUR, "33.40 $" → USD)
-  - If the account header shows "Portfolio in EUR" or similar, use that for the primary "currency" field
+  - If the account header shows "Portfolio in EUR" or similar, use that for the primary "currency" field only (account-level); **per-holding** currency still follows the exchange/price column when visible
 - **CRITICAL FOR STOCK/ETF ACCOUNTS**: If you see a brokerage account with multiple holdings (stocks, ETFs, bonds):
   - Extract EACH individual holding as a separate object in the "holdings" array
   - For each holding, extract: symbol (e.g., "TSLA", "ASML", "ROMANIA" for bonds, "XAG" for silver, "XAU" for gold), quantity (e.g., 0.42, 0.06), name (e.g., "Tesla", "ASML Holding", "Silver", "Gold")
@@ -132,8 +135,8 @@ CRITICAL INSTRUCTIONS:
   - Extract the current value shown for each holding (e.g., "149,20 €" for Tesla, "543,42 €" for Romania bond, "44,21 €" for cash)
   - **CRITICAL**: Extract "currentValue" field for each holding - this is the TOTAL VALUE shown in the screenshot (e.g., 149.20, 543.42, 44.21)
   - If price per share is visible (e.g., "411,70 $"), extract it as "currentPrice"
-  - **CRITICAL**: Set "currency" for each holding from the value/price column - if you see "508.65 €" use "EUR", if "33.40 $" use "USD", if "£29.21" use "GBP"
-  - **European brokers (Trading 212, Revolut, etc.)**: If ALL values in the portfolio are shown in € (euro), set currency "EUR" for every holding - the broker converts to EUR for display
+  - **CRITICAL**: Set "currency" for each holding from the value/price column - if you see "508.65 €" use "EUR", if "33.40 $" use "USD", if "£29.21" use "GBP", if the row shows **SEHK / HKEX / Hong Kong** and no "€" on that price, use **"HKD"** (e.g. numeric ticker 1211 on SEHK with Last 103.90 → HKD). Prefer symbol **"1211.HK"** when the screenshot shows a Hong Kong listing.
+  - **European brokers (Trading 212, Revolut, etc.)**: If ALL values in the portfolio are shown in € (euro) with no per-row exchange labels, set currency "EUR" for every holding. **If** the screenshot shows **per-row exchange codes** (SEHK, NASDAQ, NYSE, AEB, …), use the **local listing currency** for each row instead of forcing EUR for all rows.
   - **IMPORTANT**: Also extract "Cash balance" or "Cash" as a holding with:
     - symbol: "CASH" or "CASH_BALANCE"
     - quantity: 1 (or the cash amount if shown as quantity)

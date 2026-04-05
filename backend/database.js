@@ -206,6 +206,15 @@ async function initPostgres() {
     ON account_history(account_id, recorded_at DESC)
   `);
 
+  const accColsRes = await run(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'accounts'
+  `);
+  const accountColNames = (accColsRes.rows || []).map((r) => r.column_name);
+  if (!accountColNames.includes('tag')) {
+    await run(`ALTER TABLE accounts ADD COLUMN tag TEXT`);
+  }
+
   console.log('✅ PostgreSQL database initialized successfully');
 }
 
@@ -270,8 +279,13 @@ export function initDatabase() {
         `);
 
         db.all(`PRAGMA table_info(accounts)`, (err, cols) => {
-          if (!err && cols && !cols.some((c) => c.name === 'user_id')) {
-            db.run(`ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id)`);
+          if (!err && cols) {
+            if (!cols.some((c) => c.name === 'user_id')) {
+              db.run(`ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id)`);
+            }
+            if (!cols.some((c) => c.name === 'tag')) {
+              db.run(`ALTER TABLE accounts ADD COLUMN tag TEXT`);
+            }
           }
         });
 

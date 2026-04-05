@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getAccountHistory, deleteHistoryEntry, getAccountHoldings, getHoldingsProjection, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding as apiDeleteHolding, verifyHoldingSymbol } from '../services/api';
+import { getAccountHistory, deleteHistoryEntry, getAccountHoldings, getHoldingsProjection, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding as apiDeleteHolding, verifyHoldingSymbol, updateAccountTag } from '../services/api';
 import UpdateAccountModal from './UpdateAccountModal';
+import AccountDetailsModal from './AccountDetailsModal';
 import AddHoldingModal from './AddHoldingModal';
 import AddHoldingsFromScreenshotModal from './AddHoldingsFromScreenshotModal';
 
@@ -21,6 +22,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const [chartData, setChartData] = useState([]);
   const [projectedData, setProjectedData] = useState([]);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showAccountDetailsModal, setShowAccountDetailsModal] = useState(false);
   const [deletingHistoryId, setDeletingHistoryId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [holdings, setHoldings] = useState([]);
@@ -45,6 +47,12 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const [showAddHoldingModal, setShowAddHoldingModal] = useState(false);
   const [showAddHoldingsFromScreenshotModal, setShowAddHoldingsFromScreenshotModal] = useState(false);
   const [holdingsTab, setHoldingsTab] = useState('all'); // 'all' | 'stock' | 'crypto' | 'precious' | 'bond'
+  const [tagInput, setTagInput] = useState('');
+  const [tagSaving, setTagSaving] = useState(false);
+
+  useEffect(() => {
+    setTagInput(account.tag != null ? String(account.tag) : '');
+  }, [account.id, account.tag]);
 
   useEffect(() => {
     loadHistory();
@@ -434,6 +442,17 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
               </svg>
               Update Account
             </button>
+            <button
+              type="button"
+              onClick={() => setShowAccountDetailsModal(true)}
+              className="px-4 py-2 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+              title="Edit balance, interest rate, name, and platform without a screenshot"
+            >
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Update manually
+            </button>
             {(account.accountType === 'stocks' || account.accountType === 'crypto' || account.accountType === 'precious' ||
               account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') && (
               <button
@@ -459,12 +478,51 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         </div>
 
         {/* Account Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <div className="bg-blue-50 rounded-md p-4">
             <div className="text-sm text-gray-600 mb-1">Current Value</div>
             <div className="text-2xl font-bold text-blue-600">
               {formatCurrency(effectiveBalance)}
             </div>
+            {isStockOrCrypto && (
+              <p className="text-xs text-gray-500 mt-1">Live total from your holdings (converted to EUR for display).</p>
+            )}
+          </div>
+          <div className="bg-purple-50 rounded-md p-4">
+            <div className="text-sm text-gray-600 mb-1">Category</div>
+            <div className="text-lg font-semibold text-purple-600">
+              {getAccountTypeLabel(account.accountType || account.account_type)}
+            </div>
+          </div>
+          <div className="bg-amber-50 rounded-md p-4">
+            <div className="text-sm text-gray-600 mb-1">Tag</div>
+            <input
+              type="text"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onBlur={async () => {
+                const trimmed = tagInput.trim();
+                const prev = (account.tag != null ? String(account.tag) : '').trim();
+                if (trimmed === prev) return;
+                setTagSaving(true);
+                try {
+                  await updateAccountTag(account.id, trimmed);
+                  if (onUpdate) await onUpdate();
+                } catch (e) {
+                  console.error(e);
+                  setTagInput(prev);
+                } finally {
+                  setTagSaving(false);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+              }}
+              placeholder="e.g. Tag 1, Family"
+              disabled={tagSaving}
+              className="w-full text-lg font-semibold text-amber-900 bg-white/80 border border-amber-200 rounded px-2 py-1.5 placeholder:text-amber-400/80 disabled:opacity-60"
+            />
+            <p className="text-xs text-gray-500 mt-1">Optional label to group this account on the Dashboard (allocation by Tag).</p>
           </div>
           {(account.interestRate || account.interest_rate) && (
             <div className="bg-green-50 rounded-md p-4">
@@ -472,12 +530,6 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
               <div className="text-2xl font-bold text-green-600">{account.interestRate || account.interest_rate}% APY</div>
             </div>
           )}
-          <div className="bg-purple-50 rounded-md p-4">
-            <div className="text-sm text-gray-600 mb-1">Category</div>
-            <div className="text-lg font-semibold text-purple-600">
-              {getAccountTypeLabel(account.accountType || account.account_type)}
-            </div>
-          </div>
         </div>
 
         {/* Holdings (for stock/crypto accounts) */}
@@ -726,6 +778,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                                 >
                                   <option value="EUR">€ EUR</option>
                                   <option value="USD">$ USD</option>
+                                  <option value="HKD">HK$ HKD</option>
                                 </select>
                                 <button
                                   onClick={() => handlePriceSave(holding.id)}
@@ -925,7 +978,8 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
 
         {/* History Table */}
         <div className="bg-white border border-gray-200 rounded-md p-6">
-          <h3 className="text-xl font-semibold text-gray-800 mb-4">Value History</h3>
+          <h3 className="text-xl font-semibold text-gray-800 mb-1">Value History</h3>
+          <p className="text-xs text-gray-500 mb-4">Each row is the account total when you saved an update (e.g. screenshot upload)—not the same timing as live prices above.</p>
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading history...</div>
           ) : history.length === 0 ? (
@@ -1097,6 +1151,18 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
             if (onUpdate) {
               onUpdate();
             }
+          }}
+        />
+      )}
+
+      {showAccountDetailsModal && (
+        <AccountDetailsModal
+          account={account}
+          currency={currency}
+          onClose={() => setShowAccountDetailsModal(false)}
+          onUpdate={async () => {
+            await loadHistory();
+            if (onUpdate) await onUpdate();
           }}
         />
       )}

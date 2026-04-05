@@ -20,7 +20,7 @@ const MANUAL_ACCOUNT_TYPES = INVESTMENT_CATEGORIES.filter(c => c.value !== 'auto
   assetType: cat.accountType === 'precious' ? 'precious' : cat.accountType === 'crypto' ? 'crypto' : cat.value === 'fixed-income' ? 'bond' : 'stock'
 }));
 
-export default function UploadModal({ onClose, onSuccess }) {
+export default function UploadModal({ onClose, onSuccess, prefill = null }) {
   const [mode, setMode] = useState('upload'); // 'upload' | 'manual'
   const [file, setFile] = useState(null);
   const [investmentCategory, setInvestmentCategory] = useState('');
@@ -46,6 +46,15 @@ export default function UploadModal({ onClose, onSuccess }) {
       getAccounts().then(data => setAccounts(data || [])).catch(() => setAccounts([]));
     }
   }, [mode]);
+
+  useEffect(() => {
+    if (!prefill) return;
+    setMode('manual');
+    setCreateNewAccount(true);
+    setError('');
+    if (prefill.platform) setNewAccountPlatform(prefill.platform);
+    if (prefill.manualAccountType) setManualAccountType(prefill.manualAccountType);
+  }, [prefill]);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -86,6 +95,8 @@ export default function UploadModal({ onClose, onSuccess }) {
 
   const isAmountOnlyCategory = ['p2p', 'savings'].includes(manualAccountType);
   const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500';
+  /** Native selects ignore parent text color in some themes; force readable light-theme styling */
+  const selectClass = `${inputClass} [&>option]:bg-white [&>option]:text-gray-900`;
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1';
 
   const handleManualSubmit = async (e) => {
@@ -169,7 +180,10 @@ export default function UploadModal({ onClose, onSuccess }) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-md shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div
+        className="bg-white rounded-md shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto text-gray-900"
+        style={{ colorScheme: 'light' }}
+      >
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-gray-800">Add New</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -204,7 +218,7 @@ export default function UploadModal({ onClose, onSuccess }) {
               <select
                 value={investmentCategory}
                 onChange={(e) => setInvestmentCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={selectClass}
                 required
               >
                 <option value="">Select investment category</option>
@@ -260,7 +274,7 @@ export default function UploadModal({ onClose, onSuccess }) {
               <select
                 value={manualAccountType}
                 onChange={(e) => setManualAccountType(e.target.value)}
-                className={inputClass}
+                className={selectClass}
               >
                 {MANUAL_ACCOUNT_TYPES.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -271,13 +285,13 @@ export default function UploadModal({ onClose, onSuccess }) {
               <label className={labelClass}>Account</label>
               <label className="flex items-center gap-2 cursor-pointer mb-2">
                 <input type="checkbox" checked={createNewAccount} onChange={(e) => { setCreateNewAccount(e.target.checked); setSelectedAccountId(''); }} className="rounded" />
-                <span className="text-sm">Create new account</span>
+                <span className="text-sm text-gray-800">Create new account</span>
               </label>
               {!createNewAccount ? (
                 <select
                   value={selectedAccountId}
                   onChange={(e) => setSelectedAccountId(e.target.value)}
-                  className={inputClass}
+                  className={selectClass}
                 >
                   <option value="">Select account</option>
                   {holdingsAccounts.map(acc => (
@@ -344,7 +358,7 @@ export default function UploadModal({ onClose, onSuccess }) {
                     <select
                       value={manualPreciousPreset}
                       onChange={(e) => setManualPreciousPreset(e.target.value)}
-                      className={inputClass}
+                      className={selectClass}
                     >
                       <option value="XAG">Silver (XAG)</option>
                       <option value="XAU">Gold (XAU)</option>
