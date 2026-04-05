@@ -7,7 +7,7 @@ import { logError } from '../lib/errorLog.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const APP_URL = process.env.APP_URL || 'http://localhost:3000';
+const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 
 function randomToken() {
   return crypto.randomBytes(32).toString('hex');

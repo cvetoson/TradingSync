@@ -79,6 +79,7 @@ export async function analyzeScreenshot(filePath, platform, accountType = null) 
       "accountType": <one of: "p2p", "stocks", "crypto", "precious", "bank", "savings", "unknown">,
       "investedAmount": <initial investment amount as a number, or null if not visible>,
       "investmentDate": <date when investment was made in format "YYYY-MM-DD" or "DD.MM.YYYY", or null if not visible>,
+      "balanceAsOfDate": <for P2P/savings/deposits: the STATEMENT or "as of" / "updated" date that applies to the balance shown (DD.MM.YYYY or YYYY-MM-DD), or null. If the screenshot shows "25.02.2026" and the balance next to it, use that date so the app can compound interest from that day to today>,
       "generatedProfit": <profit generated so far as a number, or null if not visible>
     }
   ],
@@ -218,6 +219,18 @@ CRITICAL INSTRUCTIONS:
             investmentDate = dateStr;
           }
         }
+
+        let balanceAsOfDate = null;
+        const asOfRaw = acc.balanceAsOfDate ?? acc.balance_as_of_date;
+        if (asOfRaw) {
+          const dateStr = String(asOfRaw).trim();
+          if (dateStr.match(/^\d{2}\.\d{2}\.\d{4}$/)) {
+            const [day, month, year] = dateStr.split('.');
+            balanceAsOfDate = `${year}-${month}-${day}`;
+          } else if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            balanceAsOfDate = dateStr;
+          }
+        }
         
         return {
           balance: balance,
@@ -227,6 +240,7 @@ CRITICAL INSTRUCTIONS:
           accountType: acc.accountType || detectAccountType(platform),
           investedAmount: investedAmount,
           investmentDate: investmentDate,
+          balanceAsOfDate,
           generatedProfit: generatedProfit
         };
       });
@@ -250,6 +264,17 @@ CRITICAL INSTRUCTIONS:
           investmentDate = dateStr;
         }
       }
+      let balanceAsOfDate = null;
+      const asOfRaw = jsonData.balanceAsOfDate ?? jsonData.balance_as_of_date;
+      if (asOfRaw) {
+        const dateStr = String(asOfRaw).trim();
+        if (dateStr.match(/^\d{2}\.\d{2}\.\d{4}$/)) {
+          const [day, month, year] = dateStr.split('.');
+          balanceAsOfDate = `${year}-${month}-${day}`;
+        } else if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          balanceAsOfDate = dateStr;
+        }
+      }
       
       accounts = [{
         balance: balance,
@@ -259,6 +284,7 @@ CRITICAL INSTRUCTIONS:
         accountType: jsonData.accountType || detectAccountType(platform),
         investedAmount: investedAmount,
         investmentDate: investmentDate,
+        balanceAsOfDate,
         generatedProfit: generatedProfit
       }];
     } else {

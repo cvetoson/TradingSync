@@ -85,7 +85,7 @@ export default function UploadModal({ onClose, onSuccess }) {
   };
 
   const isAmountOnlyCategory = ['p2p', 'savings'].includes(manualAccountType);
-  const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500';
+  const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500';
   const labelClass = 'block text-sm font-medium text-gray-700 mb-1';
 
   const handleManualSubmit = async (e) => {

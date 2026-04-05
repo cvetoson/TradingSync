@@ -8,6 +8,15 @@ const LSE_USD_ETF_SYMBOLS = ['ECAR', 'NVDA', 'META', 'SMSD'];
 const LSE_CHF_SYMBOLS = ['ABBN']; // Swiss stocks; marketData returns EUR (CHF converted)
 const EUR_NATIVE_SYMBOLS = ['IFX', 'TEF', 'MLAA']; // XETRA/Madrid/Paris - Yahoo returns EUR, do NOT convert
 
+/** Yahoo chart for these is already EUR (e.g. 2B76.DE iShares UCITS); must not apply USD→EUR. */
+function isEurNativeSymbol(sym, assetTypeLower) {
+  const s = String(sym || '').trim().toUpperCase();
+  if (EUR_NATIVE_SYMBOLS.includes(s)) return true;
+  const t = (assetTypeLower || 'stock').toLowerCase();
+  if (t === 'bond' || t === 'crypto' || t === 'precious') return false;
+  return /^[0-9][A-Z0-9]{3}$/.test(s);
+}
+
 /** Promise wrapper for db.run so we can await DB writes before returning */
 function dbRun(db, sql, params) {
   return new Promise((resolve, reject) => {
@@ -20,7 +29,8 @@ function holdingValueInEur(h, usdToEur, gbpToEur) {
   const q = Number(h.quantity) || 0;
   let p = Number(h.current_price) ?? Number(h.purchase_price) ?? 0;
   const sym = String(h.symbol || '').trim().toUpperCase();
-  const currency = EUR_NATIVE_SYMBOLS.includes(sym) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
+  const assetT = (h.asset_type || h.assetType || 'stock').toLowerCase();
+  const currency = isEurNativeSymbol(sym, assetT) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
   const isPence = LSE_GBP_ETF_SYMBOLS.includes(sym) && p >= 1000 && p < 50000;
   const isUsdLseEtf = LSE_USD_ETF_SYMBOLS.includes(sym);
   if (isPence) p = p / 100;
@@ -28,6 +38,70 @@ function holdingValueInEur(h, usdToEur, gbpToEur) {
   if (currency === 'USD' || isUsdLseEtf) value *= usdToEur;
   else if (currency === 'GBP' || isPence) value *= gbpToEur;
   return value;
+}
+
+/** P2P/savings: parse balanceAsOfDate / investmentDate to YYYY-MM-DD */
+function parseBalanceAsOfIso(accountData) {
+  if (!accountData) return null;
+  const explicit = accountData.balanceAsOfDate || accountData.balance_as_of_date;
+  if (explicit) {
+    const s = String(explicit).trim();
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) {
+      const [day, month, year] = s.split('.');
+      return `${year}-${month}-${day}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  }
+  const inv = accountData.investmentDate;
+  if (inv && /^\d{4}-\d{2}-\d{2}$/.test(String(inv).trim())) return String(inv).trim();
+  return null;
+}
+
+function isPastCalendarDate(isoYmd) {
+  if (!isoYmd) return false;
+  const d = new Date(`${isoYmd}T12:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return d < today;
+}
+
+/** Compound APY from as-of date (inclusive start) to now (inclusive end-of-day). */
+function compoundP2PToNow(baseBalance, annualRatePct, fromIsoYmd) {
+  if (baseBalance == null || annualRatePct == null || !fromIsoYmd) return baseBalance;
+  const from = new Date(`${fromIsoYmd}T12:00:00`);
+  const to = new Date();
+  from.setHours(0, 0, 0, 0);
+  to.setHours(0, 0, 0, 0);
+  const days = Math.max(0, Math.floor((to - from) / 86400000));
+  const r = annualRatePct / 100;
+  return baseBalance * Math.pow(1 + r, days / 365);
+}
+
+function isP2pOrSavingsType(t) {
+  const u = (t || '').toLowerCase();
+  return u === 'p2p' || u === 'savings';
+}
+
+/**
+ * If AI provided a statement date in the past, treat extracted balance as that date and project to today.
+ * @returns {{ accountBalance: number, historyBalance: number, recordedAt: string }}
+ */
+function resolveP2pSnapshotFromUpload(accountData, extractedBalance, interestRate, finalAccountType) {
+  const b = Number(extractedBalance);
+  if (!isP2pOrSavingsType(finalAccountType) || interestRate == null || !Number.isFinite(b) || b <= 0) {
+    return { accountBalance: b, historyBalance: b, recordedAt: new Date().toISOString() };
+  }
+  const asOf = parseBalanceAsOfIso(accountData);
+  if (!asOf || !isPastCalendarDate(asOf)) {
+    return { accountBalance: b, historyBalance: b, recordedAt: new Date().toISOString() };
+  }
+  const projected = compoundP2PToNow(b, interestRate, asOf);
+  return {
+    accountBalance: projected,
+    historyBalance: b,
+    recordedAt: `${asOf}T12:00:00.000Z`
+  };
 }
 
 /**
@@ -300,6 +374,7 @@ export async function uploadScreenshot(req, res) {
         const interestRate = accountData.interestRate || null;
         // Use provided accountType from request, or from extracted data, or fallback to detection
         const finalAccountType = accountData.accountType || defaultAccountType || detectAccountType(detectedPlatform);
+        const snap = resolveP2pSnapshotFromUpload(accountData, balance, interestRate, finalAccountType);
 
         const userId = req.userId || null;
         // Check if this specific account already exists (user's account or unassigned legacy)
@@ -319,7 +394,7 @@ export async function uploadScreenshot(req, res) {
                  SET balance = ?, interest_rate = ?, account_type = ?, user_id = COALESCE(user_id, ?),
                      last_updated = CURRENT_TIMESTAMP, screenshot_path = ?, raw_data = ?
                  WHERE id = ?`,
-                [balance, interestRate, finalAccountType, userId, filePath, JSON.stringify(extractedData), existingAccount.id],
+                [snap.accountBalance, interestRate, finalAccountType, userId, filePath, JSON.stringify(extractedData), existingAccount.id],
                 function(updateErr) {
                   if (updateErr) {
                     reject(updateErr);
@@ -340,8 +415,8 @@ export async function uploadScreenshot(req, res) {
 
                       // Save account history snapshot
                       db.run(
-                        'INSERT INTO account_history (account_id, balance, interest_rate, currency, screenshot_id) VALUES (?, ?, ?, ?, ?)',
-                        [existingAccount.id, balance, interestRate, currency, screenshotId],
+                        'INSERT INTO account_history (account_id, balance, interest_rate, currency, screenshot_id, recorded_at) VALUES (?, ?, ?, ?, ?, ?)',
+                        [existingAccount.id, snap.historyBalance, interestRate, currency, screenshotId, snap.recordedAt],
                         (historyErr) => {
                           if (historyErr) {
                             console.error('Error saving account history:', historyErr);
@@ -349,8 +424,8 @@ export async function uploadScreenshot(req, res) {
                           }
 
                           // For P2P accounts, generate daily calculated values from last upload to today
-                          if (finalAccountType === 'p2p' && interestRate && balance) {
-                            generateDailyHistoryForAccount(existingAccount.id, balance, interestRate, currency);
+                          if (isP2pOrSavingsType(finalAccountType) && interestRate && snap.historyBalance) {
+                            generateDailyHistoryForAccount(existingAccount.id, snap.historyBalance, interestRate, currency);
                           }
 
                           // For stock/crypto accounts, save holdings (non-blocking)
@@ -366,7 +441,7 @@ export async function uploadScreenshot(req, res) {
                           }
                           
                           // Always proceed with account creation regardless of holdings
-                          createdAccounts.push({ ...existingAccount, balance, interestRate, accountType: finalAccountType });
+                          createdAccounts.push({ ...existingAccount, balance: snap.accountBalance, interestRate, accountType: finalAccountType });
                           processedCount++;
                           if (processedCount === totalAccounts) {
                             resolve(res.json({
@@ -387,7 +462,7 @@ export async function uploadScreenshot(req, res) {
               db.run(
                 `INSERT INTO accounts (platform, account_name, account_type, balance, interest_rate, currency, screenshot_path, raw_data, user_id)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [detectedPlatform, accountName, finalAccountType, balance, interestRate, currency, filePath, JSON.stringify(extractedData), userId],
+                [detectedPlatform, accountName, finalAccountType, snap.accountBalance, interestRate, currency, filePath, JSON.stringify(extractedData), userId],
                 function(insertErr) {
                   if (insertErr) {
                     reject(insertErr);
@@ -410,8 +485,8 @@ export async function uploadScreenshot(req, res) {
 
                       // Save account history snapshot for new account
                       db.run(
-                        'INSERT INTO account_history (account_id, balance, interest_rate, currency, screenshot_id) VALUES (?, ?, ?, ?, ?)',
-                        [accountId, balance, interestRate, currency, screenshotId],
+                        'INSERT INTO account_history (account_id, balance, interest_rate, currency, screenshot_id, recorded_at) VALUES (?, ?, ?, ?, ?, ?)',
+                        [accountId, snap.historyBalance, interestRate, currency, screenshotId, snap.recordedAt],
                         (historyErr) => {
                           if (historyErr) {
                             console.error('Error saving account history:', historyErr);
@@ -419,8 +494,8 @@ export async function uploadScreenshot(req, res) {
                           }
 
                           // For P2P accounts, generate daily calculated values from upload date to today
-                          if (finalAccountType === 'p2p' && interestRate && balance) {
-                            generateDailyHistoryForAccount(accountId, balance, interestRate, currency);
+                          if (isP2pOrSavingsType(finalAccountType) && interestRate && snap.historyBalance) {
+                            generateDailyHistoryForAccount(accountId, snap.historyBalance, interestRate, currency);
                           }
 
                           // For stock/crypto accounts, save holdings (non-blocking)
@@ -437,7 +512,7 @@ export async function uploadScreenshot(req, res) {
                           }
                           
                           // Always proceed with account creation regardless of holdings
-                          createdAccounts.push({ id: accountId, platform: detectedPlatform, accountName, balance, interestRate, accountType: finalAccountType });
+                          createdAccounts.push({ id: accountId, platform: detectedPlatform, accountName, balance: snap.accountBalance, interestRate, accountType: finalAccountType });
                           processedCount++;
                           if (processedCount === totalAccounts) {
                             console.log('[UPLOAD] All accounts processed successfully');
@@ -1000,7 +1075,7 @@ export function getAccountHoldings(req, res) {
             // ABBN (ABB Swiss) ~CHF 80 = €76; cached €64 was USD conversion - force refetch for correct CHF→EUR
             const forceRefetchAbbn = sym === 'ABBN' && currentPrice != null && (currentPrice < 70 || currentPrice > 100);
             // EUR-native (IFX, TEF, MLAA): if stored as USD, was wrongly converted - force refetch to correct
-            const forceRefetchEurNative = EUR_NATIVE_SYMBOLS.includes(sym) && (holding.currency || 'EUR').toUpperCase() === 'USD';
+            const forceRefetchEurNative = isEurNativeSymbol(sym, assetTypeLower) && (holding.currency || 'EUR').toUpperCase() === 'USD';
             const shouldFetchPrice = currentPrice == null || !isPriceRecent || forceRefetchCrypto || forceRefetchWrongPrice || forceRefetchCorruptedLseGbp || forceRefetchSmsd || forceRefetchMeta || forceRefetchAbbn || forceRefetchEurNative;
             let priceFetchFailed = false;
             let priceLastUpdated = holding.last_updated || null;
@@ -1030,7 +1105,7 @@ export function getAccountHoldings(req, res) {
                 // EUR native (IFX.DE, TEF.MC, MLAA.PA) = EUR; do NOT convert
                 const isGbpPrice = LSE_GBP_ETF_SYMBOLS.includes(symInner);
                 const isChfPrice = LSE_CHF_SYMBOLS.includes(symInner); // marketData already returns EUR
-                const isEurNative = EUR_NATIVE_SYMBOLS.includes(symInner); // XETRA/Madrid/Paris = EUR
+                const isEurNative = isEurNativeSymbol(symInner, assetType); // XETRA/Madrid/Paris + WKN-style e.g. 2B76 = EUR
                 const isUsdPrice = (symInner === 'XAG' || symInner === 'XAU') || assetType === 'crypto' ||
                   LSE_USD_ETF_SYMBOLS.includes(symInner) || (!isGbpPrice && !isChfPrice && !isEurNative); // Default: non-GBP/CHF/EUR = USD
                 if (isChfPrice || isEurNative) {
@@ -1166,7 +1241,8 @@ export async function getHoldingsProjection(req, res) {
           const price = curPrice ?? await fetchCurrentPrice(h.symbol, h.asset_type || 'stock');
           if (price == null || q <= 0) continue;
           const sym = String(h.symbol || '').trim().toUpperCase();
-          const currency = EUR_NATIVE_SYMBOLS.includes(sym) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
+          const hAsset = (h.asset_type || h.assetType || 'stock').toLowerCase();
+          const currency = isEurNativeSymbol(sym, hAsset) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
           const valueNow = q * price;
           const valueNowEur = currency === 'USD' ? valueNow * usdToEur : valueNow;
           totalNowEur += valueNowEur;
@@ -1358,6 +1434,7 @@ export async function updateAccountWithScreenshot(req, res) {
           const interestRate = accountData.interestRate || existingAccount.interest_rate;
           const currency = extractedData.currency || existingAccount.currency || 'EUR';
           const detectedPlatform = extractedData.platform || existingAccount.platform;
+          const snap = resolveP2pSnapshotFromUpload(accountData, balance, interestRate, existingAccount.account_type);
 
           // Update the account
           db.run(
@@ -1369,7 +1446,7 @@ export async function updateAccountWithScreenshot(req, res) {
                  platform = ?
              WHERE id = ?`,
             [
-              balance, 
+              snap.accountBalance, 
               interestRate, 
               filePath, 
               JSON.stringify(extractedData),
@@ -1395,8 +1472,8 @@ export async function updateAccountWithScreenshot(req, res) {
 
                   // Save account history snapshot
                   db.run(
-                    'INSERT INTO account_history (account_id, balance, interest_rate, currency, screenshot_id) VALUES (?, ?, ?, ?, ?)',
-                    [accountId, balance, interestRate, currency, screenshotId],
+                    'INSERT INTO account_history (account_id, balance, interest_rate, currency, screenshot_id, recorded_at) VALUES (?, ?, ?, ?, ?, ?)',
+                    [accountId, snap.historyBalance, interestRate, currency, screenshotId, snap.recordedAt],
                     (historyErr) => {
                       if (historyErr) {
                         console.error('Error saving account history:', historyErr);
@@ -1404,8 +1481,8 @@ export async function updateAccountWithScreenshot(req, res) {
                       }
 
                       // For P2P accounts, generate daily calculated values from last upload to today
-                      if (existingAccount.account_type === 'p2p' && interestRate && balance) {
-                        generateDailyHistoryForAccount(accountId, balance, interestRate, currency);
+                      if (isP2pOrSavingsType(existingAccount.account_type) && interestRate && snap.historyBalance) {
+                        generateDailyHistoryForAccount(accountId, snap.historyBalance, interestRate, currency);
                       }
 
                       // For stock/crypto accounts, save holdings (async, but don't wait)
@@ -1424,7 +1501,7 @@ export async function updateAccountWithScreenshot(req, res) {
                           id: accountId,
                           accountName: existingAccount.account_name,
                           platform: detectedPlatform,
-                          balance: balance,
+                          balance: snap.accountBalance,
                           interestRate: interestRate,
                           accountType: existingAccount.account_type,
                           currency: currency,
@@ -1525,11 +1602,12 @@ export async function verifyHoldingSymbol(req, res) {
   try {
     const price = await fetchCurrentPrice(symbol, assetType);
     if (price != null && !Number.isNaN(Number(price))) {
+      const eurNative = isEurNativeSymbol(symbol, assetType);
       return res.json({
         found: true,
         symbol,
         price: Number(price),
-        currency: 'USD'
+        currency: eurNative ? 'EUR' : 'USD'
       });
     }
     const error = isIsin

@@ -53,11 +53,11 @@ npm run dev
 
 This will start:
 - **Backend** on `http://localhost:3001`
-- **Frontend** on `http://localhost:3000`
+- **Frontend** (Vite) on `http://localhost:5173`
 
 ## Step 5: Test the App
 
-1. Open your browser and go to: **http://localhost:3000**
+1. Open your browser and go to: **http://localhost:5173**
 2. You should see the Trading Sync dashboard
 3. Click "Upload Screenshot" button
 4. Select a platform (Bondora, Moneyfit, etc.)

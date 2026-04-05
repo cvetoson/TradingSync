@@ -61,7 +61,7 @@ Edit `backend/.env` with at least:
 
 ```
 PORT=3001
-APP_URL=http://localhost:3000
+APP_URL=http://localhost:5173
 JWT_SECRET=your-secret-key-change-in-production
 OPENAI_API_KEY=your_openai_api_key_here
 ```
@@ -76,7 +76,7 @@ npm run dev
 
 This starts:
 - **Backend** on `http://localhost:3001`
-- **Frontend** on `http://localhost:3000`
+- **Frontend** (Vite) on `http://localhost:5173`
 
 ### 5. First run: create default user (optional)
 
@@ -91,7 +91,9 @@ Default credentials: `default@tradingsync.local` / `changeme123` (or set `DEFAUL
 
 ### 6. Open the app
 
-Go to `http://localhost:3000` and sign in or register.
+Go to **`http://localhost:5173`** (Vite dev server) and sign in or register. Do not use port **3001** for the UI—that is the API only.
+
+If the page does not load, ensure both processes from `npm run dev` are running, and that nothing else is using port **5173**.
 
 **Using an existing database:** Copy `backend/trading_sync.db` from another machine into `backend/` before starting. Then run the seed script only if you need to assign accounts to the default user.
 
@@ -115,12 +117,39 @@ npm run dev
 
 ## Usage
 
-1. Open `http://localhost:3000` in your browser
+1. Open `http://localhost:5173` in your browser
 2. Click "Upload Screenshot" button
 3. Select the platform (Bondora, Moneyfit, etc.)
 4. Upload a screenshot of your account
 5. The AI will extract the data and update your dashboard
 6. View your unified portfolio with the pie chart visualization
+
+## Local dev vs deployed database (login / data “out of sync”)
+
+The backend picks the database in this order (see `backend/database.js`):
+
+1. **`DATABASE_PUBLIC_URL` / `DATABASE_URL`** (PostgreSQL) — if set in `backend/.env`, the app uses that database.
+2. **Otherwise** — **SQLite** at `backend/trading_sync.db` (a new, separate file on your machine).
+
+So **deployed Railway** and **local dev** only share the same users and accounts if your local `backend/.env` points at the **same Postgres** as production (typically Railway’s **public** connection string, not the private internal URL).
+
+**If your email/password works on the deployed site but not on `http://localhost:5173`:**
+
+1. Open **`http://localhost:3001/api/debug`** and check **`database`**. If it says **SQLite**, you are not using Railway’s database locally.
+2. In the Railway dashboard for your Postgres service, copy the **public** connection URL (sometimes labeled for external / local use).
+3. Add to **`backend/.env`** (and restart the backend):
+
+   ```bash
+   DATABASE_PUBLIC_URL=postgresql://...
+   ```
+
+   Use the same variable name your app already documents; Railway may set `DATABASE_URL` only inside the cloud — for your laptop you usually want the **public** URL.
+
+4. Restart **`npm run dev`** (or at least the backend). Sign in again with the same credentials as production.
+
+**Optional:** `JWT_SECRET` in local `.env` should match production if you reuse tokens; for a normal email/password login, **matching the database** is what matters.
+
+**Alternative:** Keep SQLite for local-only testing and **register a new user** at `http://localhost:5173` — that user exists only in your local `trading_sync.db`, not on Railway.
 
 ## Project Structure
 

@@ -58,7 +58,7 @@ export default function AddHoldingModal({ accountId, accountType, onClose, onSuc
               placeholder="e.g. TSLA, BTC, XAU"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
@@ -70,7 +70,7 @@ export default function AddHoldingModal({ accountId, accountType, onClose, onSuc
               placeholder="e.g. 0.5"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
@@ -82,7 +82,7 @@ export default function AddHoldingModal({ accountId, accountType, onClose, onSuc
               placeholder="Manual price or leave empty"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
@@ -90,7 +90,7 @@ export default function AddHoldingModal({ accountId, accountType, onClose, onSuc
             <select
               value={assetType}
               onChange={(e) => setAssetType(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               {ASSET_TYPES.map(t => (
                 <option key={t.value} value={t.value}>{t.label}</option>

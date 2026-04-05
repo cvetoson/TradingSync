@@ -46,7 +46,7 @@ export default function AnalyticsPage({ portfolioData, currency }) {
       setLoading(true);
       try {
         const acctData = await getAccounts();
-        const accts = acctData.accounts || [];
+        const accts = Array.isArray(acctData) ? acctData : (acctData?.accounts || []);
         const results = await Promise.all(
           accts.map(a =>
             getAccountHistory(a.id)
@@ -71,7 +71,6 @@ export default function AnalyticsPage({ portfolioData, currency }) {
     const cutoff = timeRange === 'ALL'
       ? 0
       : Date.now() - TIME_RANGES.find(r => r.key === timeRange).days * 86400000;
-
     const byDay = {};
     for (const h of allHistories) {
       const ts = new Date(h.recorded_at).getTime();

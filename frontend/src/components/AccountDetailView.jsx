@@ -582,7 +582,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                                       handleSymbolCancel();
                                     }
                                   }}
-                                  className="px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  className="px-2 py-1 border border-blue-500 rounded bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                   autoFocus
                                 />
                                 <button
@@ -662,7 +662,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                                       handleQuantityCancel();
                                     }
                                   }}
-                                  className="w-24 px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                                  className="w-24 px-2 py-1 border border-blue-500 rounded bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
                                   autoFocus
                                 />
                                 <button
@@ -715,13 +715,13 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                                       handlePriceCancel();
                                     }
                                   }}
-                                  className="w-24 px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                                  className="w-24 px-2 py-1 border border-blue-500 rounded bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
                                   autoFocus
                                 />
                                 <select
                                   value={editingPriceCurrency}
                                   onChange={(e) => setEditingPriceCurrency(e.target.value)}
-                                  className="px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                  className="px-2 py-1 border border-gray-300 rounded bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                   title="Price currency"
                                 >
                                   <option value="EUR">€ EUR</option>
@@ -1043,7 +1043,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                 onChange={(e) => setVerifySymbolInput(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === 'Enter' && handleVerifySymbol()}
                 placeholder="e.g. 2B76 or TSLA"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 disabled={verifyUpdating}
               />
               <div className="flex gap-2">

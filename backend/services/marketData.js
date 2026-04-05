@@ -30,6 +30,107 @@ async function yahooSearchTicker(query) {
  * Fetch price (and optionally currency) from Yahoo chart API for a given ticker
  * @returns {number|null} price, or { price, currency } when withMeta=true
  */
+/**
+ * OpenFIGI (Bloomberg) maps ISIN → listings (ticker, exchange, name). Free without registration;
+ * optional OPENFIGI_API_KEY in env for higher rate limits. Does not replace a price vendor — we only
+ * use it to discover Yahoo-compatible tickers Yahoo search missed.
+ * @see https://www.openfigi.com/api
+ */
+async function openfigiIsinMappings(isin) {
+  const clean = String(isin).trim().toUpperCase();
+  if (!looksLikeIsin(clean)) return [];
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (process.env.OPENFIGI_API_KEY) {
+      headers['X-OPENFIGI-APIKEY'] = process.env.OPENFIGI_API_KEY;
+    }
+    const res = await fetch('https://api.openfigi.com/v3/mapping', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify([{ idType: 'ID_ISIN', idValue: clean }])
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const first = Array.isArray(json) ? json[0] : null;
+    if (!first || first.error) return [];
+    return Array.isArray(first.data) ? first.data : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** Map common OpenFIGI exchCode values to Yahoo suffixes to try (best-effort). */
+function openfigiExchToYahooSuffixes(exchCode) {
+  if (!exchCode || typeof exchCode !== 'string') return [];
+  const e = exchCode.toUpperCase();
+  const map = {
+    XETRA: ['.DE'],
+    XETR: ['.DE'],
+    XET: ['.DE'],
+    GER: ['.DE'],
+    GETTEX: ['.DE', '.MU'],
+    XBER: ['.DE'],
+    XMUN: ['.MU'],
+    LSE: ['.L'],
+    XLON: ['.L'],
+    SWX: ['.SW'],
+    XSWX: ['.SW'],
+    ENXT: ['.PA'],
+    XPAR: ['.PA'],
+    XMAD: ['.MC'],
+    XAMS: ['.AS'],
+    XBRU: ['.BR'],
+    XVIE: ['.VI']
+  };
+  return map[e] || [];
+}
+
+/**
+ * Yahoo chart candidates from one OpenFIGI row (bond tickers often contain spaces).
+ */
+function yahooTickerCandidatesFromOpenfigiRow(row) {
+  const candidates = [];
+  const t = row && row.ticker;
+  if (!t || typeof t !== 'string') return candidates;
+  const trimmed = t.trim();
+  if (!trimmed) return candidates;
+  candidates.push(trimmed);
+  if (trimmed.includes(' ')) {
+    candidates.push(trimmed.replace(/\s+/g, '-'));
+    candidates.push(trimmed.replace(/\s+/g, ''));
+    const first = trimmed.split(/\s+/)[0];
+    if (first && first.length >= 2 && first !== trimmed) candidates.push(first);
+  }
+  const suff = openfigiExchToYahooSuffixes(row.exchCode);
+  const base = trimmed.split(/\s+/)[0];
+  if (base && /^[A-Z0-9.-]{1,20}$/i.test(base)) {
+    for (const s of suff) candidates.push(base + s);
+  }
+  return [...new Set(candidates)];
+}
+
+/**
+ * After Yahoo search + chart + suffix sweep failed: try OpenFIGI ISIN → alternate tickers → Yahoo chart.
+ */
+async function yahooPriceViaOpenfigiIsin(sym, preciousTickers) {
+  if (preciousTickers || !looksLikeIsin(sym)) return null;
+  const rows = await openfigiIsinMappings(sym);
+  for (const row of rows) {
+    for (const cand of yahooTickerCandidatesFromOpenfigiRow(row)) {
+      const p = await yahooChartPrice(cand);
+      if (p != null && !Number.isNaN(Number(p))) return Number(p);
+    }
+    if (row.name && typeof row.name === 'string') {
+      const resolved = await yahooSearchTicker(row.name);
+      if (resolved) {
+        const p = await yahooChartPrice(resolved);
+        if (p != null && !Number.isNaN(Number(p))) return Number(p);
+      }
+    }
+  }
+  return null;
+}
+
 async function yahooChartPrice(ticker, withMeta = false) {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
@@ -173,6 +274,11 @@ export async function fetchCurrentPrice(symbol, assetType = 'stock') {
         if (price != null) return price;
       }
 
+      if (price == null) {
+        const viaFig = await yahooPriceViaOpenfigiIsin(sym, preciousTickers);
+        if (viaFig != null) return viaFig;
+      }
+
       return null;
     } else if (assetType === 'crypto') {
       // For crypto, use CoinGecko API (free tier). CoinGecko uses coin IDs (e.g. bitcoin) not symbols (btc).
@@ -302,6 +408,16 @@ export async function getProjectedPrice3M(symbol, currentPrice, assetType = 'sto
   if ((isIsin || assetType === 'bond') && tickersToTry.length === 1 && tickersToTry[0] === sym) {
     const resolved = await yahooSearchTicker(sym);
     if (resolved) tickersToTry = [resolved, sym];
+  }
+  if (looksLikeIsin(sym)) {
+    const rows = await openfigiIsinMappings(sym);
+    const extra = [];
+    for (const row of rows) {
+      extra.push(...yahooTickerCandidatesFromOpenfigiRow(row));
+    }
+    if (extra.length > 0) {
+      tickersToTry = [...new Set([...tickersToTry, ...extra])];
+    }
   }
   let closes = null;
   for (const ticker of tickersToTry) {
