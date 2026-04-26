@@ -25,7 +25,7 @@ jobs:
             frontend/package-lock.json
 
       - name: Run validation agent
-        run: npm run validation:report
+        run: npm run validate:report
 
       - name: Upload test report
         if: always()
