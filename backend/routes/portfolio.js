@@ -45,6 +45,26 @@ function holdingValueInEur(h, usdToEur, gbpToEur, hkdToEur) {
   return value;
 }
 
+/** Compute cost basis in EUR from purchase_price. Returns null when cost basis is unknown. */
+function holdingPurchaseCostInEur(h, usdToEur, gbpToEur, hkdToEur) {
+  const q = Number(h.quantity) || 0;
+  let p = h.purchase_price != null ? Number(h.purchase_price) : null;
+  if (!q || p == null || Number.isNaN(p) || p <= 0) return null;
+  const sym = String(h.symbol || '').trim().toUpperCase();
+  const assetT = (h.asset_type || h.assetType || 'stock').toLowerCase();
+  let currency = isEurNativeSymbol(sym, assetT) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
+  if (sym.endsWith('.HK')) currency = 'HKD';
+  const isPence = LSE_GBP_ETF_SYMBOLS.includes(sym) && p >= 1000 && p < 50000;
+  const isUsdLseEtf = LSE_USD_ETF_SYMBOLS.includes(sym);
+  if (isPence) p = p / 100;
+  let value = q * p;
+  const hk = hkdToEur != null && hkdToEur > 0 ? hkdToEur : 0.11;
+  if (currency === 'USD' || isUsdLseEtf) value *= usdToEur;
+  else if (currency === 'GBP' || isPence) value *= gbpToEur;
+  else if (currency === 'HKD') value *= hk;
+  return value;
+}
+
 /** P2P/savings: parse balanceAsOfDate / investmentDate to YYYY-MM-DD */
 function parseBalanceAsOfIso(accountData) {
   if (!accountData) return null;
@@ -86,6 +106,54 @@ function compoundP2PToNow(baseBalance, annualRatePct, fromIsoYmd) {
 function isP2pOrSavingsType(t) {
   const u = (t || '').toLowerCase();
   return u === 'p2p' || u === 'savings';
+}
+
+/** Best-effort asset type inference when AI/symbol lookup is incomplete. */
+function inferAssetType(holding) {
+  const sym = String(holding?.symbol || '').trim().toUpperCase();
+  if (sym === 'XAG' || sym === 'XAU') return 'precious';
+  const explicit = String(holding?.assetType || holding?.asset_type || '').trim().toLowerCase();
+  if (explicit) return explicit;
+  const text = `${holding?.name || ''} ${holding?.title || ''} ${holding?.symbol || ''}`.toLowerCase();
+  if (/\b(etf|ucits|index fund|exchange traded fund)\b/.test(text)) return 'etf';
+  if (/\b(ishares|vanguard|invesco|xtrackers|lyxor|amundi|wisdomtree|spdr)\b/.test(text)) return 'etf';
+  if (/\b(bond|treasury|note|sovereign|corp(?:orate)?)\b/.test(text)) return 'bond';
+  if (/\b(bitcoin|ethereum|solana|ripple|crypto|coin)\b/.test(text)) return 'crypto';
+  return 'stock';
+}
+
+/** Parse locale-friendly numeric amount (supports 1,234.56 and 1.234,56). */
+function parseFlexibleNumberInput(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : NaN;
+  const s = String(raw).trim().replace(/\s/g, '').replace(/\u202f/g, '');
+  if (!s) return null;
+  const lastComma = s.lastIndexOf(',');
+  const lastDot = s.lastIndexOf('.');
+  if (lastComma !== -1 && lastDot !== -1) {
+    if (lastComma > lastDot) {
+      return parseFloat(s.replace(/\./g, '').replace(',', '.'));
+    }
+    return parseFloat(s.replace(/,/g, ''));
+  }
+  if (lastComma !== -1) {
+    const parts = s.split(',');
+    if (parts.length === 2 && parts[1].length <= 2 && parts[0].length > 0) {
+      return parseFloat(`${parts[0].replace(/\./g, '')}.${parts[1]}`);
+    }
+    return parseFloat(s.replace(/,/g, ''));
+  }
+  if (lastDot !== -1) {
+    const parts = s.split('.');
+    if (parts.length > 1 && parts.every((p) => /^\d+$/.test(p))) {
+      const lastSeg = parts[parts.length - 1];
+      if (parts.length === 2 && lastSeg.length <= 2) {
+        return parseFloat(`${parts[0]}.${lastSeg}`);
+      }
+      return parseFloat(parts.join(''));
+    }
+  }
+  return parseFloat(s);
 }
 
 /**
@@ -203,8 +271,7 @@ function insertHoldings(db, accountId, holdings, currency, resolve, reject) {
     let quantity = parseFloat(holding.quantity) || 0;
     let purchasePrice = holding.purchasePrice ? parseFloat(holding.purchasePrice) : (holding.purchase_price != null ? parseFloat(holding.purchase_price) : null);
     let currentPrice = holding.currentPrice ? parseFloat(holding.currentPrice) : (holding.current_price != null ? parseFloat(holding.current_price) : null);
-    const symUpper = (symbol || '').toUpperCase();
-    const assetType = (symUpper === 'XAG' || symUpper === 'XAU') ? 'precious' : (holding.assetType || holding.asset_type || 'stock');
+    const assetType = inferAssetType(holding);
     const holdingCurrency = holding.currency || currency || 'EUR';
     if (currentValueNum != null && !isNaN(currentValueNum)) {
       const totalValue = currentValueNum;
@@ -380,6 +447,7 @@ export async function uploadScreenshot(req, res) {
         // Use provided accountType from request, or from extracted data, or fallback to detection
         const finalAccountType = accountData.accountType || defaultAccountType || detectAccountType(detectedPlatform);
         const snap = resolveP2pSnapshotFromUpload(accountData, balance, interestRate, finalAccountType);
+        const defaultContributedAmount = isP2pOrSavingsType(finalAccountType) ? snap.historyBalance : null;
 
         const userId = req.userId || null;
         // Check if this specific account already exists (user's account or unassigned legacy)
@@ -397,9 +465,10 @@ export async function uploadScreenshot(req, res) {
               db.run(
                 `UPDATE accounts 
                  SET balance = ?, interest_rate = ?, account_type = ?, user_id = COALESCE(user_id, ?),
+                     contributed_amount = COALESCE(contributed_amount, ?),
                      last_updated = CURRENT_TIMESTAMP, screenshot_path = ?, raw_data = ?
                  WHERE id = ?`,
-                [snap.accountBalance, interestRate, finalAccountType, userId, filePath, JSON.stringify(extractedData), existingAccount.id],
+                [snap.accountBalance, interestRate, finalAccountType, userId, defaultContributedAmount, filePath, JSON.stringify(extractedData), existingAccount.id],
                 function(updateErr) {
                   if (updateErr) {
                     reject(updateErr);
@@ -465,9 +534,9 @@ export async function uploadScreenshot(req, res) {
             } else {
               // Create new account
               db.run(
-                `INSERT INTO accounts (platform, account_name, account_type, balance, interest_rate, currency, screenshot_path, raw_data, user_id)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [detectedPlatform, accountName, finalAccountType, snap.accountBalance, interestRate, currency, filePath, JSON.stringify(extractedData), userId],
+                `INSERT INTO accounts (platform, account_name, account_type, balance, contributed_amount, interest_rate, currency, screenshot_path, raw_data, user_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [detectedPlatform, accountName, finalAccountType, snap.accountBalance, defaultContributedAmount, interestRate, currency, filePath, JSON.stringify(extractedData), userId],
                 function(insertErr) {
                   if (insertErr) {
                     reject(insertErr);
@@ -698,16 +767,25 @@ export function getPortfolioSummary(req, res) {
               const hkdRate = hkdToEur || 0.11;
               const holdingsResult = await new Promise((resolve) => {
                 db.all(
-                  'SELECT symbol, quantity, current_price, purchase_price, currency FROM holdings WHERE account_id = ?',
+                  'SELECT symbol, quantity, current_price, purchase_price, currency, asset_type FROM holdings WHERE account_id = ?',
                   [account.id],
                   (err, holdings) => {
                     if (err) {
-                      resolve({ totalValueEur: currentValue });
+                      resolve({ totalValueEur: currentValue, costBasisEur: 0, currentValueForCostKnownEur: 0 });
                       return;
                     }
                     const list = holdings || [];
                     const totalValueEur = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpRate, hkdRate), 0);
-                    resolve({ totalValueEur });
+                    let costBasisEur = 0;
+                    let currentValueForCostKnownEur = 0;
+                    for (const h of list) {
+                      const cost = holdingPurchaseCostInEur(h, usdToEur, gbpRate, hkdRate);
+                      if (cost != null && cost > 0) {
+                        costBasisEur += cost;
+                        currentValueForCostKnownEur += holdingValueInEur(h, usdToEur, gbpRate, hkdRate);
+                      }
+                    }
+                    resolve({ totalValueEur, costBasisEur, currentValueForCostKnownEur });
                   }
                 );
               });
@@ -722,6 +800,23 @@ export function getPortfolioSummary(req, res) {
               if (useValue != null && typeof useValue === 'number' && !Number.isNaN(useValue)) {
                 currentValue = useValue;
               }
+              account._costBasisEur = holdingsResult?.costBasisEur || 0;
+              account._currentValueForCostKnownEur = holdingsResult?.currentValueForCostKnownEur || 0;
+            }
+            // If holdings are missing (OCR failed) and balance is zero, fall back to latest snapshot history.
+            if ((account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') &&
+                (account.holdings_count || 0) === 0 &&
+                (!Number.isFinite(currentValue) || currentValue <= 0)) {
+              const lastHistoryBalance = await new Promise((resolve) => {
+                db.get(
+                  'SELECT balance FROM account_history WHERE account_id = ? ORDER BY recorded_at DESC LIMIT 1',
+                  [account.id],
+                  (_e, row) => resolve(row?.balance)
+                );
+              });
+              if (typeof lastHistoryBalance === 'number' && lastHistoryBalance > 0) {
+                currentValue = lastHistoryBalance;
+              }
             }
 
             return {
@@ -730,12 +825,15 @@ export function getPortfolioSummary(req, res) {
               accountName: account.account_name,
               accountType: account.account_type,
               balance: account.balance,
+              contributedAmount: account.contributed_amount,
               currentValue,
               currency: account.currency,
               interestRate: account.interest_rate,
               lastUpdated: account.last_updated,
               holdingsCount: account.holdings_count,
-              tag: account.tag || null
+              tag: account.tag || null,
+              costBasisEur: account._costBasisEur || 0,
+              currentValueForCostKnownEur: account._currentValueForCostKnownEur || 0
             };
           } catch (e) {
             console.error('getPortfolioSummary account error:', account?.id, e);
@@ -745,12 +843,15 @@ export function getPortfolioSummary(req, res) {
               accountName: account.account_name,
               accountType: account.account_type,
               balance: account.balance,
+              contributedAmount: account.contributed_amount,
               currentValue: account.balance || 0,
               currency: account.currency,
               interestRate: account.interest_rate,
               lastUpdated: account.last_updated,
               holdingsCount: account.holdings_count,
-              tag: account.tag || null
+              tag: account.tag || null,
+              costBasisEur: 0,
+              currentValueForCostKnownEur: 0
             };
           }
         })
@@ -758,6 +859,11 @@ export function getPortfolioSummary(req, res) {
 
         // Calculate totals
         const totalValue = portfolioData.reduce((sum, acc) => sum + acc.currentValue, 0);
+        const portfolioCostBasisEur = portfolioData.reduce((sum, acc) => sum + (Number(acc.costBasisEur) || 0), 0);
+        const portfolioCurrentValueForCostKnownEur = portfolioData.reduce((sum, acc) => sum + (Number(acc.currentValueForCostKnownEur) || 0), 0);
+        const portfolioGrowthPercent = portfolioCostBasisEur > 0
+          ? ((portfolioCurrentValueForCostKnownEur - portfolioCostBasisEur) / portfolioCostBasisEur) * 100
+          : null;
 
         // Group by platform (parent) -> categories (accountType) -> accounts
         const platformMap = new Map();
@@ -804,6 +910,9 @@ export function getPortfolioSummary(req, res) {
           accounts: portfolioData,
           platforms,
           pieData: pieData,
+          portfolioCostBasisEur,
+          portfolioCurrentValueForCostKnownEur,
+          portfolioGrowthPercent,
           lastUpdated: new Date().toISOString()
         });
       } catch (summaryErr) {
@@ -1057,6 +1166,42 @@ export function updateAccountInterestRate(req, res) {
   );
 }
 
+// Update account contributed amount (how much user has added in total). Empty clears it.
+export function updateAccountContributedAmount(req, res) {
+  const db = getDatabase();
+  const accountId = req.params.id;
+  const { contributedAmount } = req.body;
+
+  if (!accountId) {
+    return res.status(400).json({ error: 'accountId is required' });
+  }
+
+  const value = parseFlexibleNumberInput(contributedAmount);
+
+  if (value !== null && (Number.isNaN(value) || value < 0)) {
+    return res.status(400).json({ error: 'contributedAmount must be a valid non-negative number or empty' });
+  }
+
+  db.run(
+    'UPDATE accounts SET contributed_amount = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
+    [value, accountId],
+    function(err) {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+      res.json({
+        success: true,
+        message: 'Contributed amount updated successfully',
+        accountId,
+        contributedAmount: value
+      });
+    }
+  );
+}
+
 // Get account holdings
 export function getAccountHoldings(req, res) {
   const db = getDatabase();
@@ -1246,8 +1391,11 @@ export function getAccountHoldings(req, res) {
 
         const totalValueEur = holdingsWithPrices.reduce((sum, h) => sum + (h.totalValueEur ?? 0), 0);
 
-        // Sync account balance with computed total (use computed value to avoid race with DB updates)
-        await syncAccountBalanceFromHoldings(accountId, totalValueEur).catch(() => {});
+        // Sync account balance only when we actually have holdings.
+        // If OCR missed holdings, forcing 0 here would erase a valid snapshot balance.
+        if (holdingsWithPrices.length > 0) {
+          await syncAccountBalanceFromHoldings(accountId, totalValueEur).catch(() => {});
+        }
 
         res.json({
           holdings: holdingsWithPrices,
@@ -1501,11 +1649,13 @@ export async function updateAccountWithScreenshot(req, res) {
           const currency = extractedData.currency || existingAccount.currency || 'EUR';
           const detectedPlatform = extractedData.platform || existingAccount.platform;
           const snap = resolveP2pSnapshotFromUpload(accountData, balance, interestRate, existingAccount.account_type);
+          const defaultContributedAmount = isP2pOrSavingsType(existingAccount.account_type) ? snap.historyBalance : null;
 
           // Update the account
           db.run(
             `UPDATE accounts 
              SET balance = ?, interest_rate = ?, 
+                 contributed_amount = COALESCE(contributed_amount, ?),
                  last_updated = CURRENT_TIMESTAMP, 
                  screenshot_path = ?, 
                  raw_data = ?,
@@ -1514,6 +1664,7 @@ export async function updateAccountWithScreenshot(req, res) {
             [
               snap.accountBalance, 
               interestRate, 
+              defaultContributedAmount,
               filePath, 
               JSON.stringify(extractedData),
               detectedPlatform,
@@ -1568,6 +1719,7 @@ export async function updateAccountWithScreenshot(req, res) {
                           accountName: existingAccount.account_name,
                           platform: detectedPlatform,
                           balance: snap.accountBalance,
+                          contributedAmount: existingAccount.contributed_amount ?? defaultContributedAmount ?? null,
                           interestRate: interestRate,
                           accountType: existingAccount.account_type,
                           currency: currency,
@@ -1766,6 +1918,12 @@ async function syncAccountBalanceFromHoldings(accountId, totalEur = null) {
     return;
   }
   if (totalEur != null && typeof totalEur === 'number' && !Number.isNaN(totalEur)) {
+    if (totalEur <= 0) {
+      const countRow = await new Promise((resolve) => {
+        db.get('SELECT COUNT(*) AS c FROM holdings WHERE account_id = ?', [accountId], (_e, row) => resolve(row));
+      });
+      if (!countRow?.c) return;
+    }
     await dbRun(db, 'UPDATE accounts SET balance = ? WHERE id = ?', [totalEur, accountId]);
     return;
   }
@@ -1779,6 +1937,7 @@ async function syncAccountBalanceFromHoldings(accountId, totalEur = null) {
     (err, holdings) => {
       if (err) return;
       const list = holdings || [];
+      if (list.length === 0) return;
       const total = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpToEur, hkdToEur), 0);
       db.run('UPDATE accounts SET balance = ? WHERE id = ?', [total, accountId], () => {});
     }
@@ -1863,6 +2022,44 @@ export function updateHoldingPrice(req, res) {
         message: 'Holding price updated successfully',
         holdingId: holdingId,
         price: priceValue
+      });
+    }
+  );
+}
+
+// Update holding purchase price (per unit). Null/empty clears the stored cost basis.
+export function updateHoldingPurchasePrice(req, res) {
+  const db = getDatabase();
+  const holdingId = req.params.id;
+  const { purchasePrice } = req.body;
+
+  if (!holdingId) {
+    return res.status(400).json({ error: 'holdingId is required' });
+  }
+
+  let purchasePriceValue = null;
+  if (purchasePrice !== undefined && purchasePrice !== null && purchasePrice !== '') {
+    purchasePriceValue = parseFloat(purchasePrice);
+    if (isNaN(purchasePriceValue) || purchasePriceValue < 0) {
+      return res.status(400).json({ error: 'purchasePrice must be a valid positive number or empty' });
+    }
+  }
+
+  db.run(
+    'UPDATE holdings SET purchase_price = ? WHERE id = ?',
+    [purchasePriceValue, holdingId],
+    function(err) {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Holding not found' });
+      }
+      res.json({
+        success: true,
+        message: 'Holding purchase price updated successfully',
+        holdingId,
+        purchasePrice: purchasePriceValue
       });
     }
   );

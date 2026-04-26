@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getAccountHistory, deleteHistoryEntry, getAccountHoldings, getHoldingsProjection, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding as apiDeleteHolding, verifyHoldingSymbol, updateAccountTag } from '../services/api';
+import { getAccountHistory, deleteHistoryEntry, getAccountHoldings, getHoldingsProjection, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, updateHoldingPurchasePrice, deleteHolding as apiDeleteHolding, verifyHoldingSymbol, updateAccountTag } from '../services/api';
 import UpdateAccountModal from './UpdateAccountModal';
 import AccountDetailsModal from './AccountDetailsModal';
 import AddHoldingModal from './AddHoldingModal';
@@ -35,6 +35,8 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const [editingPriceId, setEditingPriceId] = useState(null);
   const [editingPriceValue, setEditingPriceValue] = useState('');
   const [editingPriceCurrency, setEditingPriceCurrency] = useState('EUR');
+  const [editingPurchasePriceId, setEditingPurchasePriceId] = useState(null);
+  const [editingPurchasePriceValue, setEditingPurchasePriceValue] = useState('');
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [verifyHolding, setVerifyHolding] = useState(null);
   const [verifySymbolInput, setVerifySymbolInput] = useState('');
@@ -133,6 +135,12 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const formatChange = (change) => {
     const formatted = formatCurrency(Math.abs(change));
     return change >= 0 ? `+${formatted}` : `-${formatted}`;
+  };
+
+  const formatPercent = (value) => {
+    if (value == null || Number.isNaN(Number(value))) return '-';
+    const n = Number(value);
+    return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
   };
 
   const isToday = (dateString) => {
@@ -295,6 +303,37 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
     setEditingPriceCurrency('EUR');
   };
 
+  const handlePurchasePriceEdit = (holding) => {
+    setEditingPurchasePriceId(holding.id);
+    setEditingPurchasePriceValue(holding.purchase_price != null ? String(holding.purchase_price) : '');
+  };
+
+  const handlePurchasePriceSave = async (holdingId) => {
+    try {
+      const raw = editingPurchasePriceValue.trim();
+      const purchasePrice = raw === '' ? '' : parseFloat(raw.replace(',', '.'));
+      if (raw !== '' && (isNaN(purchasePrice) || purchasePrice < 0)) {
+        alert('Please enter a valid positive number, or leave blank to clear it');
+        return;
+      }
+      await updateHoldingPurchasePrice(holdingId, purchasePrice);
+      await loadHoldings();
+      setEditingPurchasePriceId(null);
+      setEditingPurchasePriceValue('');
+      if (onUpdate) {
+        onUpdate();
+      }
+    } catch (error) {
+      console.error('Error updating purchase price:', error);
+      alert('Failed to update purchase price. Please try again.');
+    }
+  };
+
+  const handlePurchasePriceCancel = () => {
+    setEditingPurchasePriceId(null);
+    setEditingPurchasePriceValue('');
+  };
+
   const handleRemoveHolding = (holdingId) => {
     setConfirmRemoveHoldingId(holdingId);
   };
@@ -365,11 +404,32 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const isStockOrCrypto = (account.accountType === 'stocks' || account.accountType === 'crypto' || account.accountType === 'precious' ||
                            account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious');
   const accountBalance = account.currentValue || account.balance || 0;
+  const latestHistoryBalance = Array.isArray(history) && history.length > 0
+    ? Number(history[0]?.balance)
+    : null;
+  const accountBalanceNum = Number(accountBalance);
+  const correctedNonMarketBalance =
+    Number.isFinite(accountBalanceNum) && accountBalanceNum > 0
+      ? (
+          Number.isFinite(latestHistoryBalance) &&
+          latestHistoryBalance > 0 &&
+          accountBalanceNum > latestHistoryBalance * 20
+            ? latestHistoryBalance
+            : accountBalanceNum
+        )
+      : 0;
   const holdingsSum = holdings.length > 0 ? holdings.reduce((sum, h) => sum + (Number(h.totalValueEur) ?? Number(h.totalValue) ?? 0), 0) : 0;
   const fromHoldings = holdingsTotalValue > 0 ? holdingsTotalValue : holdingsSum;
   const effectiveBalance = isStockOrCrypto
     ? (fromHoldings > 0 ? fromHoldings : accountBalance)
-    : accountBalance;
+    : correctedNonMarketBalance;
+  const accountTypeLower = (account.accountType || account.account_type || '').toLowerCase();
+  const isContributionGrowthType = ['p2p', 'savings', 'bank'].includes(accountTypeLower);
+  const contributedAmountRaw = account.contributedAmount != null ? account.contributedAmount : account.contributed_amount;
+  const contributedAmount = contributedAmountRaw != null ? Number(contributedAmountRaw) : null;
+  const contributionGrowthPercent = isContributionGrowthType && contributedAmount != null && contributedAmount > 0
+    ? ((effectiveBalance - contributedAmount) / contributedAmount) * 100
+    : null;
 
   const handleDeleteHistory = async (historyId) => {
     if (confirmDeleteId !== historyId) {
@@ -530,6 +590,23 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
               <div className="text-2xl font-bold text-green-600">{account.interestRate || account.interest_rate}% APY</div>
             </div>
           )}
+          {isContributionGrowthType && (
+            <div className="bg-emerald-50 rounded-md p-4">
+              <div className="text-sm text-gray-600 mb-1">Growth vs Added Amount</div>
+              <div className={`text-2xl font-bold ${
+                contributionGrowthPercent == null
+                  ? 'text-gray-400'
+                  : contributionGrowthPercent >= 0
+                    ? 'text-emerald-600'
+                    : 'text-red-600'
+              }`}>
+                {contributionGrowthPercent == null ? '-' : formatPercent(contributionGrowthPercent)}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Added: {contributedAmount != null ? formatCurrency(contributedAmount) : 'Not set'}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Holdings (for stock/crypto accounts) */}
@@ -609,6 +686,8 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                       <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Symbol</th>
                       <th className="text-left py-3 px-3 text-sm font-semibold text-gray-700 w-28">Price source</th>
                       <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Quantity</th>
+                      <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Purchase Price</th>
+                      <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Growth %</th>
                       <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Price per Share</th>
                       <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Total Value</th>
                       <th className="text-center py-3 px-2 text-sm font-semibold text-gray-700 w-20">Actions</th>
@@ -618,6 +697,15 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                     {filteredHoldings.map((holding) => {
                       const isEditing = editingSymbolId === holding.id;
                       const isStaticPrice = holding.priceFetchFailed === true;
+                      const purchasePrice = holding.purchase_price != null ? Number(holding.purchase_price) : null;
+                      const currentUnitPrice = holding.currentPrice != null
+                        ? Number(holding.currentPrice)
+                        : ((Number(holding.quantity) || 0) > 0 && (holding.totalValue != null || holding.totalValueEur != null)
+                            ? Number(holding.totalValue ?? holding.totalValueEur) / (Number(holding.quantity) || 1)
+                            : null);
+                      const growthPercent = purchasePrice && purchasePrice > 0 && currentUnitPrice != null
+                        ? ((currentUnitPrice - purchasePrice) / purchasePrice) * 100
+                        : null;
                       return (
                         <tr key={holding.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="py-3 px-4 text-sm font-medium text-gray-900">
@@ -752,6 +840,70 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                             )}
                           </td>
                           <td className="py-3 px-4 text-sm text-gray-700 text-right">
+                            {editingPurchasePriceId === holding.id ? (
+                              <div className="flex items-center gap-2 justify-end">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  placeholder="blank = clear"
+                                  value={editingPurchasePriceValue}
+                                  onChange={(e) => setEditingPurchasePriceValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handlePurchasePriceSave(holding.id);
+                                    } else if (e.key === 'Escape') {
+                                      handlePurchasePriceCancel();
+                                    }
+                                  }}
+                                  className="w-28 px-2 py-1 border border-blue-500 rounded bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                                  autoFocus
+                                />
+                                <button
+                                  onClick={() => handlePurchasePriceSave(holding.id)}
+                                  className="text-green-600 hover:text-green-700"
+                                  title="Save purchase price"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={handlePurchasePriceCancel}
+                                  className="text-red-600 hover:text-red-700"
+                                  title="Cancel"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 justify-end">
+                                <span className={holding.purchase_price != null ? 'text-gray-700' : 'text-gray-400'}>
+                                  {holding.purchase_price != null ? formatCurrency(holding.purchase_price, holding.priceCurrency || holding.currency) : 'Not set'}
+                                </span>
+                                <button
+                                  onClick={() => handlePurchasePriceEdit(holding)}
+                                  className="text-gray-400 hover:text-blue-600 transition-colors"
+                                  title="Edit purchase price per unit"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                          <td className={`py-3 px-4 text-sm font-medium text-right ${
+                            growthPercent == null
+                              ? 'text-gray-400'
+                              : growthPercent >= 0
+                                ? 'text-green-600'
+                                : 'text-red-600'
+                          }`}>
+                            {growthPercent == null ? '-' : formatPercent(growthPercent)}
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-700 text-right">
                             {editingPriceId === holding.id ? (
                               <div className="flex items-center gap-2 justify-end flex-wrap">
                                 <input
@@ -882,7 +1034,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-gray-300 font-semibold">
-                      <td colSpan="4" className="py-3 px-4 text-sm text-gray-700">Total</td>
+                      <td colSpan="6" className="py-3 px-4 text-sm text-gray-700">Total</td>
                       <td className="py-3 px-4 text-sm text-gray-900 text-right">
                         {formatCurrency(
                           holdingsTab === 'all'

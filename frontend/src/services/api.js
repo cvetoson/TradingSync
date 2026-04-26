@@ -220,6 +220,13 @@ export async function updateAccountInterestRate(accountId, interestRate) {
   return response.data;
 }
 
+export async function updateAccountContributedAmount(accountId, contributedAmount) {
+  const response = await api.put(`/accounts/${accountId}/contributed-amount`, {
+    contributedAmount
+  });
+  return response.data;
+}
+
 export async function verifyHoldingSymbol(symbol, assetType = 'stock') {
   const response = await api.get('/holdings/verify-symbol', {
     params: { symbol: symbol.trim().toUpperCase(), assetType }
@@ -245,6 +252,13 @@ export async function updateHoldingPrice(holdingId, price, currency) {
   const body = { price };
   if (currency === 'USD' || currency === 'EUR') body.currency = currency;
   const response = await api.put(`/holdings/${holdingId}/price`, body);
+  return response.data;
+}
+
+export async function updateHoldingPurchasePrice(holdingId, purchasePrice) {
+  const response = await api.put(`/holdings/${holdingId}/purchase-price`, {
+    purchasePrice
+  });
   return response.data;
 }
 

@@ -10,7 +10,7 @@ import { getRecentErrors } from './lib/errorLog.js';
 import { getLastEmailError, sendEmail } from './services/emailService.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
 import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword } from './routes/auth.js';
-import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountTag, updateAccountBalance, updateAccountInterestRate, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
+import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountTag, updateAccountBalance, updateAccountInterestRate, updateAccountContributedAmount, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, updateHoldingPurchasePrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -106,6 +106,7 @@ async function start() {
   app.put('/api/accounts/:id/tag', requireAuth, requireAccountAuth, updateAccountTag);
   app.put('/api/accounts/:id/balance', requireAuth, requireAccountAuth, updateAccountBalance);
   app.put('/api/accounts/:id/interest-rate', requireAuth, requireAccountAuth, updateAccountInterestRate);
+  app.put('/api/accounts/:id/contributed-amount', requireAuth, requireAccountAuth, updateAccountContributedAmount);
   app.put('/api/accounts/:id/update', requireAuth, requireAccountAuth, upload.single('screenshot'), updateAccountWithScreenshot);
   app.post('/api/accounts/:id/add-holdings', requireAuth, requireAccountAuth, upload.single('screenshot'), addHoldingsFromScreenshot);
   app.delete('/api/accounts/:id', requireAuth, requireAccountAuth, deleteAccount);
@@ -114,6 +115,7 @@ async function start() {
   app.put('/api/holdings/:id/symbol', requireAuth, requireHoldingAuth, updateHoldingSymbol);
   app.put('/api/holdings/:id/quantity', requireAuth, requireHoldingAuth, updateHoldingQuantity);
   app.put('/api/holdings/:id/price', requireAuth, requireHoldingAuth, updateHoldingPrice);
+  app.put('/api/holdings/:id/purchase-price', requireAuth, requireHoldingAuth, updateHoldingPurchasePrice);
   app.delete('/api/holdings/:id', requireAuth, requireHoldingAuth, deleteHolding);
 
   // Health check

@@ -141,6 +141,7 @@ async function initPostgres() {
       account_name TEXT,
       account_type TEXT,
       balance DOUBLE PRECISION DEFAULT 0,
+      contributed_amount DOUBLE PRECISION,
       interest_rate DOUBLE PRECISION,
       currency TEXT DEFAULT 'EUR',
       last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -214,6 +215,9 @@ async function initPostgres() {
   if (!accountColNames.includes('tag')) {
     await run(`ALTER TABLE accounts ADD COLUMN tag TEXT`);
   }
+  if (!accountColNames.includes('contributed_amount')) {
+    await run(`ALTER TABLE accounts ADD COLUMN contributed_amount DOUBLE PRECISION`);
+  }
 
   console.log('✅ PostgreSQL database initialized successfully');
 }
@@ -268,6 +272,7 @@ export function initDatabase() {
             account_name TEXT,
             account_type TEXT,
             balance REAL DEFAULT 0,
+            contributed_amount REAL,
             interest_rate REAL,
             currency TEXT DEFAULT 'EUR',
             last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -285,6 +290,9 @@ export function initDatabase() {
             }
             if (!cols.some((c) => c.name === 'tag')) {
               db.run(`ALTER TABLE accounts ADD COLUMN tag TEXT`);
+            }
+            if (!cols.some((c) => c.name === 'contributed_amount')) {
+              db.run(`ALTER TABLE accounts ADD COLUMN contributed_amount REAL`);
             }
           }
         });

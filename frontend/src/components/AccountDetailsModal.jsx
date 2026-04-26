@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, updateAccountTag, deleteAccount } from '../services/api';
+import { updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, updateAccountContributedAmount, updateAccountTag, deleteAccount } from '../services/api';
 
 /** Parse amount from free text: 10000, 10,000, 10.000 (EU thousands), 1.234,56 (EU), 1,234.56 (US). Separators optional. */
 function parseMoneyInput(raw) {
@@ -55,6 +55,11 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
   const [platform, setPlatform] = useState(account.platform || '');
   const [accountType, setAccountType] = useState(account.accountType || account.account_type || 'unknown');
   const [currentValue, setCurrentValue] = useState((account.currentValue || account.balance || 0).toString());
+  const [contributedAmount, setContributedAmount] = useState(
+    account.contributedAmount != null
+      ? String(account.contributedAmount)
+      : (account.contributed_amount != null ? String(account.contributed_amount) : '')
+  );
   const [interestRate, setInterestRate] = useState((account.interestRate || account.interest_rate || '').toString());
   const [tag, setTag] = useState(account.tag != null ? String(account.tag) : '');
   const [isSaving, setIsSaving] = useState(false);
@@ -66,6 +71,11 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
     setPlatform(account.platform || '');
     setAccountType(account.accountType || account.account_type || 'unknown');
     setCurrentValue((account.currentValue || account.balance || 0).toString());
+    setContributedAmount(
+      account.contributedAmount != null
+        ? String(account.contributedAmount)
+        : (account.contributed_amount != null ? String(account.contributed_amount) : '')
+    );
     setInterestRate((account.interestRate || account.interest_rate || '').toString());
     setTag(account.tag != null ? String(account.tag) : '');
   }, [account]);
@@ -94,6 +104,19 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
       }
       const oldIR = account.interestRate || account.interest_rate || null;
       if (newIR !== oldIR && (newIR === null || !Number.isNaN(newIR))) { await updateAccountInterestRate(account.id, newIR); updates.push('interestRate'); }
+      const newContributed = contributedAmount.trim() === '' ? null : parseMoneyInput(contributedAmount);
+      if (contributedAmount.trim() !== '' && Number.isNaN(newContributed)) {
+        alert('Please enter a valid amount for Amount Added (e.g. 10000 or 10,000), or leave it blank.');
+        setIsSaving(false);
+        return;
+      }
+      const oldContributed = account.contributedAmount != null
+        ? Number(account.contributedAmount)
+        : (account.contributed_amount != null ? Number(account.contributed_amount) : null);
+      if (newContributed !== oldContributed) {
+        await updateAccountContributedAmount(account.id, newContributed);
+        updates.push('contributedAmount');
+      }
       const newTag = tag.trim();
       const oldTag = (account.tag != null ? String(account.tag) : '').trim();
       if (newTag !== oldTag) { await updateAccountTag(account.id, newTag); updates.push('tag'); }
@@ -200,6 +223,25 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: 'var(--text-3)' }}>%</span>
               </div>
+            </div>
+            <div>
+              <label className={labelCls} style={{ color: 'var(--text-3)' }}>Amount Added (for growth %)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }}>{currency || 'EUR'}</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={contributedAmount}
+                  onChange={(e) => setContributedAmount(e.target.value)}
+                  className={`${inputCls} pl-12`}
+                  style={inputStyle}
+                  placeholder="Optional baseline (blank = not set)"
+                />
+              </div>
+              <p className="mt-1 text-xs" style={{ color: 'var(--text-4)' }}>
+                Used to calculate growth % for P2P/B2B/savings style accounts.
+              </p>
             </div>
             <div className="flex justify-between text-xs">
               <span style={{ color: 'var(--text-3)' }}>Last Updated</span>

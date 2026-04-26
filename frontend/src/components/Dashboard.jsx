@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
@@ -40,8 +40,10 @@ const VIEW_MODES = [
 export default function Dashboard({ portfolioData, onUploadClick, onViewAccountDetails, onViewPlatformDetails }) {
   const [viewMode, setViewMode] = useState('platform');
   const [hoverIndex, setHoverIndex] = useState(null);
+  const [activeSegment, setActiveSegment] = useState(null);
   /** Sort order for the right-hand allocation list only (pie chart order unchanged). */
   const [allocationSort, setAllocationSort] = useState('value');
+  const listRef = useRef(null);
   const platforms = portfolioData?.platforms || [];
   const accounts = portfolioData?.accounts || [];
   const platformPieData = portfolioData?.pieData || [];
@@ -81,6 +83,16 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
 
   const totalValue = portfolioData.totalValue;
   const formattedTotal = fmt(totalValue, currency);
+  const portfolioGrowthPercent = portfolioData.portfolioGrowthPercent;
+  const hasPortfolioGrowth = portfolioGrowthPercent != null && Number.isFinite(Number(portfolioGrowthPercent));
+  const portfolioGrowthLabel = hasPortfolioGrowth
+    ? `${Number(portfolioGrowthPercent) >= 0 ? '+' : ''}${Number(portfolioGrowthPercent).toFixed(2)}%`
+    : null;
+  const portfolioGrowthColor = !hasPortfolioGrowth
+    ? 'var(--text-3)'
+    : Number(portfolioGrowthPercent) >= 0
+      ? '#10b981'
+      : '#ef4444';
   const listItems =
     viewMode === 'platform' ? platforms : viewMode === 'instrument' ? instrumentPieData : tagPieData;
 
@@ -96,22 +108,44 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
     return arr;
   }, [listItems, allocationSort]);
 
+  const topPlatform = useMemo(() =>
+    [...platforms].sort((a, b) => (b.value || 0) - (a.value || 0))[0] || null
+  , [platforms]);
+
   const pieColorIndex = (item) => {
     const i = pieData.findIndex((e) => e.name === item.name);
     return i >= 0 ? i : 0;
   };
 
+  const lastUpdatedMs = portfolioData.lastUpdated ? new Date(portfolioData.lastUpdated).getTime() : null;
+  const minsAgo = lastUpdatedMs ? Math.floor((Date.now() - lastUpdatedMs) / 60000) : null;
+  const freshnessColor = minsAgo === null ? 'var(--text-3)' : minsAgo < 60 ? '#10b981' : minsAgo < 1440 ? '#f59e0b' : '#ef4444';
+  const freshnessLabel = minsAgo === null ? '' : minsAgo < 1 ? 'Just now' : minsAgo < 60 ? `${minsAgo}m ago` : minsAgo < 1440 ? `${Math.floor(minsAgo / 60)}h ago` : `${Math.floor(minsAgo / 1440)}d ago`;
+
   return (
     <div className="space-y-5">
       {/* Portfolio header */}
       <div className="rounded-xl border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wider font-medium mb-1" style={{ color: 'var(--text-3)' }}>Total Portfolio Value</p>
+            <p className="text-xs uppercase tracking-wider font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Total Portfolio Value</p>
             <div className="text-4xl font-bold tracking-tight" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
-            <p className="text-xs mt-2" style={{ color: 'var(--text-4)' }}>
-              Last updated: {new Date(portfolioData.lastUpdated).toLocaleString()}
-            </p>
+            {hasPortfolioGrowth && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-sm font-semibold" style={{ color: portfolioGrowthColor }}>
+                  {portfolioGrowthLabel}
+                </span>
+                <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                  cost-basis growth
+                </span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 mt-2">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: freshnessColor }} />
+              <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+                Updated <span style={{ color: freshnessColor, fontWeight: 500 }}>{freshnessLabel}</span>
+              </p>
+            </div>
           </div>
           <button
             onClick={onUploadClick}
@@ -122,6 +156,27 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
             </svg>
             Add New
           </button>
+        </div>
+      </div>
+
+      {/* Hero stats row */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <p className="text-xs uppercase tracking-wider font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Accounts</p>
+          <div className="text-2xl font-bold" style={{ color: 'var(--text-1)' }}>{accounts.length}</div>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>{platforms.length} platforms</p>
+        </div>
+        <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <p className="text-xs uppercase tracking-wider font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Largest Platform</p>
+          <div className="text-lg font-bold truncate" style={{ color: 'var(--text-1)' }}>{topPlatform?.name || '—'}</div>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>{topPlatform ? fmt(topPlatform.value, currency) : '—'}</p>
+        </div>
+        <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <p className="text-xs uppercase tracking-wider font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Top Asset Type</p>
+          <div className="text-base font-bold truncate leading-tight" style={{ color: 'var(--text-1)' }}>{instrumentPieData[0]?.name || '—'}</div>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
+            {instrumentPieData[0] ? `${((instrumentPieData[0].value / totalValue) * 100).toFixed(1)}% of portfolio` : '—'}
+          </p>
         </div>
       </div>
 
@@ -137,7 +192,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setViewMode(id)}
+                  onClick={() => { setViewMode(id); setActiveSegment(null); }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
                     viewMode === id ? 'bg-blue-600 text-white' : ''
                   }`}
@@ -149,8 +204,8 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
             </div>
           </div>
 
-          <div className="relative">
-            <ResponsiveContainer width="100%" height={240}>
+          <div className="relative" style={{ height: 240 }}>
+            <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={pieData}
@@ -215,29 +270,44 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
           </div>
 
           <div className="flex flex-wrap gap-x-4 gap-y-2 mt-4">
-            {pieData.map((entry, index) => (
+            {pieData.map((entry, index) => {
+              const isActive = activeSegment === entry.name;
+              return (
+                <button
+                  key={entry.name}
+                  type="button"
+                  onClick={() => {
+                    setActiveSegment(prev => prev === entry.name ? null : entry.name);
+                    listRef.current?.querySelector(`[data-name="${entry.name}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  }}
+                  className="flex items-center gap-1.5 text-xs transition rounded px-1.5 py-0.5"
+                  style={{
+                    color: isActive ? 'var(--text-1)' : 'var(--text-3)',
+                    background: isActive ? `${COLORS[index % COLORS.length]}22` : 'transparent',
+                    outline: isActive ? `1px solid ${COLORS[index % COLORS.length]}55` : 'none',
+                    opacity: activeSegment && !isActive ? 0.45 : 1,
+                  }}
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                  <span className="truncate max-w-[120px]" title={entry.name}>
+                    {entry.name.length > 16 ? entry.name.substring(0, 14) + '…' : entry.name}
+                  </span>
+                </button>
+              );
+            })}
+            {activeSegment && (
               <button
-                key={entry.name}
                 type="button"
-                onClick={() => {
-                  if (!onViewPlatformDetails) return;
-                  if (viewMode === 'platform') {
-                    onViewPlatformDetails(platforms.find(p => p.name === entry.name) || { name: entry.name, value: entry.value, accounts: entry.accounts || [], categories: {} });
-                  } else if (viewMode === 'instrument') {
-                    onViewPlatformDetails({ name: entry.name, value: entry.value, accounts: entry.accounts || [], categories: entry.type ? { [entry.type]: entry.accounts } : {} });
-                  } else {
-                    onViewPlatformDetails({ name: entry.name, value: entry.value, accounts: entry.accounts || [], categories: entry.categories || {} });
-                  }
-                }}
-                className="flex items-center gap-1.5 text-xs transition"
+                onClick={() => setActiveSegment(null)}
+                className="flex items-center gap-1 text-xs transition"
                 style={{ color: 'var(--text-3)' }}
               >
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                <span className="truncate max-w-[120px]" title={entry.name}>
-                  {entry.name.length > 16 ? entry.name.substring(0, 14) + '…' : entry.name}
-                </span>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Clear
               </button>
-            ))}
+            )}
           </div>
         </div>
 
@@ -262,7 +332,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
               </select>
             </label>
           </div>
-          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+          <div className="space-y-2" ref={listRef}>
             {sortedListItems.map((item) => {
               const pct = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : '0.0';
               const ci = pieColorIndex(item);
@@ -279,9 +349,14 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                         : { name: item.name, value: item.value, accounts: item.accounts || [], categories: item.categories || {} }
                   )}
                   className="w-full text-left p-3 rounded-md border transition-all group"
-                  style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-hover)'}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                  data-name={item.name}
+                  style={{
+                    background: 'var(--bg-inner)',
+                    borderColor: activeSegment === item.name ? sliceColor : 'var(--border)',
+                    opacity: activeSegment && activeSegment !== item.name ? 0.4 : 1,
+                  }}
+                  onMouseEnter={e => { if (!activeSegment || activeSegment === item.name) e.currentTarget.style.borderColor = sliceColor; }}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = activeSegment === item.name ? sliceColor : 'var(--border)'}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">

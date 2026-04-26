@@ -3,7 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   PieChart, Pie, Cell
 } from 'recharts';
-import { getAccountHistory, getAccounts } from '../services/api';
+import { getAccountHistory } from '../services/api';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
 
@@ -31,6 +31,7 @@ const fmt = (value, currency = 'EUR') =>
 
 export default function AnalyticsPage({ portfolioData, currency }) {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [allHistories, setAllHistories] = useState([]);
   const [timeRange, setTimeRange] = useState('1Y');
   const [sortCol, setSortCol] = useState('balance');
@@ -41,14 +42,14 @@ export default function AnalyticsPage({ portfolioData, currency }) {
   const totalValue = portfolioData?.totalValue || 0;
 
   useEffect(() => {
+    if (accounts.length === 0) { setLoading(false); return; }
     let cancelled = false;
     async function fetchHistories() {
       setLoading(true);
+      setError(null);
       try {
-        const acctData = await getAccounts();
-        const accts = Array.isArray(acctData) ? acctData : (acctData?.accounts || []);
         const results = await Promise.all(
-          accts.map(a =>
+          accounts.map(a =>
             getAccountHistory(a.id)
               .then(d => (d.history || []).map(h => ({ ...h, accountId: a.id })))
               .catch(() => [])
@@ -57,13 +58,14 @@ export default function AnalyticsPage({ portfolioData, currency }) {
         if (!cancelled) setAllHistories(results.flat());
       } catch (e) {
         console.error('Failed to load account histories:', e);
+        if (!cancelled) setError('Failed to load history data. Please try again.');
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     fetchHistories();
     return () => { cancelled = true; };
-  }, []);
+  }, [accounts.length]);
 
   const portfolioTimeline = useMemo(() => {
     if (allHistories.length === 0) return [];
@@ -182,12 +184,46 @@ export default function AnalyticsPage({ portfolioData, currency }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <svg className="animate-spin h-8 w-8" style={{ color: 'var(--text-3)' }} fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
-        <span className="ml-3 text-sm" style={{ color: 'var(--text-3)' }}>Loading analytics...</span>
+      <div className="space-y-5">
+        {/* Skeleton: chart card */}
+        <div className="rounded-xl border p-6 animate-pulse" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <div className="flex items-start justify-between gap-4 mb-5">
+            <div className="space-y-2">
+              <div className="h-4 w-52 rounded" style={{ background: 'var(--bg-inner)' }} />
+              <div className="h-3 w-80 rounded" style={{ background: 'var(--bg-inner)' }} />
+            </div>
+            <div className="h-8 w-40 rounded-md" style={{ background: 'var(--bg-inner)' }} />
+          </div>
+          <div className="h-72 rounded-lg" style={{ background: 'var(--bg-inner)' }} />
+        </div>
+        {/* Skeleton: two side-by-side cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {[0, 1].map(i => (
+            <div key={i} className="rounded-xl border p-6 animate-pulse" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+              <div className="h-4 w-32 rounded mb-5" style={{ background: 'var(--bg-inner)' }} />
+              <div className="h-48 rounded-lg" style={{ background: 'var(--bg-inner)' }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-xl border p-12 text-center" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'var(--bg-inner)' }}>
+          <svg className="w-6 h-6" style={{ color: 'var(--text-3)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <p className="text-sm mb-4" style={{ color: 'var(--text-3)' }}>{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-lg text-sm transition"
+        >
+          Retry
+        </button>
       </div>
     );
   }
