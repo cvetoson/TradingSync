@@ -417,3 +417,49 @@ pgClient = new pg.Pool({ connectionString: DATABASE_URL, max: 10 });
 ---
 
 *Next run scheduled: hourly. Each run will check developer status and reverify fixed items.*
+
+---
+
+## Run #2 — 2026-04-28T01:00:00Z
+
+**Trigger:** Hourly monitor tick  
+**New commits since Run #1:** None — no developer activity detected  
+**Files re-checked:** `backend/server.js`, `backend/routes/auth.js`, `backend/services/aiService.js`, `backend/database.js`, `backend/routes/portfolio.js`, `frontend/src/services/api.js`, `frontend/src/context/AuthContext.jsx`
+
+### Reverification Results
+
+| ID | Severity | Title | Dev Checked | Fixed? |
+|---|---|---|---|---|
+| SEC-001 | 🔴 CRITICAL | Wildcard CORS (`app.use(cors())` still on line 24) | ⬜ No | ❌ Open |
+| SEC-002 | 🔴 CRITICAL | Unauthenticated `/api/debug` (line 143, no auth middleware) | ⬜ No | ❌ Open |
+| SEC-003 | 🔴 CRITICAL | No file type validation — `fileFilter` absent from multer config | ⬜ No | ❌ Open |
+| SEC-004 | 🔴 CRITICAL | `express.static('uploads/')` still on line 26, no auth | ⬜ No | ❌ Open |
+| SEC-005 | 🟠 HIGH | Fallback JWT secret `'dev-secret-change-in-production'` still on line 8 | ⬜ No | ❌ Open |
+| SEC-006 | 🟠 HIGH | `devLink` returned in response body (lines 190–197), no `NODE_ENV` guard | ⬜ No | ❌ Open |
+| SEC-007 | 🟠 HIGH | `user_id IS NULL` clause still in all 3 auth middleware functions (lines 355, 370, 388) | ⬜ No | ❌ Open |
+| SEC-008 | 🟠 HIGH | No `express-rate-limit` or any rate limiting in package.json or server.js | ⬜ No | ❌ Open |
+| SEC-009 | 🟠 HIGH | `platform` still interpolated raw into OpenAI prompt (aiService.js line 70) | ⬜ No | ❌ Open |
+| SEC-010 | 🟠 HIGH | `/api/test-email` still has no `requireAuth` (server.js line 158) | ⬜ No | ❌ Open |
+| SEC-011 | 🟡 MEDIUM | JWT still stored in `localStorage` (api.js line 11, AuthContext.jsx line 31) | ⬜ No | ❌ Open |
+| SEC-012 | 🟡 MEDIUM | No `helmet` or any security headers in server.js | ⬜ No | ❌ Open |
+| SEC-013 | 🟡 MEDIUM | Raw `err.message` returned to client in 7 locations in auth.js | ⬜ No | ❌ Open |
+| SEC-014 | 🟡 MEDIUM | No file cleanup/purge found anywhere in backend/ | ⬜ No | ❌ Open |
+| SEC-015 | 🟡 MEDIUM | `new pg.Client(...)` still on database.js line 90 (not Pool) | ⬜ No | ❌ Open |
+| SEC-016 | 🟡 MEDIUM | `email_verified` hardcoded to `1` on register (auth.js line 43) | ⬜ No | ❌ Open |
+| SEC-017 | 🟡 MEDIUM | `raw_data TEXT` column schema unchanged; no encryption added | ⬜ No | ❌ Open |
+| SEC-018 | 🔵 LOW | Password length check only (`< 8`), no complexity (auth.js lines 33, 218) | ⬜ No | ❌ Open |
+| SEC-019 | 🔵 LOW | `DEFAULT_USER_PASSWORD=changeme123` default unchanged in seed script | ⬜ No | ❌ Open |
+| SEC-020 | 🔵 LOW | No audit log table or mutation logging found in portfolio.js | ⬜ No | ❌ Open |
+| SEC-021 | 🔵 LOW | Hardcoded `0.11` HKD fallback still in portfolio.js line 41 | ⬜ No | ❌ Open |
+| SEC-022 | 🔵 LOW | `dotenv.config()` still called on every request in aiService.js line 16 | ⬜ No | ❌ Open |
+| SEC-023 | ⚪ INFO | No DB transaction wrapping in upload handlers | ⬜ No | ❌ Open |
+| SEC-024 | ⚪ INFO | Yahoo Finance still unauthenticated, no staleness indicator | ⬜ No | ❌ Open |
+
+### Run #2 Summary
+
+**Fixed this run:** 0  
+**Still open:** 24 / 24  
+**New findings:** None  
+
+> No developer activity since initial review. All 24 findings remain unaddressed.  
+> Highest priority remains **SEC-003 + SEC-004** (arbitrary file upload + public file serving) — these can be exploited by any authenticated user right now.
