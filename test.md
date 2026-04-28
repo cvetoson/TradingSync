@@ -873,3 +873,98 @@ No commits to `backend/` or `frontend/` since Run #5. All 22 issues remain open.
 ---
 
 *Next review scheduled: 2026-04-29T00:11:12Z*
+
+---
+
+## Run #7 — 2026-04-28T23:41:22Z
+
+### Developer Fix Check
+
+No commits since Run #6. All 22 issues remain open.
+
+| Key indicator | Result | Status |
+|---|---|---|
+| `'dev-secret-change-in-production'` in `auth.js:8` | count=1 | `[OPEN]` |
+| `requireAuth` wrapping `/api/debug` | count=0 | `[OPEN]` |
+| `rateLimit` / `express-rate` in `server.js` | count=0 | `[OPEN]` |
+| `express.static('uploads')` in `server.js` | count=1 | `[OPEN]` |
+| `cors()` no-arg in `server.js` | count=1 | `[OPEN]` |
+| `user_id IS NULL` in auth guards + data queries | count=6 | `[OPEN]` |
+| `helmet` in `server.js` | count=0 | `[OPEN]` |
+| `fileFilter` in multer config | count=0 | `[OPEN]` |
+| `USER` directive in `Dockerfile` | count=0 | `[OPEN]` |
+| `npm audit` backend vuln total | 17 (unchanged) | `[OPEN]` |
+
+---
+
+### SEC-008 — Client-Side Exposure Confirmed (devLink token in React state)
+
+Additional detail surfaced this run. The `devLink` password-reset token flow through the frontend was traced in full:
+
+1. `POST /api/auth/forgot-password` → response body includes `devLink` (SEC-008, server side)
+2. `ForgotPasswordPage.jsx:22` → `setDevLink(res.devLink)` stores it in React component state
+3. `ForgotPasswordPage.jsx:43` → rendered as `<a href={devLink}>Reset password →</a>` — a live clickable link in the page
+4. Same pattern in `CheckEmailPage.jsx` via React Router location state passed from `SplashScreen`
+
+The token is therefore stored in browser memory for the session and rendered as a clickable anchor. Any browser extension, XSS payload, or devtools inspection can read `res.devLink` directly from the network response or `window.__REACT_DEVTOOLS__` component state. The fix remains the same as SEC-008: gate `devLink` behind `NODE_ENV !== 'production'` on the server.
+
+---
+
+### SEC-006 — Additional Compounding Detail: deleteAccount Relies 100% on Middleware
+
+`deleteAccount` (`portfolio.js:2178`) issues `SELECT * FROM accounts WHERE id = ?` — no `user_id` filter in the handler itself. It trusts `requireAccountAuth` middleware entirely. Because `requireAccountAuth` permits `user_id IS NULL`, any authenticated user can delete **any NULL-owned account and all its cascaded data** (history, holdings, screenshots, transactions). This is a hard-delete with no soft-delete or recycle bin. The cascade is irreversible.
+
+Priority implication: SEC-006 should be treated as a **data destruction** risk, not merely a read-access risk.
+
+---
+
+### Areas Cleared This Run
+
+| Surface | Finding |
+|---|---|
+| **`.gitignore` coverage** | Correctly excludes `.env`, `backend/trading_sync.db`, `backend/uploads/`, `*.log`, `frontend/dist/` — all sensitive runtime artifacts excluded |
+| **Git history for secrets** | `git log --all -- backend/.env` returns no commits; no `.env` files appear in tracked history. `git grep` for `sk-`, `re_[A-Za-z]`, `postgresql://` in tracked files returns only `package-lock.json` (no live credentials) |
+| **Frontend routing auth** | All authenticated pages rendered only when `isAuthenticated=true` (JWT present in localStorage). Public routes (`/verify-email`, `/reset-password`, `/forgot-password`, `/check-email`) are intentionally unauthenticated — correct |
+| **Notes directory** | Contains only `BUSINESS_MODEL_PROPOSAL.md` (a planning document). No credentials, internal URLs, or infrastructure details |
+| **Migration script (`addUsers.js`)** | Creates default user with bcrypt-hashed password from env var — no plaintext passwords committed. NULL `user_id` root cause originated here (existing accounts assigned `user_id IS NULL` before migration ran) |
+| **Account deletion cascade** | Hard-delete cascades correctly to `account_history`, `screenshots`, `holdings`, `transactions`. No dangling orphan rows. Ownership gate is middleware-only (SEC-006 impact noted above) |
+| **Screenshot file cleanup on delete** | `DELETE FROM screenshots WHERE account_id = ?` removes DB records but does **not** delete the files from `backend/uploads/`. Orphaned screenshot files accumulate on disk. Low-severity ops issue — not a security finding but worth noting for storage hygiene |
+
+---
+
+## Summary — Run #7 (2026-04-28T23:41:22Z)
+
+**0 issues fixed. 0 new standalone issues. SEC-006 and SEC-008 scope/impact notes expanded.**
+
+SEC-006 is now confirmed as a **data destruction** risk: any authenticated user can irreversibly delete all data belonging to any NULL-owned account. SEC-008 confirmed client-side: the reset token is stored in React state and rendered as a clickable link.
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| SEC-001 | Critical | Hardcoded fallback JWT secret | [OPEN] |
+| SEC-002 | High | Unauthenticated `/api/debug` endpoint | [OPEN] |
+| SEC-003 | High | No rate limiting on auth endpoints | [OPEN] |
+| SEC-004 | High | Uploads served as public static files | [OPEN] |
+| SEC-005 | High | Wide-open CORS policy | [OPEN] |
+| SEC-006 | High | NULL user_id bypass — read, modify, **and irreversible delete** of shared accounts | [OPEN] |
+| SEC-017 | High | Docker container runs as root | [OPEN] |
+| SEC-018 | High | 25 known-vulnerable dependencies (12 High CVEs) | [OPEN] |
+| SEC-007 | Medium | Password reset token stored in plaintext | [OPEN] |
+| SEC-008 | Medium | Reset token in API response + React state + rendered as live link | [OPEN] |
+| SEC-009 | Medium | No security headers (Helmet missing) | [OPEN] |
+| SEC-010 | Medium | JWT not invalidated on password change | [OPEN] |
+| SEC-011 | Medium | No MIME type validation on uploads | [OPEN] |
+| SEC-014 | Medium | Raw internal error messages sent to client | [OPEN] |
+| SEC-015 | Medium | Unauthenticated open email relay endpoint | [OPEN] |
+| INF-002 | Medium | JWT in localStorage — XSS token theft | [OPEN] |
+| INF-003 | Medium | Default seed user with hardcoded password | [OPEN] |
+| SEC-012 | Low | Email verification not enforced | [OPEN] |
+| SEC-013 | Low | OpenAI error details leaked to client | [OPEN] |
+| SEC-016 | Low | No bounds validation on financial fields | [OPEN] |
+| SEC-019 | Low | No max length on user-supplied string fields | [OPEN] |
+| INF-001 | High (ops) | SQLite in production — data loss risk | [OPEN] |
+
+**Total: 22 issues — 1 Critical, 7 High, 7 Medium, 4 Low, 3 Operational**
+
+---
+
+*Next review scheduled: 2026-04-29T00:41:22Z*
