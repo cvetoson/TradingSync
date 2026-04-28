@@ -19,9 +19,18 @@ function parseMoneyInput(raw) {
   if (lastDot !== -1 && lastComma === -1) {
     const parts = s.split('.');
     if (parts.length > 1 && parts.every((p) => /^\d+$/.test(p))) {
+      if (parts.length === 2) {
+        const a = parts[0];
+        const b = parts[1];
+        // "10.50" → decimal; "10.126" / "12.345" → EU thousands → 10126 / 12345
+        if (b.length <= 2) return parseFloat(`${a}.${b}`);
+        if (b.length === 3 && a.length <= 3) return parseFloat(a + b);
+        // Long fractional part from JS/DB (e.g. 10116.08949946454) — must not concatenate digits
+        return parseFloat(s);
+      }
       const lastSeg = parts[parts.length - 1];
-      if (parts.length === 2 && lastSeg.length <= 2) {
-        return parseFloat(`${parts[0]}.${lastSeg}`);
+      if (lastSeg.length <= 2) {
+        return parseFloat(parts.slice(0, -1).join('') + '.' + lastSeg);
       }
       return parseFloat(parts.join(''));
     }
@@ -89,13 +98,15 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
       const prevType = account.accountType || account.account_type || 'unknown';
       if (accountType !== prevType) { await updateAccountType(account.id, accountType); updates.push('type'); }
       const newBalance = parseMoneyInput(currentValue);
-      const oldBalance = account.currentValue || account.balance || 0;
+      const oldBalanceRaw = account.currentValue ?? account.balance ?? 0;
+      const oldBalanceNum = Number(oldBalanceRaw);
+      const comparableOld = Number.isFinite(oldBalanceNum) ? oldBalanceNum : 0;
       if (Number.isNaN(newBalance)) {
         alert('Please enter a valid amount for Current Value (e.g. 10000 or 10,000).');
         setIsSaving(false);
         return;
       }
-      if (newBalance !== oldBalance) { await updateAccountBalance(account.id, newBalance); updates.push('balance'); }
+      if (newBalance !== comparableOld) { await updateAccountBalance(account.id, newBalance); updates.push('balance'); }
       const newIR = interestRate.trim() === '' ? null : parseMoneyInput(interestRate);
       if (interestRate.trim() !== '' && Number.isNaN(newIR)) {
         alert('Please enter a valid interest rate (e.g. 7.5 or 7,5).');
@@ -106,7 +117,7 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
       if (newIR !== oldIR && (newIR === null || !Number.isNaN(newIR))) { await updateAccountInterestRate(account.id, newIR); updates.push('interestRate'); }
       const newContributed = contributedAmount.trim() === '' ? null : parseMoneyInput(contributedAmount);
       if (contributedAmount.trim() !== '' && Number.isNaN(newContributed)) {
-        alert('Please enter a valid amount for Amount Added (e.g. 10000 or 10,000), or leave it blank.');
+        alert('Please enter a valid amount for original amount added (e.g. 10000 or 10,000), or leave it blank.');
         setIsSaving(false);
         return;
       }
@@ -225,7 +236,7 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
               </div>
             </div>
             <div>
-              <label className={labelCls} style={{ color: 'var(--text-3)' }}>Amount Added (for growth %)</label>
+              <label className={labelCls} style={{ color: 'var(--text-3)' }}>Original amount added</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }}>{currency || 'EUR'}</span>
                 <input
@@ -236,11 +247,11 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
                   onChange={(e) => setContributedAmount(e.target.value)}
                   className={`${inputCls} pl-12`}
                   style={inputStyle}
-                  placeholder="Optional baseline (blank = not set)"
+                  placeholder="e.g. 10000 or 10,000 (blank = not set)"
                 />
               </div>
               <p className="mt-1 text-xs" style={{ color: 'var(--text-4)' }}>
-                Used to calculate growth % for P2P/B2B/savings style accounts.
+                Total you originally deposited or invested in {currency || 'EUR'}—not a percentage. The app compares this to current value to show growth % on the account view.
               </p>
             </div>
             <div className="flex justify-between text-xs">

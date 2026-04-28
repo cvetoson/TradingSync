@@ -1,10 +1,10 @@
 .splash-shell {
   position: relative;
-  height: 400vh;
+  height: 100vh;
   background: #0a0a0c;
   color: #e9e3d3;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 .splash-bg {

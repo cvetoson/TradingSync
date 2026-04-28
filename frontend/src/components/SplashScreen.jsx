@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as api from '../services/api';
@@ -50,6 +50,17 @@ export default function SplashScreen() {
     setMode(next);
   };
 
+  useEffect(() => {
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, []);
+
   return (
     <div className="splash-shell">
       <div className="splash-bg" />
@@ -68,11 +79,11 @@ export default function SplashScreen() {
           <div className="splash-text">
             <h1>
               Every<br />
-              position.<br />
-              <span className="splash-accent">One</span> machine.
+              Asset.<br />
+              <span className="splash-accent">One</span> PLACE.
             </h1>
             <p className="splash-sub">
-              Every brokerage, wallet, and bank turning together as one machine. Watch your portfolio actually move.
+              Every brokerage, wallet, and bank turning together as one PLACE. Watch your portfolio actually move.
             </p>
 
             {mode === 'idle' && (
@@ -184,10 +195,6 @@ export default function SplashScreen() {
             <div className="splash-legend-item"><span className="splash-dot" style={{ background: '#8b6dab' }} />Cash 15%</div>
             <div className="splash-legend-item"><span className="splash-dot" style={{ background: '#c1614a' }} />Real estate 10%</div>
             <div className="splash-legend-item"><span className="splash-dot" style={{ background: '#7a7a8c' }} />Alt 10%</div>
-          </div>
-          <div className="splash-scroll-hint">
-            <span>Scroll to rotate</span>
-            <span className="splash-scroll-bar" />
           </div>
         </footer>
       </div>

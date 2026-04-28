@@ -152,7 +152,7 @@ export default function PortfolioGears3D() {
     scene.add(blob);
 
     const assembly = new THREE.Group();
-    assembly.scale.setScalar(0.6);
+    assembly.scale.setScalar(0.72);
     scene.add(assembly);
 
     // outer ring
@@ -204,14 +204,9 @@ export default function PortfolioGears3D() {
     });
 
     // interaction
-    let scrollRot = 0, curRot = 0;
+    let autoRot = 0;
     const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
 
-    const onScroll = () => {
-      const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-      scrollRot = (window.scrollY / max) * Math.PI * 2;
-    };
-    const onWheel = (e) => { scrollRot += e.deltaY * 0.0025; };
     const onMouseMove = (e) => {
       mouse.tx = (e.clientX / window.innerWidth) * 2 - 1;
       mouse.ty = (e.clientY / window.innerHeight) * 2 - 1;
@@ -222,8 +217,6 @@ export default function PortfolioGears3D() {
       camera.updateProjectionMatrix();
     };
 
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('resize', onResize);
 
@@ -231,11 +224,11 @@ export default function PortfolioGears3D() {
     let raf;
     const animate = () => {
       const dt = clock.getDelta();
-      curRot += (scrollRot - curRot) * 0.08;
+      autoRot += dt * 0.25;
       mouse.x += (mouse.tx - mouse.x) * 0.06;
       mouse.y += (mouse.ty - mouse.y) * 0.06;
 
-      assembly.rotation.y = curRot;
+      assembly.rotation.y = autoRot;
       assembly.rotation.x = mouse.y * -0.16;
       assembly.rotation.z = mouse.x * 0.12;
       assembly.position.y = Math.sin(performance.now() * 0.0006) * 0.04;
@@ -249,8 +242,6 @@ export default function PortfolioGears3D() {
 
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('wheel', onWheel);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('resize', onResize);
       scene.traverse(obj => {

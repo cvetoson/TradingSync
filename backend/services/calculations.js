@@ -13,10 +13,11 @@ export async function calculatePortfolioValue(account) {
 
   return new Promise((resolve, reject) => {
     try {
+      const balanceNum = Number(account.balance);
+      const balance = Number.isFinite(balanceNum) ? balanceNum : 0;
       if (account.account_type === 'p2p') {
         // For P2P, calculate based on balance and interest rate
         // Future value = balance * (1 + interest_rate/100) ^ (days/365)
-        const balance = account.balance || 0;
         const interestRate = account.interest_rate || 0;
         
         // Calculate days since last update
@@ -32,10 +33,10 @@ export async function calculatePortfolioValue(account) {
     } else if (account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') {
       // For stocks/crypto/precious, just use the balance from the account
       // Don't recalculate from holdings - use the value that was uploaded
-      resolve(account.balance || 0);
+      resolve(balance);
     } else {
       // For other types, just return balance
-      resolve(account.balance || 0);
+      resolve(balance);
     }
     } catch (error) {
       console.error('Error calculating portfolio value:', error);

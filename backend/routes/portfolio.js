@@ -143,17 +143,39 @@ function parseFlexibleNumberInput(raw) {
     }
     return parseFloat(s.replace(/,/g, ''));
   }
-  if (lastDot !== -1) {
+  if (lastDot !== -1 && lastComma === -1) {
     const parts = s.split('.');
     if (parts.length > 1 && parts.every((p) => /^\d+$/.test(p))) {
+      if (parts.length === 2) {
+        const a = parts[0];
+        const b = parts[1];
+        if (b.length <= 2) return parseFloat(`${a}.${b}`);
+        if (b.length === 3 && a.length <= 3) return parseFloat(a + b);
+        return parseFloat(s);
+      }
       const lastSeg = parts[parts.length - 1];
-      if (parts.length === 2 && lastSeg.length <= 2) {
-        return parseFloat(`${parts[0]}.${lastSeg}`);
+      if (lastSeg.length <= 2) {
+        return parseFloat(parts.slice(0, -1).join('') + '.' + lastSeg);
       }
       return parseFloat(parts.join(''));
     }
   }
   return parseFloat(s);
+}
+
+/** DB drivers may return DOUBLE PRECISION as string; avoid string + number bugs in totals. */
+function coerceFiniteNumber(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** Drop corrupted snapshot balances so Value History change/% stays meaningful (~€1T ceiling per row). */
+const MAX_SANE_HISTORY_BALANCE = 1e12;
+
+function sanitizeHistoryBalance(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > MAX_SANE_HISTORY_BALANCE) return null;
+  return n;
 }
 
 /**
@@ -757,8 +779,12 @@ export function getPortfolioSummary(req, res) {
         const portfolioData = await Promise.all(
           accounts.map(async (account) => {
           try {
-            let currentValue = await calculatePortfolioValue(account).catch(() => account.balance || 0);
-            if (typeof currentValue !== 'number' || Number.isNaN(currentValue)) currentValue = account.balance || 0;
+            let currentValue = await calculatePortfolioValue(account).catch(() => coerceFiniteNumber(account.balance));
+            if (typeof currentValue !== 'number' || Number.isNaN(currentValue)) {
+              currentValue = coerceFiniteNumber(account.balance);
+            } else {
+              currentValue = coerceFiniteNumber(currentValue);
+            }
 
             // For stock/crypto/precious accounts, if we have holdings, use the sum of holdings in EUR (match detail view)
             if ((account.account_type === 'stocks' || account.account_type === 'crypto' || account.account_type === 'precious') && (account.holdings_count || 0) > 0) {
@@ -794,10 +820,10 @@ export function getPortfolioSummary(req, res) {
               const freshBalance = await new Promise((resolve) => {
                 db.get('SELECT balance FROM accounts WHERE id = ?', [account.id], (e, row) => resolve(row?.balance));
               });
-              const useValue = (typeof freshBalance === 'number' && freshBalance > (holdingsSum || 0))
-                ? freshBalance
-                : holdingsSum;
-              if (useValue != null && typeof useValue === 'number' && !Number.isNaN(useValue)) {
+              const sumNum = coerceFiniteNumber(holdingsSum);
+              const freshNum = coerceFiniteNumber(freshBalance);
+              const useValue = freshNum > sumNum ? freshNum : sumNum;
+              if (Number.isFinite(useValue)) {
                 currentValue = useValue;
               }
               account._costBasisEur = holdingsResult?.costBasisEur || 0;
@@ -814,18 +840,21 @@ export function getPortfolioSummary(req, res) {
                   (_e, row) => resolve(row?.balance)
                 );
               });
-              if (typeof lastHistoryBalance === 'number' && lastHistoryBalance > 0) {
-                currentValue = lastHistoryBalance;
+              const histNum = coerceFiniteNumber(lastHistoryBalance);
+              if (histNum > 0) {
+                currentValue = histNum;
               }
             }
+
+            currentValue = coerceFiniteNumber(currentValue);
 
             return {
               id: account.id,
               platform: account.platform,
               accountName: account.account_name,
               accountType: account.account_type,
-              balance: account.balance,
-              contributedAmount: account.contributed_amount,
+              balance: coerceFiniteNumber(account.balance),
+              contributedAmount: account.contributed_amount != null ? coerceFiniteNumber(account.contributed_amount) : null,
               currentValue,
               currency: account.currency,
               interestRate: account.interest_rate,
@@ -842,9 +871,9 @@ export function getPortfolioSummary(req, res) {
               platform: account.platform,
               accountName: account.account_name,
               accountType: account.account_type,
-              balance: account.balance,
-              contributedAmount: account.contributed_amount,
-              currentValue: account.balance || 0,
+              balance: coerceFiniteNumber(account.balance),
+              contributedAmount: account.contributed_amount != null ? coerceFiniteNumber(account.contributed_amount) : null,
+              currentValue: coerceFiniteNumber(account.balance),
               currency: account.currency,
               interestRate: account.interest_rate,
               lastUpdated: account.last_updated,
@@ -858,7 +887,7 @@ export function getPortfolioSummary(req, res) {
       );
 
         // Calculate totals
-        const totalValue = portfolioData.reduce((sum, acc) => sum + acc.currentValue, 0);
+        const totalValue = portfolioData.reduce((sum, acc) => sum + coerceFiniteNumber(acc.currentValue), 0);
         const portfolioCostBasisEur = portfolioData.reduce((sum, acc) => sum + (Number(acc.costBasisEur) || 0), 0);
         const portfolioCurrentValueForCostKnownEur = portfolioData.reduce((sum, acc) => sum + (Number(acc.currentValueForCostKnownEur) || 0), 0);
         const portfolioGrowthPercent = portfolioCostBasisEur > 0
@@ -879,7 +908,7 @@ export function getPortfolioSummary(req, res) {
             });
           }
           const platform = platformMap.get(platformKey);
-          platform.value += acc.currentValue;
+          platform.value += coerceFiniteNumber(acc.currentValue);
           platform.accounts.push(acc);
           if (!platform.categories.has(accountType)) {
             platform.categories.set(accountType, []);
@@ -1525,20 +1554,25 @@ export function getAccountHistory(req, res) {
             history = [];
           }
 
-          // Calculate daily changes
-          const historyWithChanges = history.map((record, index) => {
-            const change = index < history.length - 1 
-              ? record.balance - history[index + 1].balance 
-              : 0;
-            
-            const changePercent = index < history.length - 1 && history[index + 1].balance > 0
-              ? ((change / history[index + 1].balance) * 100).toFixed(2)
-              : 0;
+          const cleanedHistory = history
+            .map((record) => {
+              const b = sanitizeHistoryBalance(record.balance);
+              if (b == null) return null;
+              return { ...record, balance: b };
+            })
+            .filter(Boolean);
+
+          // Calculate changes between consecutive sane snapshots only (newest first)
+          const historyWithChanges = cleanedHistory.map((record, index) => {
+            const older = cleanedHistory[index + 1];
+            const change = older != null ? record.balance - older.balance : 0;
+            const changePercent =
+              older != null && older.balance > 0 ? (change / older.balance) * 100 : 0;
 
             return {
               ...record,
-              change: change,
-              changePercent: parseFloat(changePercent)
+              change,
+              changePercent: Math.round(changePercent * 100) / 100
             };
           });
 
@@ -1549,7 +1583,7 @@ export function getAccountHistory(req, res) {
               account_type: account.account_type // Keep snake_case
             },
             history: historyWithChanges,
-            totalRecords: history.length
+            totalRecords: cleanedHistory.length
           });
         }
       );

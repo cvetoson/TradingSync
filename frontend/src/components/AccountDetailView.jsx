@@ -592,7 +592,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
           )}
           {isContributionGrowthType && (
             <div className="bg-emerald-50 rounded-md p-4">
-              <div className="text-sm text-gray-600 mb-1">Growth vs Added Amount</div>
+              <div className="text-sm text-gray-600 mb-1">Growth vs original amount added</div>
               <div className={`text-2xl font-bold ${
                 contributionGrowthPercent == null
                   ? 'text-gray-400'
@@ -603,7 +603,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
                 {contributionGrowthPercent == null ? '-' : formatPercent(contributionGrowthPercent)}
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                Added: {contributedAmount != null ? formatCurrency(contributedAmount) : 'Not set'}
+                Original amount added: {contributedAmount != null ? formatCurrency(contributedAmount) : 'Not set'}
               </p>
             </div>
           )}

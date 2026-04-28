@@ -4,6 +4,8 @@
 
 /* ── Light theme (Monarch-inspired) ─────────────────── */
 :root {
+  --accent:          #c8923e;
+  --accent-2:        #8a6230;
   --bg-page:         #f0f2f5;
   --bg-sidebar:      #ffffff;
   --bg-card:         #ffffff;
@@ -15,8 +17,8 @@
   --text-2:          #475569;
   --text-3:          #94a3b8;
   --text-4:          #cbd5e1;
-  --sidebar-active-bg:   #eff6ff;
-  --sidebar-active-text: #2563eb;
+  --sidebar-active-bg:   #faf4e8;
+  --sidebar-active-text: #c8923e;
   --sidebar-hover:   #f1f5f9;
   --sidebar-text:    #475569;
   --tooltip-bg:      #1e293b;
@@ -26,6 +28,8 @@
 
 /* ── Dark theme (Finary-inspired) ─────────────────────── */
 :root.dark {
+  --accent:          #c8923e;
+  --accent-2:        #8a6230;
   --bg-page:         #08080c;
   --bg-sidebar:      #08080c;
   --bg-card:         #0f0f14;
@@ -37,8 +41,8 @@
   --text-2:          #94a3b8;
   --text-3:          #64748b;
   --text-4:          #334155;
-  --sidebar-active-bg:   rgba(59,130,246,0.08);
-  --sidebar-active-text: #60a5fa;
+  --sidebar-active-bg:   rgba(200,146,62,0.16);
+  --sidebar-active-text: #d6a553;
   --sidebar-hover:   rgba(255,255,255,0.04);
   --sidebar-text:    #94a3b8;
   --tooltip-bg:      #0f0f14;
@@ -59,3 +63,14 @@ body {
 }
 
 #root { min-height: 100vh; }
+
+/* Global accent remap: existing blue utility usage -> orange */
+.bg-blue-600 { background-color: var(--accent) !important; }
+.hover\:bg-blue-500:hover { background-color: var(--accent-2) !important; }
+.text-blue-600,
+.text-blue-500,
+.hover\:text-blue-500:hover,
+.hover\:text-blue-400:hover,
+.focus\:text-blue-500:focus { color: var(--accent) !important; }
+.border-blue-500,
+.focus\:ring-blue-500:focus { border-color: var(--accent) !important; }

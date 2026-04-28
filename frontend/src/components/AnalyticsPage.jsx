@@ -29,6 +29,15 @@ const TIME_RANGES = [
 const fmt = (value, currency = 'EUR') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2 }).format(value);
 
+/** Drop absurd history balances (bad imports/sync); keeps the line chart scale usable */
+const MAX_SANE_HISTORY_BALANCE = 1e12;
+
+function coerceHistoryBalance(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > MAX_SANE_HISTORY_BALANCE) return null;
+  return n;
+}
+
 export default function AnalyticsPage({ portfolioData, currency }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -89,9 +98,15 @@ export default function AnalyticsPage({ portfolioData, currency }) {
     const lastKnown = {};
     return days.map(day => {
       for (const id of accountIds) {
-        if (byDay[day][id] != null) lastKnown[id] = byDay[day][id];
+        if (byDay[day][id] != null) {
+          const ok = coerceHistoryBalance(byDay[day][id]);
+          if (ok != null) lastKnown[id] = ok;
+        }
       }
-      const total = accountIds.reduce((s, id) => s + (lastKnown[id] || 0), 0);
+      const total = accountIds.reduce((s, id) => {
+        const v = Number(lastKnown[id]);
+        return s + (Number.isFinite(v) ? v : 0);
+      }, 0);
       const d = new Date(day + 'T00:00:00');
       return {
         date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -107,7 +122,7 @@ export default function AnalyticsPage({ portfolioData, currency }) {
       const type = (a.accountType || a.account_type || 'unknown').toLowerCase();
       const label = INSTRUMENT_LABELS[type] || INSTRUMENT_LABELS.unknown;
       if (!map[label]) map[label] = { name: label, value: 0, count: 0, type };
-      map[label].value += a.currentValue ?? a.balance ?? 0;
+      map[label].value += Number(a.currentValue ?? a.balance ?? 0) || 0;
       map[label].count += 1;
     }
     return Object.values(map).sort((a, b) => b.value - a.value);
