@@ -281,7 +281,79 @@ No new code introduced; no new findings to add.
 
 All 16 findings remain OPEN. See tracker table in Review #1.
 
-*Next automated review: 2026-04-28T03:00:00Z*
+*Next automated review: 2026-04-28T04:00:00Z*
+
+---
+
+## Review #4 — 2026-04-28T03:00:00Z
+
+**Trigger:** Hourly monitor (task `bbow7kl2o` timed out, re-armed as `bhdq2x1ny`)
+**New commits to production branch since Review #3:** None.
+
+### Developer Activity Detected on Side Branches
+
+`git fetch` revealed significant developer activity — several new branches and tags pushed since last review:
+
+| Branch / Tag | Notable Commits |
+|---|---|
+| `cursor/robustness-improvements-bef2` | `d8e3297` — "Add comprehensive input validation and robustness improvements" |
+| `cursor/hourly-refresh-fix-4381` | `b58849c` — "Add automatic hourly portfolio refresh" |
+| `cursor/hourly-validation-report-06dd` | `7d9c0fc` — "Add hourly validation report workflow" |
+| `v3.5.0`, `v3.6-stable`, `v3.6.0` | New stable release tags |
+
+### Partial Fixes Found on `cursor/robustness-improvements-bef2` (NOT yet merged)
+
+The robustness branch introduced `backend/lib/validation.js` — a comprehensive validation utility library — and applied it to route handlers. **These fixes exist on that branch only; the production code path is unchanged.**
+
+| Finding | Fix on robustness branch | Status on production |
+|---|---|---|
+| **H-004** (no file type validation) | `validateFileUpload()` called at `portfolio.js:273,1345` — checks MIME type against `['image/png','image/jpeg','image/jpg','image/webp','image/gif']` allowlist | **OPEN** (not merged) |
+| **M-004** (raw DB errors) | `sanitizeDbError()` applied throughout `portfolio.js` — 10+ call sites; generic messages returned to client | **OPEN** (not merged) |
+
+Remaining 14 findings have **no fix activity** even on the robustness branch:
+- **C-001** — JWT secret hardcoded fallback: unchanged on all branches
+- **C-002** — `/api/debug` unauthenticated: unchanged on all branches
+- **H-001** — No rate limiting: unchanged on all branches
+- **H-002** — `user_id IS NULL` auth bypass: unchanged on all branches
+- **H-003** — Static upload serving without auth: unchanged on all branches
+- **M-001** — Open CORS: unchanged on all branches
+- **M-002** — JWT in localStorage: unchanged on all branches
+- **M-003** — `devLink` returned in production: unchanged on all branches
+- **M-005** — Test-email open relay: unchanged on all branches
+- **L-001 through L-005** — unchanged on all branches
+
+### Recommendation to Developer
+
+The validation library on `cursor/robustness-improvements-bef2` is a good foundation. **Merge it to main**, then continue with the unaddressed CRITICAL and HIGH items. Suggested order:
+
+1. Merge `cursor/robustness-improvements-bef2` → closes H-004 and M-004 on production
+2. **[C-001]** Add startup guard: `if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) { console.error('FATAL: JWT_SECRET not set'); process.exit(1); }` in `start()` before `app.listen`
+3. **[C-002]** Add `requireAuth` to `app.get('/api/debug', ...)` in `server.js:143`
+4. **[H-001]** `npm install express-rate-limit` → add `rateLimit({ windowMs: 15*60*1000, max: 20 })` before auth routes
+5. **[H-003]** Remove `app.use(express.static(join(__dirname, 'uploads')))` from `server.js:26`
+
+### Updated Finding Tracker
+
+| ID | Severity | Title | Status | First Seen | Partial Fix Branch |
+|---|---|---|---|---|---|
+| C-001 | CRITICAL | Hardcoded Fallback JWT Secret | **OPEN** | Rev #1 | — |
+| C-002 | CRITICAL | Unauthenticated `/api/debug` Endpoint | **OPEN** | Rev #1 | — |
+| H-001 | HIGH | No Rate Limiting on Auth Routes | **OPEN** | Rev #1 | — |
+| H-002 | HIGH | Legacy NULL user_id Privilege Escalation | **OPEN** | Rev #1 | — |
+| H-003 | HIGH | Uploaded Screenshots Served Without Auth | **OPEN** | Rev #1 | — |
+| H-004 | HIGH | No File Type Validation on Upload | **OPEN** (fix pending merge) | Rev #1 | `cursor/robustness-improvements-bef2` |
+| M-001 | MEDIUM | Broad CORS Policy | **OPEN** | Rev #1 | — |
+| M-002 | MEDIUM | JWT in localStorage (XSS-accessible) | **OPEN** | Rev #1 | — |
+| M-003 | MEDIUM | devLink Password Token in API Response | **OPEN** | Rev #1 | — |
+| M-004 | MEDIUM | Raw DB Errors Returned to Clients | **OPEN** (fix pending merge) | Rev #1 | `cursor/robustness-improvements-bef2` |
+| M-005 | MEDIUM | Test-Email Endpoint Open Relay | **OPEN** | Rev #1 | — |
+| L-001 | LOW | Email Verification Disabled on Register | **OPEN** | Rev #1 | — |
+| L-002 | LOW | Screenshots Not Deleted After Processing | **OPEN** | Rev #1 | — |
+| L-003 | LOW | Weak Password Policy | **OPEN** | Rev #1 | — |
+| L-004 | LOW | Floating-Point Financial Arithmetic | **OPEN** | Rev #1 | — |
+| L-005 | LOW | Yahoo Finance Scraping Fragility | **OPEN** | Rev #1 | — |
+
+*Next automated review: 2026-04-28T04:00:00Z*
 
 ---
 
