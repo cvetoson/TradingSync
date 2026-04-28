@@ -463,3 +463,55 @@ pgClient = new pg.Pool({ connectionString: DATABASE_URL, max: 10 });
 
 > No developer activity since initial review. All 24 findings remain unaddressed.  
 > Highest priority remains **SEC-003 + SEC-004** (arbitrary file upload + public file serving) — these can be exploited by any authenticated user right now.
+
+---
+
+## Run #3 — 2026-04-28T02:00:00Z
+
+**Trigger:** Hourly monitor tick  
+**New commits on `main` since Run #2:** None  
+**Parallel branch activity detected:**
+- `cursor/robustness-improvements-bef2` — adds `validation.js` with `sanitizeDbError()`, partially addresses SEC-013 and SEC-018 (max password length). **Not merged to main.**
+- `cursor/hourly-refresh-fix-4381` — adds automatic hourly portfolio refresh. No security changes.
+- `cursor/hourly-validation-report-06dd` — no security fixes found.
+- `claude/cool-hawking-UiAbk`, `claude/cool-hawking-dx9FO`, `claude/serene-dirac-z2U5x` — parallel review/test agent branches. No security fixes.
+
+> **Note on SEC-006 (devLink):** Commit `6c086fe` in the robustness branch *removed* the devLink fallback, but it was re-introduced two commits later in `a08928c "Registration without email verification, password reset devLink fallback"`. The vulnerability was intentionally restored.
+
+### Reverification Results
+
+| ID | Severity | Title | Dev Checked | Fixed? | Evidence |
+|---|---|---|---|---|---|
+| SEC-001 | 🔴 CRITICAL | Wildcard CORS | ⬜ No | ❌ Open | `server.js:24` — `app.use(cors())` unchanged |
+| SEC-002 | 🔴 CRITICAL | Unauthenticated `/api/debug` | ⬜ No | ❌ Open | `server.js:143` — no auth middleware added |
+| SEC-003 | 🔴 CRITICAL | No file type validation | ⬜ No | ❌ Open | `server.js:45-48` — no `fileFilter` present |
+| SEC-004 | 🔴 CRITICAL | Uploads served publicly | ⬜ No | ❌ Open | `server.js:26` — `express.static('uploads/')` unchanged |
+| SEC-005 | 🟠 HIGH | Hardcoded fallback JWT secret | ⬜ No | ❌ Open | `auth.js:8` — fallback string unchanged |
+| SEC-006 | 🟠 HIGH | `devLink` in API response | ⬜ No | ❌ Open | `auth.js:197` — devLink returned unconditionally; re-added after brief removal in side branch |
+| SEC-007 | 🟠 HIGH | IDOR via `user_id IS NULL` | ⬜ No | ❌ Open | `auth.js:355,370,388` — all three middleware unchanged |
+| SEC-008 | 🟠 HIGH | No rate limiting | ⬜ No | ❌ Open | `package.json` — no `express-rate-limit` dependency |
+| SEC-009 | 🟠 HIGH | AI prompt injection via `platform` | ⬜ No | ❌ Open | `aiService.js:70` — raw interpolation unchanged |
+| SEC-010 | 🟠 HIGH | Unauthenticated test-email endpoint | ⬜ No | ❌ Open | `server.js:158` — no `requireAuth` added |
+| SEC-011 | 🟡 MEDIUM | JWT in `localStorage` | ⬜ No | ❌ Open | `AuthContext.jsx:31`, `api.js:11` — localStorage usage unchanged |
+| SEC-012 | 🟡 MEDIUM | No security headers | ⬜ No | ❌ Open | `server.js` — no `helmet` or manual headers |
+| SEC-013 | 🟡 MEDIUM | Raw DB errors to client | ⬜ No | ❌ Open | `auth.js:259,273,296,304,356,373,391` — raw `err.message` still returned. Side branch has partial fix via `sanitizeDbError`, not merged. |
+| SEC-014 | 🟡 MEDIUM | Screenshots retained indefinitely | ⬜ No | ❌ Open | No cleanup/purge code found anywhere in `backend/` |
+| SEC-015 | 🟡 MEDIUM | Single PG connection (no pool) | ⬜ No | ❌ Open | `database.js:90` — `pg.Client` unchanged |
+| SEC-016 | 🟡 MEDIUM | No email verification gate | ⬜ No | ❌ Open | `auth.js:43` — `email_verified` hardcoded to `1` on INSERT |
+| SEC-017 | 🟡 MEDIUM | `raw_data` unencrypted | ⬜ No | ❌ Open | Schema unchanged; `raw_data TEXT` column still stores plaintext AI output |
+| SEC-018 | 🔵 LOW | Weak password policy | ⬜ No | ❌ Open | `auth.js:33` — min 8 chars only. Side branch `validatePassword` adds max 128 chars but no complexity. |
+| SEC-019 | 🔵 LOW | Default seed credentials | ⬜ No | ❌ Open | Seed script defaults unchanged |
+| SEC-020 | 🔵 LOW | No audit trail | ⬜ No | ❌ Open | No audit log table or mutation logging in `portfolio.js` |
+| SEC-021 | 🔵 LOW | Hardcoded currency fallback rates | ⬜ No | ❌ Open | `portfolio.js:41` — `0.11` HKD hardcoded |
+| SEC-022 | 🔵 LOW | `dotenv` re-read per request | ⬜ No | ❌ Open | `aiService.js:16` — `dotenv.config()` on every screenshot |
+| SEC-023 | ⚪ INFO | No DB transactions for uploads | ⬜ No | ❌ Open | Multi-step upload handlers still lack transaction wrapping |
+| SEC-024 | ⚪ INFO | Yahoo Finance unauthenticated | ⬜ No | ❌ Open | `marketData.js` — no auth key, no staleness indicator |
+
+### Run #3 Summary
+
+**Fixed this run:** 0  
+**Still open:** 24 / 24  
+**New findings:** None  
+**Notable parallel activity:** `cursor/robustness-improvements-bef2` partially addresses SEC-013 and adds input validation — but these changes are **not merged to `main`** and have no impact on the production codebase until a PR is created and merged.
+
+> **Action required:** 4 Critical findings have now been open for 2+ review cycles with no fix. The file upload vulnerabilities (SEC-003, SEC-004) are exploitable by any registered user today.
