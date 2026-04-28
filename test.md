@@ -675,3 +675,109 @@ No commits to `backend/` or `frontend/` since Run #3. All 18 issues remain open.
 ---
 
 *Next review scheduled: 2026-04-28T23:10:44Z*
+
+---
+
+## Run #5 — 2026-04-28T22:40:56Z
+
+### Developer Fix Check
+
+No commits to `backend/` or `frontend/` since Run #4. All 21 issues remain open.
+
+| ID | Check | Status |
+|---|---|---|
+| SEC-001 | `'dev-secret-change-in-production'` fallback count=1 | `[OPEN]` |
+| SEC-002 | `/api/debug` has no `requireAuth` — count=0 | `[OPEN]` |
+| SEC-003 | `rate.limit` / `rateLimit` count=0 in `server.js` | `[OPEN]` |
+| SEC-004 | `express.static('uploads')` count=1 | `[OPEN]` |
+| SEC-005 | `cors()` no-arg count=1 | `[OPEN]` |
+| SEC-006 | `user_id IS NULL` count=3 in auth guards | `[OPEN]` |
+| SEC-007 | Plaintext token write in `auth.js:181` | `[OPEN]` |
+| SEC-008 | `devLink` count=2 in `auth.js` | `[OPEN]` |
+| SEC-009 | `helmet` count=0 in `server.js` | `[OPEN]` |
+| SEC-010 | No password_version/token_version in schema | `[OPEN]` |
+| SEC-011 | `fileFilter` count=0 in multer config | `[OPEN]` |
+| SEC-012 | `email_verified = 1` at registration still present | `[OPEN]` |
+| SEC-013 | `fallbackData.error = error.message` in `aiService.js` | `[OPEN]` |
+| SEC-014 | `err.message` in 15+ `res.status(500)` in `portfolio.js` | `[OPEN]` |
+| SEC-015 | Unauthenticated `/api/test-email` still present | `[OPEN]` |
+| SEC-016 | `parseFloat` without `Number.isFinite` guard on financial fields | `[OPEN]` |
+| SEC-017 | No `USER` directive in `Dockerfile` count=0 | `[OPEN]` |
+| SEC-018 | `npm audit` — 25 CVEs unchanged | `[OPEN]` |
+| INF-001 | SQLite-in-production warning only | `[OPEN]` |
+| INF-002 | JWT in `localStorage` | `[OPEN]` |
+| INF-003 | `changeme123` fallback in `seedDefaultUser.js` | `[OPEN]` |
+
+---
+
+### [NEW] SEC-019 — No Maximum Length Validation on User-Supplied String Fields
+- **Severity**: Low
+- **Files**: `backend/routes/portfolio.js` (`createAccount:673-675`, `updateAccountName:977`, `updateAccountPlatform:1080`, `updateAccountTag:1047`), `backend/routes/auth.js` (`register`, `updateProfile`)
+- **Description**: Text fields accepted from authenticated users have no maximum length enforcement. All inputs are only `.trim()`-ed before being written to the database. An authenticated user can store arbitrarily long strings as account names, platform names, tags, and display names. This enables:
+  - **Storage DoS**: An authenticated user fills the DB with large strings across many accounts/holdings, consuming disk space disproportionate to normal use.
+  - **UI breakage**: Extremely long account names or symbols are rendered directly in the React dashboard — very long strings can break table layouts and chart labels.
+  - **Log bloat**: Long strings stored in `raw_data` / `extracted_data` columns (AI JSON responses) accumulate with no size cap and no cleanup mechanism.
+  Note: `createAccount` also accepts any arbitrary `accountType` string (unlike `updateAccountType`, which validates against a 7-item allowlist) — a minor inconsistency that lets arbitrary values persist in the DB.
+- **Evidence**:
+  ```js
+  // portfolio.js:673-675
+  const name = (accountName || 'Manual').trim();  // no maxLength
+  const plat = (platform || 'Manual').trim();      // no maxLength
+  const type = (accountType || 'stocks').trim();   // no allowlist check
+  ```
+- **Recommendation**: Add explicit length caps at the API layer:
+  ```js
+  if (name.length > 100) return res.status(400).json({ error: 'Account name max 100 chars' });
+  const VALID_TYPES = ['p2p','stocks','crypto','precious','bank','savings','unknown'];
+  if (!VALID_TYPES.includes(type)) return res.status(400).json({ error: 'Invalid account type' });
+  ```
+  Apply equivalent guards to all free-text fields. Also add a periodic cleanup job or size limit for the `raw_data` / `extracted_data` columns.
+- **Status**: `[OPEN]`
+- **First reported**: 2026-04-28T22:40:56Z
+- **Developer check**: ☐
+
+---
+
+### Areas Cleared This Run
+- **SSRF via stock symbols**: All user-supplied symbols are passed through `encodeURIComponent()` before inclusion in Yahoo Finance and CoinGecko URLs (`marketData.js:17,136,315,345`). No SSRF possible via this vector.
+- **Sensitive server-side logging**: No `console.log` calls found outputting email addresses, passwords, tokens, or secrets in `auth.js`, `portfolio.js`, or `aiService.js`. Error logging in `errorLog.js` truncates messages at 200 chars and stores no request body content.
+- **JSON body DoS**: `express.json()` uses Express's default 100 KB body limit — adequate for this API's payloads.
+- **Calculations service**: `calculations.js` guards against non-finite balances via `Number.isFinite(balanceNum)` before compound interest arithmetic — no division-by-zero or `Infinity` propagation in that service.
+- **Account creation ownership**: `createAccount` correctly binds `user_id = req.userId` (from JWT) — no ownership bypass possible on account creation.
+
+---
+
+## Summary — Run #5 (2026-04-28T22:40:56Z)
+
+**0 issues fixed since Run #4. 1 new issue added.**
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| SEC-001 | Critical | Hardcoded fallback JWT secret | [OPEN] |
+| SEC-002 | High | Unauthenticated `/api/debug` endpoint | [OPEN] |
+| SEC-003 | High | No rate limiting on auth endpoints | [OPEN] |
+| SEC-004 | High | Uploads served as public static files | [OPEN] |
+| SEC-005 | High | Wide-open CORS policy | [OPEN] |
+| SEC-006 | High | Authorization bypass via NULL user_id | [OPEN] |
+| SEC-017 | High | Docker container runs as root | [OPEN] |
+| SEC-018 | High | 25 known-vulnerable dependencies (12 High CVEs) | [OPEN] |
+| SEC-007 | Medium | Password reset token stored in plaintext | [OPEN] |
+| SEC-008 | Medium | Reset token leaked in API response | [OPEN] |
+| SEC-009 | Medium | No security headers (Helmet missing) | [OPEN] |
+| SEC-010 | Medium | JWT not invalidated on password change | [OPEN] |
+| SEC-011 | Medium | No MIME type validation on uploads | [OPEN] |
+| SEC-014 | Medium | Raw internal error messages sent to client | [OPEN] |
+| SEC-015 | Medium | Unauthenticated open email relay endpoint | [OPEN] |
+| INF-002 | Medium | JWT in localStorage — XSS token theft | [OPEN] |
+| INF-003 | Medium | Default seed user with hardcoded password | [OPEN] |
+| SEC-012 | Low | Email verification not enforced | [OPEN] |
+| SEC-013 | Low | OpenAI error details leaked to client | [OPEN] |
+| SEC-016 | Low | No bounds validation on financial fields | [OPEN] |
+| SEC-019 | Low | No max length on user-supplied string fields | [OPEN] |
+| INF-001 | High (ops) | SQLite in production — data loss risk | [OPEN] |
+
+**Total: 22 issues — 1 Critical, 7 High, 7 Medium, 4 Low, 3 Operational**
+
+---
+
+*Next review scheduled: 2026-04-28T23:40:56Z*
