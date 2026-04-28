@@ -380,4 +380,152 @@ The following are the highest-impact fixes, ranked by risk:
 4. **[H-003]** Remove `express.static('uploads')` (`server.js:26`) — financial screenshots must not be publicly accessible.
 5. **[H-004]** Add multer `fileFilter` to whitelist image MIME types only (`server.js:45`).
 
-*Next automated review: 2026-04-28T03:00:00Z*
+*Next automated review: 2026-04-28T05:00:00Z*
+
+---
+
+## Review #5 — 2026-04-28T04:00:00Z
+
+**Trigger:** Hourly monitor (task `bhdq2x1ny` timed out, re-armed as `bunjmkafw`)
+**New commits to production branch since Review #4:** None.
+
+### Parallel Review Agent Activity
+
+Two other review agents (`claude/cool-hawking-DLeeW`, `claude/cool-hawking-dx9FO`) are running concurrently. Cross-referencing their findings surfaced **8 additional vulnerabilities** not in the original 16. Each was independently verified against live source files before being added.
+
+### Reverification of Existing Findings
+
+All 16 original findings confirmed **OPEN** — no production code changes detected.
+
+---
+
+### NEW Findings (first identified in Review #5)
+
+---
+
+#### [N-001] AI Prompt Injection via User-Controlled `platform` Field — HIGH
+- **File:** `backend/services/aiService.js:70`
+- **Code:** `` const prompt = `Analyze this screenshot from a ${contextDescription}${accountType ? ` (category: ${platform})` : ''}...` ``
+- **Risk:** The `platform` value originates from `req.body.investmentCategory` → mapped to display name in `portfolio.js:412-422`. A user who calls `/api/upload` with a crafted `investmentCategory` can inject arbitrary text into the OpenAI prompt. Examples: override the JSON schema instruction, exfiltrate previous conversation turns, or induce the AI to return forged financial data that gets saved to the database.
+- **Fix:** Validate `investmentCategory` against the known allowlist (`['auto','p2p','equities','crypto','precious','savings','fixed-income','alternative']`) before passing it to `analyzeScreenshot`. Never interpolate free-text user input into LLM prompts.
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+#### [N-002] No HTTP Security Headers (Helmet Missing) — MEDIUM
+- **File:** `backend/server.js` (no helmet import or usage)
+- **Risk:** The API and production SPA serve responses with no security headers. Missing headers enable:
+  - **XSS** via missing `Content-Security-Policy`
+  - **Clickjacking** via missing `X-Frame-Options`
+  - **MIME sniffing** via missing `X-Content-Type-Options`
+  - **Info leak** via `X-Powered-By: Express` (present by default)
+  - **Protocol downgrade** via missing `Strict-Transport-Security`
+- **Fix:** `npm install helmet` → `app.use(helmet())` before all routes in `server.js`. Tune CSP for the frontend's inline styles/scripts if needed.
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+#### [N-003] Single PostgreSQL Connection — No Pool, No Reconnect — MEDIUM
+- **File:** `backend/database.js:90`
+- **Code:** `pgClient = new pg.Client({ connectionString: DATABASE_URL })`
+- **Risk:** A single `pg.Client` is used for all queries. If the connection drops (Railway restarts, DB idle timeout, network blip), the entire server crashes or hangs silently — all subsequent DB operations fail with no automatic recovery. `pg.Pool` handles reconnection and concurrent queries safely.
+- **Fix:** Replace `new pg.Client(...)` with `new pg.Pool({ connectionString: DATABASE_URL, max: 10 })` and update all `pgClient.query(...)` calls to `pool.query(...)` (the pool manages connections automatically).
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+#### [N-004] Docker Container Runs as Root — MEDIUM
+- **File:** `Dockerfile`
+- **Risk:** No `USER` directive is present. The Node.js server process runs as `root` inside the container. If the app is compromised (e.g., via RCE in a dependency), the attacker gains root inside the container — making container escape or filesystem manipulation significantly easier.
+- **Fix:** Add before `CMD`:
+  ```dockerfile
+  RUN addgroup -S app && adduser -S app -G app
+  RUN chown -R app:app /app
+  USER app
+  ```
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+#### [N-005] 17 Vulnerable Dependencies in Backend (8 HIGH) — HIGH
+- **Source:** `npm audit` run against `backend/`
+- **Critical runtime risks:**
+  | Package | Severity | CVE Summary |
+  |---|---|---|
+  | `nodemailer` | MODERATE | **SMTP command injection** via unsanitised `envelope.size` — directly exploitable via password-reset email flow |
+  | `path-to-regexp` | HIGH | **ReDoS** via multiple route parameters — Express uses this; a crafted URL can hang the event loop |
+  | `axios` | HIGH | **DoS** via `__proto__` key in `mergeConfig` |
+  | `tar` | HIGH | Arbitrary file write via hardlink path traversal (used by npm install toolchain) |
+  | `follow-redirects` | MODERATE | Auth headers leaked to cross-domain redirects |
+- **Frontend:** 8 additional vulnerabilities (4 HIGH incl. `rollup` path traversal, `axios` DoS).
+- **Fix:** `cd backend && npm audit fix` (safe fixes). For breaking-change fixes: review changelog then `npm audit fix --force`. Prioritise `nodemailer` and `path-to-regexp`.
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+#### [N-006] JWT Tokens Not Invalidated on Password Change or Reset — MEDIUM
+- **File:** `backend/routes/auth.js` — `changePassword` (line 279) and `resetPassword` (line 206)
+- **Risk:** When a user changes their password or completes a password reset, existing JWTs remain valid for their full 7-day lifetime. A scenario where this is critical: attacker steals a token → victim notices, changes password → attacker's token still works for up to 7 more days.
+- **Fix (simple):** Add a `token_version INTEGER DEFAULT 0` column to `users`. Increment it on every password change/reset. Embed `tokenVersion` in the JWT payload. In `requireAuth`, verify `decoded.tokenVersion === user.token_version` after decoding.
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+#### [N-007] Password Reset Tokens Stored in Plaintext — MEDIUM
+- **File:** `backend/routes/auth.js:167,181`
+- **Code:** `const resetToken = randomToken(); ... UPDATE users SET password_reset_token = ?, ...`
+- **Risk:** Raw 64-hex-char reset tokens are stored unencrypted in the DB. A SQL injection, DB backup exfiltration, or direct DB access grants all pending reset tokens — enabling immediate account takeover for any user with an open reset request.
+- **Fix:** Store only `crypto.createHash('sha256').update(resetToken).digest('hex')` in the DB. The plaintext token is sent via email and compared via the same hash at reset time. Same pattern as `bcrypt` for passwords, but SHA-256 is sufficient since reset tokens are single-use and high-entropy.
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+#### [N-008] `dotenv.config()` Called on Every AI Request — LOW
+- **File:** `backend/services/aiService.js:16`
+- **Code:** `dotenv.config({ path: join(__dirname, '../.env') });` inside `getOpenAIClient()`
+- **Risk:** Re-reading and re-parsing the `.env` file on every screenshot upload is a filesystem read per request. More importantly, it creates unpredictable behaviour: a running server can silently pick up a changed `.env` mid-request, making configuration changes non-atomic. In production the `.env` typically doesn't exist (env vars are set in the platform), so this silently no-ops — but masks the fact the function is doing unnecessary I/O.
+- **Fix:** Remove the in-function `dotenv.config()` call. Configuration is loaded once at startup in `server.js`. If a live API key refresh is genuinely needed, restart the server.
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+### Updated Finding Tracker (24 total findings)
+
+| ID | Severity | Title | Status | First Seen | Fix Branch |
+|---|---|---|---|---|---|
+| C-001 | CRITICAL | Hardcoded Fallback JWT Secret | OPEN | Rev #1 | — |
+| C-002 | CRITICAL | Unauthenticated `/api/debug` Endpoint | OPEN | Rev #1 | — |
+| H-001 | HIGH | No Rate Limiting on Auth Routes | OPEN | Rev #1 | — |
+| H-002 | HIGH | Legacy NULL user_id Privilege Escalation | OPEN | Rev #1 | — |
+| H-003 | HIGH | Uploaded Screenshots Served Without Auth | OPEN | Rev #1 | — |
+| H-004 | HIGH | No File Type Validation on Upload | OPEN (fix pending merge) | Rev #1 | `cursor/robustness-*` |
+| N-001 | HIGH | AI Prompt Injection via platform Field | OPEN | Rev #5 | — |
+| N-005 | HIGH | 17 Vulnerable Dependencies (8 HIGH CVEs) | OPEN | Rev #5 | — |
+| M-001 | MEDIUM | Broad CORS Policy | OPEN | Rev #1 | — |
+| M-002 | MEDIUM | JWT in localStorage (XSS-accessible) | OPEN | Rev #1 | — |
+| M-003 | MEDIUM | devLink Password Token in API Response | OPEN | Rev #1 | — |
+| M-004 | MEDIUM | Raw DB Errors Returned to Clients | OPEN (fix pending merge) | Rev #1 | `cursor/robustness-*` |
+| M-005 | MEDIUM | Test-Email Endpoint Open Relay | OPEN | Rev #1 | — |
+| N-002 | MEDIUM | No HTTP Security Headers (Helmet) | OPEN | Rev #5 | — |
+| N-003 | MEDIUM | Single PG Connection — No Pool/Reconnect | OPEN | Rev #5 | — |
+| N-004 | MEDIUM | Docker Container Runs as Root | OPEN | Rev #5 | — |
+| N-006 | MEDIUM | JWT Not Invalidated on Password Change | OPEN | Rev #5 | — |
+| N-007 | MEDIUM | Password Reset Tokens in Plaintext DB | OPEN | Rev #5 | — |
+| L-001 | LOW | Email Verification Disabled on Register | OPEN | Rev #1 | — |
+| L-002 | LOW | Screenshots Not Deleted After Processing | OPEN | Rev #1 | — |
+| L-003 | LOW | Weak Password Policy | OPEN | Rev #1 | — |
+| L-004 | LOW | Floating-Point Financial Arithmetic | OPEN | Rev #1 | — |
+| L-005 | LOW | Yahoo Finance Scraping Fragility | OPEN | Rev #1 | — |
+| N-008 | LOW | dotenv Re-read on Every AI Request | OPEN | Rev #5 | — |
+
+**Total: 2 Critical · 4 High · 12 Medium · 6 Low — 24 open findings**
+
+*Next automated review: 2026-04-28T05:00:00Z*
