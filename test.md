@@ -515,3 +515,146 @@ pgClient = new pg.Pool({ connectionString: DATABASE_URL, max: 10 });
 **Notable parallel activity:** `cursor/robustness-improvements-bef2` partially addresses SEC-013 and adds input validation — but these changes are **not merged to `main`** and have no impact on the production codebase until a PR is created and merged.
 
 > **Action required:** 4 Critical findings have now been open for 2+ review cycles with no fix. The file upload vulnerabilities (SEC-003, SEC-004) are exploitable by any registered user today.
+
+---
+
+## Run #4 — 2026-04-28T03:00:00Z
+
+**Trigger:** Hourly monitor tick  
+**New commits on `main` since Run #3:** None  
+**Parallel agent activity:** `claude/cool-hawking-UiAbk` (Run #6) found 3 new findings; cross-referencing and independently verifying all new candidates this cycle.
+
+### New Findings Verified This Run
+
+---
+
+#### [SEC-025] 🟠 HIGH — `Infinity` accepted in financial update fields
+
+**File:** `backend/routes/portfolio.js:1118–1119`, `1170–1172`, `1991–1993`  
+**Code:** `if (isNaN(balanceValue))` — `parseFloat('Infinity') = Infinity`; `isNaN(Infinity) === false`  
+**Description:** All financial update endpoints (`updateAccountBalance`, `updateAccountInterestRate`, `updateHoldingQuantity`, `updateHoldingPrice`) validate with `isNaN()` only. `parseFloat('Infinity')` passes this check and gets written to the database. Any arithmetic using these values (compound interest projection, portfolio totals, pie-chart percentages) then propagates `Infinity` or `NaN`, silently corrupting the entire portfolio display for the user. Negative balances are also accepted in balance and interest-rate fields (no floor check).  
+**PoC:** `PUT /api/accounts/:id/balance` with body `{ "balance": "Infinity" }` → stored, portfolio total becomes `Infinity`.  
+**Recommendation:** Replace bare `isNaN` with `Number.isFinite(value) && value >= 0 && value <= 1e12` using the `MAX_SANE_HISTORY_BALANCE` constant already defined at `portfolio.js:173`.  
+**Developer checked:** ⬜ No  
+**Reverified fixed:** —
+
+---
+
+#### [SEC-026] 🟠 HIGH — 8 HIGH-severity dependency vulnerabilities (npm audit)
+
+**File:** `backend/package.json` (dependencies)  
+**Description:** Running `npm audit` against the backend reports **17 vulnerabilities: 8 HIGH, 6 moderate, 3 low**. Confirmed HIGH-severity packages:
+
+| Package | Risk |
+|---|---|
+| `path-to-regexp` | ReDoS — malicious route patterns hang the event loop (used by Express) |
+| `axios` | SSRF / request smuggling in versions ≤1.7.3 |
+| `sqlite3` | Node-gyp build chain CVEs |
+| `tar` | Arbitrary file write via path traversal in tar extraction |
+| `cacache`, `make-fetch-happen`, `node-gyp`, `minimatch` | Dependency chain CVEs |
+
+**Impact:** ReDoS via `path-to-regexp` is the most immediately dangerous — a crafted URL can hang the Node.js event loop, causing a full service outage.  
+**Recommendation:** Run `npm audit fix` and pin patched versions. For `path-to-regexp`, update Express to 4.21+ or 5.x.  
+**Developer checked:** ⬜ No  
+**Reverified fixed:** —
+
+---
+
+#### [SEC-027] 🟡 MEDIUM — JWT tokens not invalidated on password change
+
+**File:** `backend/routes/auth.js:279–308` (`changePassword`)  
+**Description:** When a user changes their password, the endpoint updates `password_hash` in the database but does not invalidate existing JWT tokens. Any session token issued before the password change remains valid for the full 7-day `JWT_EXPIRES_IN` window. This means:  
+- A compromised session cannot be terminated by changing the password.  
+- An attacker who has stolen a token retains access even after the victim changes credentials.  
+**Recommendation:** Add a `token_version` integer column to `users`. Increment it on password change. Include `tokenVersion` in the JWT payload. In `requireAuth`, reject tokens where the payload `tokenVersion` doesn't match the DB value.  
+**Developer checked:** ⬜ No  
+**Reverified fixed:** —
+
+---
+
+#### [SEC-028] 🟡 MEDIUM — Password reset tokens stored in plaintext
+
+**File:** `backend/routes/auth.js:181`, `backend/database.js` (`users` table schema)  
+**Code:** `db.run('UPDATE users SET password_reset_token = ?, ...', [resetToken, ...])`  
+**Description:** Password reset tokens (64-char hex strings from `crypto.randomBytes(32)`) are stored as plaintext in the `password_reset_token` column. If the database is read by an attacker (SQL injection, backup exposure, RDS snapshot misconfiguration), all pending reset tokens are immediately usable to take over any account with an active reset request.  
+**Recommendation:** Store only `SHA-256(token)` in the database. On verification, hash the incoming token and compare. The plaintext token is only ever in the email link and never in the DB.  
+**Developer checked:** ⬜ No  
+**Reverified fixed:** —
+
+---
+
+#### [SEC-029] 🟡 MEDIUM — Docker container runs as root
+
+**File:** `Dockerfile` (production stage, lines 15–28)  
+**Description:** The production Docker image has no `USER` directive. The Node.js process runs as `root` inside the container. If the application is compromised (RCE via file upload, dependency exploit, etc.), the attacker has root access within the container — making container escape and lateral movement significantly easier.  
+**Recommendation:** Add a non-root user to the Dockerfile:
+```dockerfile
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+```
+Place this before the `CMD` instruction.  
+**Developer checked:** ⬜ No  
+**Reverified fixed:** —
+
+---
+
+#### [SEC-030] 🔵 LOW — No maximum length enforcement on user string fields
+
+**File:** `backend/routes/portfolio.js` (account name ~line 973, platform ~line 1080, tag ~line 1047); `backend/routes/auth.js:265` (display name)  
+**Description:** Text fields accept arbitrarily long strings — only `.trim()` is applied. An authenticated user can store strings of unlimited length as account names, platform names, tags, and display names. Consequences:  
+- **Database bloat** — repeated multi-MB strings fill the disk.  
+- **UI breakage** — extremely long strings overflow chart labels, table cells, and tooltip components in the React frontend.  
+- **ReDoS** — internal `platformLower.includes(...)` and `.toLowerCase()` calls over multi-MB attacker-controlled strings can delay the event loop.  
+**Recommendation:** Add a maximum length check (e.g. 200 chars for names, 50 for tags) before all `db.run` writes. Use the `validateString` utility already available on the `cursor/robustness-improvements-bef2` branch.  
+**Developer checked:** ⬜ No  
+**Reverified fixed:** —
+
+---
+
+### Updated Master Finding Tracker
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| SEC-001 | 🔴 CRITICAL | Wildcard CORS | Open |
+| SEC-002 | 🔴 CRITICAL | Unauthenticated `/api/debug` | Open |
+| SEC-003 | 🔴 CRITICAL | No file type validation on uploads | Open |
+| SEC-004 | 🔴 CRITICAL | Uploaded files served publicly | Open |
+| SEC-005 | 🟠 HIGH | Hardcoded fallback JWT secret | Open |
+| SEC-006 | 🟠 HIGH | `devLink` password token in API response | Open |
+| SEC-007 | 🟠 HIGH | Legacy account IDOR (`user_id IS NULL`) | Open |
+| SEC-008 | 🟠 HIGH | No rate limiting on auth endpoints | Open |
+| SEC-009 | 🟠 HIGH | AI prompt injection via `platform` field | Open |
+| SEC-010 | 🟠 HIGH | Unauthenticated test-email endpoint | Open |
+| SEC-025 | 🟠 HIGH | `Infinity` accepted in financial fields | Open *(new)* |
+| SEC-026 | 🟠 HIGH | 8 HIGH-severity npm dependency CVEs | Open *(new)* |
+| SEC-011 | 🟡 MEDIUM | JWT in `localStorage` | Open |
+| SEC-012 | 🟡 MEDIUM | No security headers (CSP, HSTS, etc.) | Open |
+| SEC-013 | 🟡 MEDIUM | Raw DB errors returned to client | Open |
+| SEC-014 | 🟡 MEDIUM | Screenshots retained indefinitely | Open |
+| SEC-015 | 🟡 MEDIUM | Single PG connection (no pool) | Open |
+| SEC-016 | 🟡 MEDIUM | No email verification gate | Open |
+| SEC-017 | 🟡 MEDIUM | `raw_data` stored unencrypted | Open |
+| SEC-027 | 🟡 MEDIUM | JWT not invalidated on password change | Open *(new)* |
+| SEC-028 | 🟡 MEDIUM | Password reset tokens in plaintext DB | Open *(new)* |
+| SEC-029 | 🟡 MEDIUM | Docker container runs as root | Open *(new)* |
+| SEC-018 | 🔵 LOW | Weak password policy | Open |
+| SEC-019 | 🔵 LOW | Default seed credentials (`changeme123`) | Open |
+| SEC-020 | 🔵 LOW | No audit trail for financial mutations | Open |
+| SEC-021 | 🔵 LOW | Hardcoded currency fallback rates | Open |
+| SEC-022 | 🔵 LOW | `dotenv` re-read per request | Open |
+| SEC-023 | ⚪ INFO | No DB transactions for uploads | Open |
+| SEC-024 | ⚪ INFO | Yahoo Finance unauthenticated | Open |
+| SEC-030 | 🔵 LOW | No max length on string fields | Open *(new)* |
+
+**Total: 4 Critical · 8 High · 10 Medium · 5 Low · 2 Info = 29 open findings**
+
+### Run #4 Summary
+
+**Previously open:** 24  
+**Fixed this run:** 0  
+**New findings added:** 6 (SEC-025 through SEC-030)  
+**Total open:** 29  
+
+> **3rd consecutive cycle with zero fixes on `main`.** New findings this run elevate the High count to 8.  
+> `npm audit` HIGH CVEs (SEC-026) are fixable with a single `npm audit fix` — no code changes needed.  
+> `Infinity`-in-balance (SEC-025) is a data integrity attack that any authenticated user can trigger right now.
