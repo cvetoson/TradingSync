@@ -403,3 +403,121 @@ Verification method: grep + direct file inspection of `backend/server.js`, `back
 ---
 
 *Next review scheduled: 2026-04-28T22:10:29Z*
+
+---
+
+## Run #3 — 2026-04-28T21:40:34Z
+
+### Developer Fix Check
+
+No commits to `backend/` or `frontend/` since Run #2. All 16 issues remain open.
+
+| ID | Verification | Status |
+|---|---|---|
+| SEC-001 | `JWT_SECRET \|\| 'dev-secret-change-in-production'` at `auth.js:8` | `[OPEN]` |
+| SEC-002 | `/api/debug` unauthenticated, no `requireAuth` | `[OPEN]` |
+| SEC-003 | No `express-rate-limit` in `package.json` | `[OPEN]` |
+| SEC-004 | `express.static('uploads')` at `server.js:26` | `[OPEN]` |
+| SEC-005 | `cors()` no-arg at `server.js:24` | `[OPEN]` |
+| SEC-006 | `user_id IS NULL` in all three auth guards `auth.js:355,370,388` | `[OPEN]` |
+| SEC-007 | Reset token written plaintext `auth.js:181` | `[OPEN]` |
+| SEC-008 | `devLink` in response body, no env guard `auth.js:190-197` | `[OPEN]` |
+| SEC-009 | No `helmet` package or headers in `server.js` | `[OPEN]` |
+| SEC-010 | No token versioning in schema or auth flows | `[OPEN]` |
+| SEC-011 | No `fileFilter` in multer config | `[OPEN]` |
+| SEC-012 | `email_verified = 1` set at registration `auth.js:44` | `[OPEN]` |
+| SEC-013 | `fallbackData.error = error.message` returned in `aiService.js` | `[OPEN]` |
+| SEC-014 | `err.message` sent to client at 15+ locations in `portfolio.js` | `[OPEN]` |
+| INF-001 | SQLite-in-production warning only, no hard fail | `[OPEN]` |
+| INF-002 | JWT in `localStorage` confirmed `AuthContext.jsx:14,31` | `[OPEN]` |
+
+---
+
+### [NEW] SEC-015 — Unauthenticated Open Email Relay via `/api/test-email`
+- **Severity**: Medium
+- **File**: `backend/server.js:158-172`
+- **Description**: The `/api/test-email` endpoint is publicly accessible with no authentication middleware. When the `EMAIL_TEST_ENABLED=true` environment variable is set, any unauthenticated party can trigger email sends to any address by calling `GET /api/test-email?to=victim@example.com`. There is no rate limiting on this route. If accidentally enabled in production — which is a realistic ops mistake — the application becomes an open email relay, usable for spam, phishing setup, or SMTP quota exhaustion.
+- **Evidence**:
+  ```js
+  // server.js:158 — no requireAuth, no rate limit
+  app.get('/api/test-email', async (req, res) => {
+    if (process.env.EMAIL_TEST_ENABLED !== 'true') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const to = req.query.to; // fully attacker-controlled
+    ...
+    await sendEmail({ to, subject: 'Trading Sync – test email', ... });
+  ```
+- **Recommendation**: Delete this endpoint or gate it behind `requireAuth` plus an admin check. If kept, add strict rate limiting (1 request / 10 min per IP) and ensure `EMAIL_TEST_ENABLED` is never set in production via deployment checklist / CI env audit.
+- **Status**: `[OPEN]`
+- **First reported**: 2026-04-28T21:40:34Z
+- **Developer check**: ☐
+
+---
+
+### [NEW] SEC-016 — No Bounds Validation on Financial Input Fields
+- **Severity**: Low
+- **File**: `backend/routes/portfolio.js` (`updateAccountBalance:1119`, `updateAccountInterestRate:1161`, `updateHoldingQuantity`, `updateHoldingPrice`)
+- **Description**: Financial update routes parse user input with `parseFloat()` and only reject `NaN`. They do not enforce realistic bounds. An authenticated user can write:
+  - `balance = Infinity` — `parseFloat('Infinity')` passes `isNaN()` and is stored in the DB, corrupting portfolio totals and any downstream arithmetic (multiplication with `Infinity` propagates)
+  - `balance = -9999999999` — negative balances have no floor check
+  - `interestRate = 999999` — no upper cap
+  - `quantity = Infinity` or `price = Infinity` — same issue for holdings
+  Stored `Infinity` / `NaN` values in PostgreSQL will cause JSON serialization errors (PostgreSQL stores them, but they break JavaScript `JSON.stringify`) and can crash summary calculations.
+- **Evidence**:
+  ```js
+  // portfolio.js:1119
+  const balanceValue = parseFloat(balance);
+  if (isNaN(balanceValue)) { ... } // Infinity passes this check
+  db.run('UPDATE accounts SET balance = ? ...', [balanceValue, ...]);
+  ```
+- **Recommendation**: Add explicit finite-number and range checks:
+  ```js
+  if (!Number.isFinite(balanceValue) || balanceValue < 0) {
+    return res.status(400).json({ error: 'balance must be a finite non-negative number' });
+  }
+  ```
+  Apply equivalent guards to `interestRate` (0–100), `quantity` (> 0, finite), and `price` (≥ 0, finite).
+- **Status**: `[OPEN]`
+- **First reported**: 2026-04-28T21:40:34Z
+- **Developer check**: ☐
+
+---
+
+### Additional Surface Scanned This Run
+- **Open redirect**: `APP_URL` is env-controlled (not user-supplied); reset/verify URLs use `encodeURIComponent(token)` — no open redirect risk found.
+- **Email header injection**: `to`, `subject`, `from` fields in `emailService.js` are either hardcoded strings or come from validated DB values (not raw user input in the email headers) — no injection risk found.
+- **Mass assignment**: Each update route destructures only the specific expected field from `req.body` (e.g. `const { balance } = req.body`) — no mass assignment risk found.
+
+---
+
+## Summary — Run #3 (2026-04-28T21:40:34Z)
+
+**0 issues fixed since Run #2. 2 new issues added.**
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| SEC-001 | Critical | Hardcoded fallback JWT secret | [OPEN] |
+| SEC-002 | High | Unauthenticated `/api/debug` endpoint | [OPEN] |
+| SEC-003 | High | No rate limiting on auth endpoints | [OPEN] |
+| SEC-004 | High | Uploads served as public static files | [OPEN] |
+| SEC-005 | High | Wide-open CORS policy | [OPEN] |
+| SEC-006 | High | Authorization bypass via NULL user_id | [OPEN] |
+| SEC-007 | Medium | Password reset token stored in plaintext | [OPEN] |
+| SEC-008 | Medium | Reset token leaked in API response | [OPEN] |
+| SEC-009 | Medium | No security headers (Helmet missing) | [OPEN] |
+| SEC-010 | Medium | JWT not invalidated on password change | [OPEN] |
+| SEC-011 | Medium | No MIME type validation on uploads | [OPEN] |
+| SEC-015 | Medium | Unauthenticated open email relay endpoint | [OPEN] |
+| SEC-014 | Medium | Raw internal error messages sent to client | [OPEN] |
+| SEC-012 | Low | Email verification not enforced | [OPEN] |
+| SEC-013 | Low | OpenAI error details leaked to client | [OPEN] |
+| SEC-016 | Low | No bounds validation on financial fields | [OPEN] |
+| INF-001 | High (ops) | SQLite in production — data loss risk | [OPEN] |
+| INF-002 | Medium | JWT in localStorage — XSS token theft | [OPEN] |
+
+**Total: 18 issues — 1 Critical, 5 High, 7 Medium, 3 Low, 2 Operational**
+
+---
+
+*Next review scheduled: 2026-04-28T22:40:34Z*
