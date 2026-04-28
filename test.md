@@ -281,4 +281,31 @@ No new code introduced; no new findings to add.
 
 All 16 findings remain OPEN. See tracker table in Review #1.
 
-*Next automated review: 2026-04-28T02:00:00Z*
+*Next automated review: 2026-04-28T03:00:00Z*
+
+---
+
+## Review #3 — 2026-04-28T02:00:00Z
+
+**Trigger:** Hourly monitor (task `bnv01j267` timed out, re-armed as `bbow7kl2o`)
+**New commits since Review #2:** None — no developer activity on branch.
+
+### Reverification Results
+
+All 16 findings confirmed still **OPEN**. Full grep sweep of all critical/high finding locations returned unchanged results — every vulnerable line is still present verbatim.
+
+### No New Vulnerabilities Found
+
+No new code introduced; no new findings to add.
+
+### Developer Action Needed — Priority Order
+
+The following are the highest-impact fixes, ranked by risk:
+
+1. **[C-001]** Remove the hardcoded JWT secret fallback (`auth.js:8`) — server should refuse to start if `JWT_SECRET` is unset or too short.
+2. **[C-002]** Add `requireAuth` to `GET /api/debug` (`server.js:143`) — currently leaks errors and config anonymously.
+3. **[H-001]** Install `express-rate-limit` on all auth routes — unlimited brute-force is possible right now.
+4. **[H-003]** Remove `express.static('uploads')` (`server.js:26`) — financial screenshots must not be publicly accessible.
+5. **[H-004]** Add multer `fileFilter` to whitelist image MIME types only (`server.js:45`).
+
+*Next automated review: 2026-04-28T03:00:00Z*
