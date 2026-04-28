@@ -528,4 +528,98 @@ All 16 original findings confirmed **OPEN** — no production code changes detec
 
 **Total: 2 Critical · 4 High · 12 Medium · 6 Low — 24 open findings**
 
-*Next automated review: 2026-04-28T05:00:00Z*
+*Next automated review: 2026-04-28T06:00:00Z*
+
+---
+
+## Review #6 — 2026-04-28T05:00:00Z
+
+**Trigger:** Hourly monitor (task `bunjmkafw` timed out, re-armed as `byi1x1pqj`)
+**New commits to production branch since Review #5:** None — main branch unchanged.
+**Parallel agents:** `claude/cool-hawking-DLeeW` (Run #3 — 0 new), `claude/cool-hawking-dx9FO` (Run #5 — 1 new finding).
+
+### Reverification of All 24 Existing Findings
+
+All 24 findings confirmed still **OPEN**. No production code changes. Key spot-checks:
+- `C-001`: JWT fallback secret still at `auth.js:8` ✓
+- `C-002`: `/api/debug` still no auth at `server.js:143` ✓
+- `H-001`: No `express-rate-limit` in `package.json` or `server.js` ✓
+- `N-001`: `platform` still interpolated raw into OpenAI prompt at `aiService.js:70` ✓
+- `N-005`: `npm audit` still returns 17 backend vulns (8 HIGH) ✓
+
+### New Findings — Review #6
+
+Cross-referencing `claude/cool-hawking-dx9FO` Run #5 and independent source verification surfaced 3 new findings:
+
+---
+
+#### [N-009] No Bounds Validation on Financial Input Fields — MEDIUM
+- **File:** `backend/routes/portfolio.js:1109-1130` (`updateAccountBalance`), `1158-1185` (`updateAccountInterestRate`), `1982` (`updateHoldingQuantity`), `2020` (`updateHoldingPrice`)
+- **Risk:** All financial update routes use `parseFloat()` and reject only `NaN`. They do **not** check for:
+  - `Infinity` — `parseFloat('Infinity')` passes `isNaN()` (returns `false`) and is stored in the DB. Any arithmetic downstream (`totalValue`, `portfolioGrowthPercent`, compound interest) propagates `Infinity`, corrupting all portfolio totals.
+  - Negative balances — no floor check; a user can set their balance to `-9999999999`.
+  - Unreasonable interest rates — `1000000` (1,000,000 %) is accepted, causing compound interest projection to overflow.
+  - Confirmed: `updateAccountBalance` line 1118-1120 — only `isNaN` guard, no `Number.isFinite` or range check.
+- **Fix:** Replace bare `isNaN` checks with `Number.isFinite(value) && value >= 0 && value <= MAX_SANE_BALANCE`. Use the `MAX_SANE_HISTORY_BALANCE = 1e12` constant already defined in the file (line 173) for consistency. Reject `Infinity`, `-Infinity`, and `NaN`.
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+#### [N-010] No Maximum Length Validation on User String Fields — LOW
+- **File:** `backend/routes/portfolio.js:973` (`updateAccountName`), `1080` (`updateAccountPlatform`), `1047` (`updateAccountTag`); `backend/routes/auth.js:265` (`updateProfile`)
+- **Risk:** Text fields only call `.trim()` with no max-length enforcement. An authenticated user can store arbitrarily long strings as account names, platform names, tags, and display names. Effects:
+  - **Storage exhaustion** — thousands of accounts with multi-MB names fills the DB disk.
+  - **UI breakage** — very long account names or symbols render directly in React table cells, chart labels, and tooltips without truncation guards — breaking dashboard layout.
+  - **ReDoS risk** — several internal `toLowerCase().includes(...)` checks run over user-supplied platform strings; pathological inputs could hang the event loop.
+- **Fix:** Add `if (accountName.length > 200) return res.status(400).json({ error: '...' })` before DB writes, or use the `validateString` utility already available on the `cursor/robustness-*` branch.
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+#### [N-011] Hardcoded Default Seed Password in Production Script — LOW
+- **File:** `backend/scripts/seedDefaultUser.js:18`
+- **Code:** `const password = process.env.DEFAULT_USER_PASSWORD || 'changeme123';`
+- **Risk:** If a developer runs this script in production without setting `DEFAULT_USER_PASSWORD`, an account `default@tradingsync.local` / `changeme123` is created. Combined with **H-002** (NULL user_id accounts), this default user automatically inherits all legacy accounts. The credentials are public in `.env.example` and the GitHub repo.
+- **Fix:** In production (`NODE_ENV=production`), throw a startup error if `DEFAULT_USER_PASSWORD` is not explicitly set. Remove the hardcoded fallback entirely. Add a post-seed reminder to change the password immediately.
+- **Status:** OPEN — not fixed as of this review
+- **Developer checked:** No
+
+---
+
+### Updated Finding Tracker (27 total findings)
+
+| ID | Severity | Title | Status | First Seen | Fix Branch |
+|---|---|---|---|---|---|
+| C-001 | CRITICAL | Hardcoded Fallback JWT Secret | OPEN | Rev #1 | — |
+| C-002 | CRITICAL | Unauthenticated `/api/debug` Endpoint | OPEN | Rev #1 | — |
+| H-001 | HIGH | No Rate Limiting on Auth Routes | OPEN | Rev #1 | — |
+| H-002 | HIGH | Legacy NULL user_id Privilege Escalation | OPEN | Rev #1 | — |
+| H-003 | HIGH | Uploaded Screenshots Served Without Auth | OPEN | Rev #1 | — |
+| H-004 | HIGH | No File Type Validation on Upload | OPEN (fix pending merge) | Rev #1 | `cursor/robustness-*` |
+| N-001 | HIGH | AI Prompt Injection via platform Field | OPEN | Rev #5 | — |
+| N-005 | HIGH | 17 Vulnerable Dependencies (8 HIGH CVEs) | OPEN | Rev #5 | — |
+| M-001 | MEDIUM | Broad CORS Policy | OPEN | Rev #1 | — |
+| M-002 | MEDIUM | JWT in localStorage (XSS-accessible) | OPEN | Rev #1 | — |
+| M-003 | MEDIUM | devLink Password Token in API Response | OPEN | Rev #1 | — |
+| M-004 | MEDIUM | Raw DB Errors Returned to Clients | OPEN (fix pending merge) | Rev #1 | `cursor/robustness-*` |
+| M-005 | MEDIUM | Test-Email Endpoint Open Relay | OPEN | Rev #1 | — |
+| N-002 | MEDIUM | No HTTP Security Headers (Helmet) | OPEN | Rev #5 | — |
+| N-003 | MEDIUM | Single PG Connection — No Pool/Reconnect | OPEN | Rev #5 | — |
+| N-004 | MEDIUM | Docker Container Runs as Root | OPEN | Rev #5 | — |
+| N-006 | MEDIUM | JWT Not Invalidated on Password Change | OPEN | Rev #5 | — |
+| N-007 | MEDIUM | Password Reset Tokens in Plaintext DB | OPEN | Rev #5 | — |
+| N-009 | MEDIUM | No Bounds Validation on Financial Fields | OPEN | Rev #6 | — |
+| L-001 | LOW | Email Verification Disabled on Register | OPEN | Rev #1 | — |
+| L-002 | LOW | Screenshots Not Deleted After Processing | OPEN | Rev #1 | — |
+| L-003 | LOW | Weak Password Policy | OPEN | Rev #1 | — |
+| L-004 | LOW | Floating-Point Financial Arithmetic | OPEN | Rev #1 | — |
+| L-005 | LOW | Yahoo Finance Scraping Fragility | OPEN | Rev #1 | — |
+| N-008 | LOW | dotenv Re-read on Every AI Request | OPEN | Rev #5 | — |
+| N-010 | LOW | No Max Length on User String Fields | OPEN | Rev #6 | — |
+| N-011 | LOW | Hardcoded Default Seed Password | OPEN | Rev #6 | — |
+
+**Total: 2 Critical · 6 High · 11 Medium · 8 Low — 27 open findings**
+
+*Next automated review: 2026-04-28T06:00:00Z*
