@@ -521,3 +521,157 @@ No commits to `backend/` or `frontend/` since Run #2. All 16 issues remain open.
 ---
 
 *Next review scheduled: 2026-04-28T22:40:34Z*
+
+---
+
+## Run #4 — 2026-04-28T22:10:44Z
+
+### Developer Fix Check
+
+No commits to `backend/` or `frontend/` since Run #3. All 18 issues remain open.
+
+| ID | Quick check result | Status |
+|---|---|---|
+| SEC-001 | `JWT_SECRET \|\| 'dev-secret...'` count=1 in `auth.js:8` | `[OPEN]` |
+| SEC-002 | `/api/debug` still no `requireAuth` | `[OPEN]` |
+| SEC-003 | `express-rate-limit` absent from `package.json` | `[OPEN]` |
+| SEC-004 | `express.static('uploads')` count=1 in `server.js` | `[OPEN]` |
+| SEC-005 | `cors()` no-arg count=1 in `server.js` | `[OPEN]` |
+| SEC-006 | `user_id IS NULL` count=3 in `auth.js` | `[OPEN]` |
+| SEC-007 | Plaintext token write still in `auth.js:181` | `[OPEN]` |
+| SEC-008 | `devLink` count=2 in `auth.js` | `[OPEN]` |
+| SEC-009 | `helmet` count=0 in `server.js` | `[OPEN]` |
+| SEC-010 | No token versioning in schema or flows | `[OPEN]` |
+| SEC-011 | `fileFilter` count=0 in `server.js` | `[OPEN]` |
+| SEC-012 | `email_verified = 1` at registration still present | `[OPEN]` |
+| SEC-013 | `fallbackData.error = error.message` in `aiService.js` | `[OPEN]` |
+| SEC-014 | `err.message` in 15+ `res.status(500)` calls in `portfolio.js` | `[OPEN]` |
+| SEC-015 | `EMAIL_TEST_ENABLED` endpoint still unauthenticated | `[OPEN]` |
+| SEC-016 | `parseFloat` with no `Number.isFinite` guard on financial fields | `[OPEN]` |
+| INF-001 | SQLite-in-production warning only | `[OPEN]` |
+| INF-002 | JWT in `localStorage` count=10 in `AuthContext.jsx` | `[OPEN]` |
+
+---
+
+### [NEW] SEC-017 — Docker Container Runs as Root
+- **Severity**: High
+- **File**: `Dockerfile` (entire production stage)
+- **Description**: The production Docker image has no `USER` directive, so Node.js and all application code execute as `root` (UID 0) inside the container. If an attacker achieves Remote Code Execution through any application vulnerability (path traversal, deserialization, SSRF to localhost, etc.), they have root privileges within the container. This significantly lowers the bar for container-escape exploits and gives the attacker unrestricted read access to every file in the image including any secrets baked in at build time.
+- **Evidence**:
+  ```dockerfile
+  # Production stage — no USER directive anywhere
+  FROM node:20-alpine
+  WORKDIR /app/backend
+  RUN npm install --omit=dev
+  RUN mkdir -p uploads
+  ENV NODE_ENV=production
+  EXPOSE 3001
+  CMD ["node", "server.js"]   # ← runs as root
+  ```
+- **Recommendation**: Add a non-root user before `CMD`:
+  ```dockerfile
+  RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+  RUN chown -R appuser:appgroup /app
+  USER appuser
+  CMD ["node", "server.js"]
+  ```
+- **Status**: `[OPEN]`
+- **First reported**: 2026-04-28T22:10:44Z
+- **Developer check**: ☐
+
+---
+
+### [NEW] SEC-018 — Known Vulnerable Dependencies (npm audit: 25 issues, 12 High)
+- **Severity**: High
+- **Files**: `backend/package.json`, `frontend/package.json`
+- **Description**: `npm audit` reveals 25 known CVEs across backend and frontend dependencies. The most impactful for a production trading application:
+
+  **Backend (17 total — 8 High, 6 Moderate, 3 Low):**
+  | Severity | Package | Vulnerability |
+  |---|---|---|
+  | HIGH | `axios` | DoS via `__proto__` key in `mergeConfig` — used for all external API calls (Yahoo Finance, CoinGecko) |
+  | HIGH | `minimatch` | ReDoS via repeated wildcards — attacker-controlled input could cause CPU exhaustion |
+  | HIGH | `cacache` / `node-gyp` / `make-fetch-happen` | Transitive chain via `tar` — path traversal during package operations |
+  | MODERATE | `nodemailer` | **SMTP command injection** via unsanitized `envelope.size` — directly used in production email sending |
+  | MODERATE | `follow-redirects` | Leaks custom auth headers to cross-domain redirect targets — axios depends on this |
+
+  **Frontend (8 total — 4 High, 4 Moderate):**
+  | Severity | Package | Vulnerability |
+  |---|---|---|
+  | HIGH | `lodash` | Prototype pollution via `_.unset` / `_.omit` — can corrupt object prototypes app-wide |
+  | HIGH | `axios` | Same DoS as backend |
+  | HIGH | `rollup` | Arbitrary file write via path traversal (build tool; lower runtime risk) |
+  | MODERATE | `postcss` | XSS via unescaped `</style>` in CSS stringify (build tool) |
+  | MODERATE | `vite` | Path traversal in optimized deps `.map` handling (dev server) |
+
+  The `nodemailer` SMTP injection is the highest-risk runtime vulnerability given the app sends password reset emails.
+- **Recommendation**:
+  ```bash
+  cd backend && npm audit fix
+  cd frontend && npm audit fix
+  # For breaking changes: npm audit fix --force (review changelog first)
+  ```
+  Prioritise: `nodemailer` (SMTP injection), `axios` (DoS), `follow-redirects` (auth leak), `lodash` (prototype pollution).
+- **Status**: `[OPEN]`
+- **First reported**: 2026-04-28T22:10:44Z
+- **Developer check**: ☐
+
+---
+
+### [NEW] INF-003 — Default Seed User Created with Hardcoded `changeme123` Password
+- **Severity**: Medium (operational)
+- **File**: `backend/scripts/seedDefaultUser.js:18`
+- **Description**: The seed script falls back to the password `'changeme123'` when `DEFAULT_USER_PASSWORD` is not set. The `.env.example` also shows this same value as the example. If a developer runs this script in production without setting `DEFAULT_USER_PASSWORD`, a real account with a trivially guessable password (`default@tradingsync.local` / `changeme123`) is created in the production database. This account would own all legacy NULL `user_id` accounts (the SEC-006 issue compounds this — any user could also access those rows directly).
+- **Evidence**:
+  ```js
+  const password = process.env.DEFAULT_USER_PASSWORD || 'changeme123';
+  // ...
+  console.log(`✅ Default user created. Log in with: ${email} / ${password}`);
+  ```
+- **Recommendation**: Remove the hardcoded fallback — throw an error if `DEFAULT_USER_PASSWORD` is not set when `NODE_ENV=production`. Add a post-seed prompt to change the password immediately. Document this in the deployment checklist.
+- **Status**: `[OPEN]`
+- **First reported**: 2026-04-28T22:10:44Z
+- **Developer check**: ☐
+
+---
+
+### Additional Surface Scanned This Run
+- **Database adapter (`database.js`)**: All queries use parameterised statements (`?` placeholders → `$1,$2` for PG). No raw string interpolation found — no SQL injection risk in the adapter layer.
+- **`backfillHistory.js`**: Operates on all accounts without user filtering (it is an internal startup task, not an API route) — acceptable; it runs server-side only before routes are registered.
+- **`scripts/backupUserAccount.js`**: Contains a comment warning that output files include password hashes and should be treated as secret — good practice; no runtime exposure.
+
+---
+
+## Summary — Run #4 (2026-04-28T22:10:44Z)
+
+**0 issues fixed since Run #3. 3 new issues added.**
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| SEC-001 | Critical | Hardcoded fallback JWT secret | [OPEN] |
+| SEC-002 | High | Unauthenticated `/api/debug` endpoint | [OPEN] |
+| SEC-003 | High | No rate limiting on auth endpoints | [OPEN] |
+| SEC-004 | High | Uploads served as public static files | [OPEN] |
+| SEC-005 | High | Wide-open CORS policy | [OPEN] |
+| SEC-006 | High | Authorization bypass via NULL user_id | [OPEN] |
+| SEC-017 | High | Docker container runs as root | [OPEN] |
+| SEC-018 | High | 25 known-vulnerable dependencies (12 High CVEs) | [OPEN] |
+| SEC-007 | Medium | Password reset token stored in plaintext | [OPEN] |
+| SEC-008 | Medium | Reset token leaked in API response | [OPEN] |
+| SEC-009 | Medium | No security headers (Helmet missing) | [OPEN] |
+| SEC-010 | Medium | JWT not invalidated on password change | [OPEN] |
+| SEC-011 | Medium | No MIME type validation on uploads | [OPEN] |
+| SEC-014 | Medium | Raw internal error messages sent to client | [OPEN] |
+| SEC-015 | Medium | Unauthenticated open email relay endpoint | [OPEN] |
+| INF-002 | Medium | JWT in localStorage — XSS token theft | [OPEN] |
+| INF-003 | Medium | Default seed user with hardcoded password | [OPEN] |
+| SEC-012 | Low | Email verification not enforced | [OPEN] |
+| SEC-013 | Low | OpenAI error details leaked to client | [OPEN] |
+| SEC-016 | Low | No bounds validation on financial fields | [OPEN] |
+| INF-001 | High (ops) | SQLite in production — data loss risk | [OPEN] |
+
+**Total: 21 issues — 1 Critical, 7 High, 7 Medium, 3 Low, 3 Operational**
+
+---
+
+*Next review scheduled: 2026-04-28T23:10:44Z*
