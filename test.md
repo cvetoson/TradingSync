@@ -622,4 +622,89 @@ Cross-referencing `claude/cool-hawking-dx9FO` Run #5 and independent source veri
 
 **Total: 2 Critical · 6 High · 11 Medium · 8 Low — 27 open findings**
 
-*Next automated review: 2026-04-28T06:00:00Z*
+*Next automated review: 2026-04-28T07:00:00Z*
+
+---
+
+## Review #7 — 2026-04-28T06:00:00Z
+
+**Trigger:** Hourly monitor (task `byi1x1pqj` timed out, re-armed as `bm02dgabk`)
+**New commits to production (main) since Review #6:** None — 7th consecutive cycle with zero fixes.
+**Parallel agents:** `claude/cool-hawking-DLeeW` Run #4 (+6 findings, all already captured in our N-* IDs); `claude/cool-hawking-dx9FO` Run #6 (SEC-006 scope expanded — see below).
+
+### Reverification — All 27 Findings
+
+Spot-check confirms all 27 findings present verbatim:
+
+| Key check | File:Line | Result |
+|---|---|---|
+| C-001 JWT fallback | `auth.js:8` | OPEN |
+| C-002 /api/debug unauth | `server.js:143` | OPEN |
+| H-001 no rate limit | `server.js` — no `express-rate-limit` | OPEN |
+| H-002 NULL user_id | `auth.js:355,370,388` | OPEN — **scope upgraded** |
+| H-003 static uploads | `server.js:26` | OPEN |
+| N-001 prompt injection | `aiService.js:70` | OPEN |
+| N-009 Infinity balance | `portfolio.js:1118` — `isNaN` only | OPEN |
+
+### H-002 Scope Upgraded — Wider Impact Than Initially Documented
+
+**Original finding:** `user_id IS NULL` in the 3 auth-guard middleware functions allows any authenticated user to access, modify, or delete legacy accounts by ID.
+
+**Upgraded scope (confirmed this cycle):** The `OR user_id IS NULL` pattern is also embedded in **data-read queries** — meaning legacy accounts silently appear in every user's live dashboard automatically, not just when targeted by ID:
+
+| Location | File:Line | Impact |
+|---|---|---|
+| `getAccounts` | `portfolio.js:962` — `WHERE user_id = ? OR user_id IS NULL` | NULL-owned accounts listed in every user's Accounts page |
+| `getPortfolioSummary` | `portfolio.js:766` — same pattern | NULL-owned balances summed into every user's total portfolio value |
+| `uploadScreenshot` dedup | `portfolio.js:477` — same pattern | Any user uploading a screenshot can claim/overwrite a NULL-owned account |
+
+**Combined impact:** A legacy account created by the seed script or before multi-user support will:
+1. Appear in every registered user's account list
+2. Be counted in every user's total portfolio value — inflating displayed wealth
+3. Be overwritable by any user uploading a new screenshot that matches the platform/name
+4. Be deletable by any user via `DELETE /api/accounts/:id`
+
+This is the highest-impact finding in the tracker — it is an automatic data leak, not just a theoretical access-control bypass.
+
+**H-002 severity upgrade: HIGH → CRITICAL.**
+
+### No New Standalone Findings
+
+All findings from parallel agents' latest runs (DLeeW SEC-025–030, dx9FO SEC-006 expansion) are already captured in our tracker under N-001 through N-011 and the H-002 scope upgrade above.
+
+### Updated Finding Tracker (27 findings, H-002 upgraded to CRITICAL)
+
+| ID | Severity | Title | Status | First Seen | Fix Branch |
+|---|---|---|---|---|---|
+| C-001 | CRITICAL | Hardcoded Fallback JWT Secret | OPEN | Rev #1 | — |
+| C-002 | CRITICAL | Unauthenticated `/api/debug` Endpoint | OPEN | Rev #1 | — |
+| H-002 | CRITICAL ⬆ | NULL user_id — Auth Bypass + Auto Dashboard Leak | OPEN | Rev #1 | — |
+| H-001 | HIGH | No Rate Limiting on Auth Routes | OPEN | Rev #1 | — |
+| H-003 | HIGH | Uploaded Screenshots Served Without Auth | OPEN | Rev #1 | — |
+| H-004 | HIGH | No File Type Validation on Upload | OPEN (fix pending merge) | Rev #1 | `cursor/robustness-*` |
+| N-001 | HIGH | AI Prompt Injection via platform Field | OPEN | Rev #5 | — |
+| N-005 | HIGH | 17 Vulnerable Dependencies (8 HIGH CVEs) | OPEN | Rev #5 | — |
+| M-001 | MEDIUM | Broad CORS Policy | OPEN | Rev #1 | — |
+| M-002 | MEDIUM | JWT in localStorage (XSS-accessible) | OPEN | Rev #1 | — |
+| M-003 | MEDIUM | devLink Password Token in API Response | OPEN | Rev #1 | — |
+| M-004 | MEDIUM | Raw DB Errors Returned to Clients | OPEN (fix pending merge) | Rev #1 | `cursor/robustness-*` |
+| M-005 | MEDIUM | Test-Email Endpoint Open Relay | OPEN | Rev #1 | — |
+| N-002 | MEDIUM | No HTTP Security Headers (Helmet) | OPEN | Rev #5 | — |
+| N-003 | MEDIUM | Single PG Connection — No Pool/Reconnect | OPEN | Rev #5 | — |
+| N-004 | MEDIUM | Docker Container Runs as Root | OPEN | Rev #5 | — |
+| N-006 | MEDIUM | JWT Not Invalidated on Password Change | OPEN | Rev #5 | — |
+| N-007 | MEDIUM | Password Reset Tokens in Plaintext DB | OPEN | Rev #5 | — |
+| N-009 | MEDIUM | No Bounds Validation on Financial Fields | OPEN | Rev #6 | — |
+| L-001 | LOW | Email Verification Disabled on Register | OPEN | Rev #1 | — |
+| L-002 | LOW | Screenshots Not Deleted After Processing | OPEN | Rev #1 | — |
+| L-003 | LOW | Weak Password Policy | OPEN | Rev #1 | — |
+| L-004 | LOW | Floating-Point Financial Arithmetic | OPEN | Rev #1 | — |
+| L-005 | LOW | Yahoo Finance Scraping Fragility | OPEN | Rev #1 | — |
+| N-008 | LOW | dotenv Re-read on Every AI Request | OPEN | Rev #5 | — |
+| N-010 | LOW | No Max Length on User String Fields | OPEN | Rev #6 | — |
+| N-011 | LOW | Hardcoded Default Seed Password | OPEN | Rev #6 | — |
+
+**Total: 3 Critical · 5 High · 11 Medium · 8 Low — 27 open findings**
+*(H-002 upgraded from HIGH → CRITICAL based on confirmed dashboard-level data leak scope)*
+
+*Next automated review: 2026-04-28T07:00:00Z*
