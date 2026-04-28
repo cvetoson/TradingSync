@@ -249,4 +249,36 @@ TradingSync is a **multi-asset personal portfolio tracker** with:
 
 ---
 
-*Next automated review: 2026-04-28T01:00:00Z*
+*Next automated review: 2026-04-28T02:00:00Z*
+
+---
+
+## Review #2 — 2026-04-28T01:00:00Z
+
+**Trigger:** Hourly monitor (task `bvwkvifyy` timed out and was re-armed as `bnv01j267`)
+**New commits since Review #1:** None — no developer activity on branch.
+
+### Reverification Results
+
+All 16 findings confirmed still **OPEN**. Spot-checked key lines:
+
+| Finding | File:Line | Verified Still Present |
+|---|---|---|
+| C-001 | `auth.js:8` — `JWT_SECRET \|\| 'dev-secret-change-in-production'` | YES |
+| C-002 | `server.js:143` — `app.get('/api/debug', ...)` no auth | YES |
+| H-001 | `server.js:70-74` — no rate-limit middleware on auth routes | YES |
+| H-002 | `auth.js:355,370,388` — `user_id IS NULL` in all auth guards | YES |
+| H-003 | `server.js:26` — `express.static('uploads')` unauthenticated | YES |
+| H-004 | `server.js:35-48` — multer with no `fileFilter` | YES |
+| M-001 | `server.js:24` — `cors()` no origin allowlist | YES |
+| M-003 | `auth.js:190,197` — `devLink` unconditionally returned | YES |
+
+### No New Vulnerabilities Found
+
+No new code introduced; no new findings to add.
+
+### Finding Tracker (unchanged)
+
+All 16 findings remain OPEN. See tracker table in Review #1.
+
+*Next automated review: 2026-04-28T02:00:00Z*
