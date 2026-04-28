@@ -308,3 +308,98 @@ TradingSync is a portfolio aggregation platform with:
 ---
 
 *Next review scheduled: 2026-04-28T01:00:00Z*
+
+---
+
+## Run #2 — 2026-04-28T21:10:29Z
+
+### Developer Fix Check
+
+All 15 issues from Run #1 were re-verified against the live source files. **No fixes have been applied.** Every issue remains open.
+
+Verification method: grep + direct file inspection of `backend/server.js`, `backend/routes/auth.js`, `backend/routes/portfolio.js`, `backend/services/aiService.js`, `frontend/src/context/AuthContext.jsx`, and `backend/package.json`.
+
+| ID | Evidence of fix? | Status change |
+|---|---|---|
+| SEC-001 | `JWT_SECRET \|\| 'dev-secret-change-in-production'` still present in `auth.js:8` | `[OPEN]` |
+| SEC-002 | `/api/debug` still unauthenticated in `server.js` | `[OPEN]` |
+| SEC-003 | No `express-rate-limit` in `package.json` or `server.js` | `[OPEN]` |
+| SEC-004 | `app.use(express.static(join(__dirname, 'uploads')))` still in `server.js:26` | `[OPEN]` |
+| SEC-005 | `app.use(cors())` still open in `server.js:24` | `[OPEN]` |
+| SEC-006 | `user_id IS NULL` clause still in all three auth middleware functions | `[OPEN]` |
+| SEC-007 | Reset token written to DB in plaintext in `auth.js:181` | `[OPEN]` |
+| SEC-008 | `devLink` returned in response body with no `NODE_ENV` guard in `auth.js:190-197` | `[OPEN]` |
+| SEC-009 | No `helmet` package in `package.json`; no security headers in `server.js` | `[OPEN]` |
+| SEC-010 | `changePassword` / `resetPassword` issue no token versioning in DB schema | `[OPEN]` |
+| SEC-011 | No `fileFilter` in multer config in `server.js` | `[OPEN]` |
+| SEC-012 | `email_verified` set to `1` immediately at registration in `auth.js:44` | `[OPEN]` |
+| SEC-013 | `error: error.message` in `aiService.js` fallback propagates to client | `[OPEN]` |
+| INF-001 | SQLite-in-production warning only; no hard startup failure | `[OPEN]` |
+| INF-002 | JWT stored in `localStorage` confirmed in `AuthContext.jsx:14,31` | `[OPEN]` |
+
+---
+
+### [NEW] SEC-014 — Raw Internal Error Messages Sent to Client (Information Disclosure)
+- **Severity**: Medium
+- **File**: `backend/routes/portfolio.js` (lines 636, 682, 743, 771, 949, 966, 988, 1026, 1061, 1091, 1128, 1181, 1219, 1248, 1438, 1456, 1464, 1512 and more)
+- **Description**: Throughout `portfolio.js`, raw database and runtime error messages are sent directly to the client via `res.status(500).json({ error: err.message })`. These messages can contain:
+  - Internal SQL error text (table names, column names, constraint names)
+  - PostgreSQL driver error codes and query fragments
+  - Node.js stack context from runtime errors
+  This aids attackers in mapping the database schema, understanding ORM behaviour, and crafting targeted injection or enumeration attacks.
+- **Evidence** (representative):
+  ```js
+  // portfolio.js:682
+  return res.status(500).json({ error: err.message });
+
+  // portfolio.js:636 (upload catch-all)
+  res.status(500).json({ error: error.message || 'Internal server error' });
+
+  // portfolio.js:949
+  return res.status(500).json({ error: summaryErr.message || 'Failed to load portfolio' });
+  ```
+  The same pattern repeats at 15+ locations.
+- **Recommendation**: Replace all `err.message` in JSON responses with static user-facing strings. Log the real message server-side:
+  ```js
+  console.error('[route] operation failed:', err.message);
+  res.status(500).json({ error: 'An internal error occurred. Please try again.' });
+  ```
+- **Status**: `[OPEN]`
+- **First reported**: 2026-04-28T21:10:29Z
+- **Developer check**: ☐
+
+---
+
+### Frontend XSS Scan — Clean
+- Searched all `frontend/src/**` for `dangerouslySetInnerHTML`, `innerHTML`, `eval()`, `document.write` — **none found**. No client-side XSS sinks detected this run.
+
+---
+
+## Summary — Run #2 (2026-04-28T21:10:29Z)
+
+**0 issues fixed since Run #1. 1 new issue added.**
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| SEC-001 | Critical | Hardcoded fallback JWT secret | [OPEN] |
+| SEC-002 | High | Unauthenticated `/api/debug` endpoint | [OPEN] |
+| SEC-003 | High | No rate limiting on auth endpoints | [OPEN] |
+| SEC-004 | High | Uploads served as public static files | [OPEN] |
+| SEC-005 | High | Wide-open CORS policy | [OPEN] |
+| SEC-006 | High | Authorization bypass via NULL user_id | [OPEN] |
+| SEC-007 | Medium | Password reset token stored in plaintext | [OPEN] |
+| SEC-008 | Medium | Reset token leaked in API response | [OPEN] |
+| SEC-009 | Medium | No security headers (Helmet missing) | [OPEN] |
+| SEC-010 | Medium | JWT not invalidated on password change | [OPEN] |
+| SEC-011 | Medium | No MIME type validation on uploads | [OPEN] |
+| SEC-012 | Low | Email verification not enforced | [OPEN] |
+| SEC-013 | Low | OpenAI error details leaked to client | [OPEN] |
+| SEC-014 | Medium | Raw internal error messages sent to client | [OPEN] |
+| INF-001 | High (ops) | SQLite in production — data loss risk | [OPEN] |
+| INF-002 | Medium | JWT in localStorage — XSS token theft | [OPEN] |
+
+**Total: 16 issues — 1 Critical, 5 High, 6 Medium, 2 Low, 2 Operational**
+
+---
+
+*Next review scheduled: 2026-04-28T22:10:29Z*
