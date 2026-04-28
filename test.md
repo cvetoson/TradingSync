@@ -781,3 +781,95 @@ No commits to `backend/` or `frontend/` since Run #4. All 21 issues remain open.
 ---
 
 *Next review scheduled: 2026-04-28T23:40:56Z*
+
+---
+
+## Run #6 — 2026-04-28T23:11:12Z
+
+### Developer Fix Check
+
+No commits to `backend/` or `frontend/` since Run #5. All 22 issues remain open.
+
+| ID | Check | Status |
+|---|---|---|
+| SEC-001 | `'dev-secret-change-in-production'` count=1 in `auth.js:8` | `[OPEN]` |
+| SEC-002 | `/api/debug` — no `requireAuth` wrapping it | `[OPEN]` |
+| SEC-003 | `rateLimit` / `express-rate` count=0 in `server.js` | `[OPEN]` |
+| SEC-004 | `express.static('uploads')` count=1 | `[OPEN]` |
+| SEC-005 | `cors()` no-arg count=1 | `[OPEN]` |
+| SEC-006 | `user_id IS NULL` count=3 in auth guards + 3 in data queries | `[OPEN]` |
+| SEC-007–016 | No changes detected in relevant lines | `[OPEN]` |
+| SEC-017 | `USER` directive count=0 in `Dockerfile` | `[OPEN]` |
+| SEC-018 | `npm audit` still 17 backend vulns (unchanged) | `[OPEN]` |
+| SEC-019 | No length limits on string fields | `[OPEN]` |
+| INF-001–003 | No changes detected | `[OPEN]` |
+
+---
+
+### SEC-006 — Scope Expanded (Data-Read Queries Also Affected)
+- **Previous record**: SEC-006 documented the `user_id IS NULL` bypass only in the three `requireAccount/History/HoldingAuth` middleware functions.
+- **New finding this run**: The same `OR user_id IS NULL` pattern also appears in **data-read queries** in `portfolio.js`, meaning NULL-owned accounts are silently included in every authenticated user's live dashboard — not just accessible on demand:
+  - `getAccounts` (`portfolio.js:962`): `WHERE user_id = ? OR user_id IS NULL` — all NULL-owned accounts appear in every user's account list automatically.
+  - `getPortfolioSummary` (`portfolio.js:766`): same — NULL-owned accounts are summed into every user's total portfolio value.
+  - `uploadScreenshot` deduplication (`portfolio.js:477`): when matching an existing account for upsert, the query includes `OR user_id IS NULL` — any authenticated user uploading a screenshot can claim and overwrite a NULL-owned account's data.
+- **Updated severity**: The impact is higher than initially documented. Any legacy NULL-owned account with real financial data is:
+  1. Visible to every user in their dashboard
+  2. Counted in every user's total portfolio value
+  3. Modifiable (update, delete) by any authenticated user
+  4. Claimable via screenshot upload by any user
+- **Status**: `[OPEN]` *(scope updated)*
+- **Developer check**: ☐
+
+---
+
+### Areas Cleared This Run
+
+| Surface | Finding |
+|---|---|
+| `GET /api/holdings/verify-symbol` | Protected by `requireAuth` at `server.js:114` — not a public oracle |
+| Password reset token timing attack | Comparison is via SQL `WHERE password_reset_token = ?` (DB-layer equality, not JS `===`) — no JS-level timing leak |
+| Frontend XSS via rendered error messages | All `{error}` strings are React text nodes in JSX — no `dangerouslySetInnerHTML`; React escapes the values automatically |
+| Email HTML injection (display name / platform in templates) | Email templates (`emailService.js`) embed only `verifyUrl` and `resetUrl`, which contain only env-var `APP_URL` and `encodeURIComponent(token)` — no user-controlled content in email HTML |
+| Account history data isolation | `getAccountHistory` correctly relies on `requireAccountAuth` middleware which runs first — no bypass possible through the history endpoint itself |
+| `Procfile` secrets | Contains only `web: cd backend && NODE_ENV=production node server.js` — no secrets |
+| `.env.example` real credentials | All values are placeholders (`your-secret-key`, `changeme123` labelled as example) — no live credentials |
+| Integer account ID enumeration | `requireAccountAuth` blocks cross-user ID probing (aside from the SEC-006 NULL bypass already logged) |
+
+---
+
+## Summary — Run #6 (2026-04-28T23:11:12Z)
+
+**0 issues fixed. 0 new standalone issues. SEC-006 scope expanded.**
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| SEC-001 | Critical | Hardcoded fallback JWT secret | [OPEN] |
+| SEC-002 | High | Unauthenticated `/api/debug` endpoint | [OPEN] |
+| SEC-003 | High | No rate limiting on auth endpoints | [OPEN] |
+| SEC-004 | High | Uploads served as public static files | [OPEN] |
+| SEC-005 | High | Wide-open CORS policy | [OPEN] |
+| SEC-006 | High | NULL user_id bypass — auth guards **and** data-read queries | [OPEN] |
+| SEC-017 | High | Docker container runs as root | [OPEN] |
+| SEC-018 | High | 25 known-vulnerable dependencies (12 High CVEs) | [OPEN] |
+| SEC-007 | Medium | Password reset token stored in plaintext | [OPEN] |
+| SEC-008 | Medium | Reset token leaked in API response | [OPEN] |
+| SEC-009 | Medium | No security headers (Helmet missing) | [OPEN] |
+| SEC-010 | Medium | JWT not invalidated on password change | [OPEN] |
+| SEC-011 | Medium | No MIME type validation on uploads | [OPEN] |
+| SEC-014 | Medium | Raw internal error messages sent to client | [OPEN] |
+| SEC-015 | Medium | Unauthenticated open email relay endpoint | [OPEN] |
+| INF-002 | Medium | JWT in localStorage — XSS token theft | [OPEN] |
+| INF-003 | Medium | Default seed user with hardcoded password | [OPEN] |
+| SEC-012 | Low | Email verification not enforced | [OPEN] |
+| SEC-013 | Low | OpenAI error details leaked to client | [OPEN] |
+| SEC-016 | Low | No bounds validation on financial fields | [OPEN] |
+| SEC-019 | Low | No max length on user-supplied string fields | [OPEN] |
+| INF-001 | High (ops) | SQLite in production — data loss risk | [OPEN] |
+
+**Total: 22 issues — 1 Critical, 7 High, 7 Medium, 4 Low, 3 Operational**
+
+*SEC-006 impact upgraded: NULL-owned accounts are exposed in every user's live dashboard and portfolio total, not merely accessible on-demand.*
+
+---
+
+*Next review scheduled: 2026-04-29T00:11:12Z*
