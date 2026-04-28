@@ -11,6 +11,7 @@ import AnalyticsPage from './components/AnalyticsPage';
 import ReportsPage from './components/ReportsPage';
 import Login from './components/Login';
 import Register from './components/Register';
+import SplashScreen from './components/SplashScreen';
 import CheckEmailPage from './components/CheckEmailPage';
 import VerifyEmailPage from './components/VerifyEmailPage';
 import ForgotPasswordPage from './components/ForgotPasswordPage';
@@ -32,6 +33,15 @@ const PLATFORM_CATEGORY_TO_MANUAL = {
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
   const [showRegister, setShowRegister] = useState(false);
+  const [splashDismissed, setSplashDismissed] = useState(() => {
+    try { return sessionStorage.getItem('splashDismissed') === '1'; } catch { return false; }
+  });
+
+  const dismissSplash = (toRegister = false) => {
+    try { sessionStorage.setItem('splashDismissed', '1'); } catch {}
+    setSplashDismissed(true);
+    setShowRegister(toRegister);
+  };
 
   if (loading) {
     return (
@@ -48,6 +58,14 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
+    if (!splashDismissed) {
+      return (
+        <SplashScreen
+          onSignIn={() => dismissSplash(false)}
+          onCreateAccount={() => dismissSplash(true)}
+        />
+      );
+    }
     return showRegister
       ? <Register onSwitchToLogin={() => setShowRegister(false)} />
       : <Login onSwitchToRegister={() => setShowRegister(true)} />;
