@@ -707,4 +707,85 @@ All findings from parallel agents' latest runs (DLeeW SEC-025–030, dx9FO SEC-0
 **Total: 3 Critical · 5 High · 11 Medium · 8 Low — 27 open findings**
 *(H-002 upgraded from HIGH → CRITICAL based on confirmed dashboard-level data leak scope)*
 
-*Next automated review: 2026-04-28T07:00:00Z*
+*Next automated review: 2026-04-29T01:00:00Z*
+
+---
+
+## Review #8 — 2026-04-29T00:00:00Z
+
+**Trigger:** Hourly monitor (task `bm02dgabk` timed out, re-armed as `bpw6fdpdg`)
+**New commits to production (main):** None — **8th consecutive cycle with zero fixes.**
+**New branches detected:** `claude/serene-dirac-0OUgl` — adds 32-test suite (calculations + auth), no security fixes.
+
+### Reverification — All 27 Findings
+
+Full grep sweep: all 27 findings confirmed present verbatim on production. No lines changed.
+
+### Scope Expansions (no new finding IDs, existing entries updated)
+
+#### M-003 — devLink token now confirmed full-stack: backend → API response → React state → rendered live link
+
+Previously documented as server-side only. This cycle traced the complete data flow through the frontend:
+
+| Step | Location | Code |
+|---|---|---|
+| 1 — Server emits token | `auth.js:197` | `return res.json({ ..., devLink: emailResult.devLink })` |
+| 2 — Frontend captures it | `ForgotPasswordPage.jsx:22` | `if (res.devLink) setDevLink(res.devLink)` |
+| 3 — Stored in React state | `ForgotPasswordPage.jsx:12` | `const [devLink, setDevLink] = useState(null)` |
+| 4 — Rendered as live link | `ForgotPasswordPage.jsx:43` | `<a href={devLink}>Reset password →</a>` |
+| 5 — Also in check-email | `CheckEmailPage.jsx:23` | `<a href={devLink}>` — same pattern |
+
+**Impact:** The full plaintext reset URL (containing a valid one-hour token) is stored in React component state, visible in React DevTools, readable from network response in browser devtools, and rendered as a visible clickable link on-screen. Any XSS on this page captures a live account-takeover token. Fix requires both server-side (`NODE_ENV` guard) and frontend (remove `devLink` render in production builds).
+
+#### H-002 — deleteAccount confirmed as irreversible hard-delete with no ownership guard in handler
+
+`deleteAccount` (`portfolio.js:2166`) performs `SELECT * FROM accounts WHERE id = ?` — **no `user_id` filter in the handler**. It relies entirely on `requireAccountAuth` middleware, which permits `user_id IS NULL`. Cascade verified:
+
+```
+DELETE account_history WHERE account_id = ?
+DELETE screenshots    WHERE account_id = ?
+DELETE holdings       WHERE account_id = ?
+DELETE transactions   WHERE account_id = ?
+DELETE accounts       WHERE id = ?
+```
+
+All five deletes execute unconditionally with no soft-delete, recycle bin, or admin confirmation. Any authenticated user can permanently destroy all data for any legacy NULL-owned account in a single API call. Combined with the auto-exposure in `getAccounts` (every user sees these accounts), the attack path is trivially discoverable.
+
+### Positive Development — Test Suite Added
+
+`claude/serene-dirac-0OUgl` (commit `3128b6e`) introduces 32 unit/integration tests:
+- `calculations.test.js` — `calculateFutureValue`, `calculatePortfolioValue`
+- `auth.middleware.test.js` — `requireAuth`, `optionalAuth`
+- `auth.routes.test.js` — register, login integration tests
+
+**Not yet on main. Does not address any security finding.** However, the auth middleware tests are adjacent to C-001 (JWT secret) and H-002 (auth bypass) — if expanded to cover edge cases, they could serve as regression guards once fixes land.
+
+### No New Standalone Findings
+
+All parallel agent discoveries this cycle (dx9FO Run #7 SEC-008 frontend trace, DLeeW Run #5 SEC-031 floating-point) are already captured in our tracker under M-003 and L-004 respectively.
+
+### Consolidated Status After 8 Cycles
+
+| Metric | Value |
+|---|---|
+| Total open findings | 27 |
+| Production fixes applied | **0** |
+| Partial fixes (unmerged branch) | 2 (H-004, M-004 on `cursor/robustness-*`) |
+| Severity upgrades since Rev #1 | 1 (H-002 → CRITICAL in Rev #7) |
+| Scope expansions | 2 (H-002 data-read queries Rev #7; M-003 frontend Rev #8) |
+| Consecutive zero-fix cycles | **8** |
+| New branches with partial work | `cursor/robustness-*` (validation lib), `serene-dirac-*` (test suite) |
+
+### Priority Fix Queue (unchanged from Rev #4, re-surfaced for urgency)
+
+The 3 CRITICAL findings are all zero-effort or near-zero-effort fixes:
+
+| Finding | Fix effort | One-liner |
+|---|---|---|
+| **C-001** JWT secret | ~2 min | Add `if (!process.env.JWT_SECRET) process.exit(1)` in `start()`, remove `\|\| 'dev-secret...'` |
+| **C-002** /api/debug | ~1 min | Add `requireAuth,` before the handler in `server.js:143` |
+| **H-002** NULL user_id | ~10 min | Change `OR user_id IS NULL` → `AND user_id = ?` in all 5 locations; run migration to assign NULL rows to a designated admin user |
+
+**Total time to close all 3 CRITICAL findings: ~13 minutes of editing.**
+
+*Next automated review: 2026-04-29T01:00:00Z*
