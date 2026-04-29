@@ -658,3 +658,88 @@ Place this before the `CMD` instruction.
 > **3rd consecutive cycle with zero fixes on `main`.** New findings this run elevate the High count to 8.  
 > `npm audit` HIGH CVEs (SEC-026) are fixable with a single `npm audit fix` — no code changes needed.  
 > `Infinity`-in-balance (SEC-025) is a data integrity attack that any authenticated user can trigger right now.
+
+---
+
+## Run #5 — 2026-04-29T00:00:00Z
+
+**Trigger:** Hourly monitor tick  
+**New commits on `main` since Run #4:** None  
+**Parallel agent activity:** `claude/cool-hawking-UiAbk` (Run #7) upgraded their H-002 (our SEC-007) from HIGH → CRITICAL. Independently verified and adopted below. New branch `claude/serene-dirac-0OUgl` detected — adds a test suite, no security fixes.
+
+### Severity Upgrade — SEC-007: HIGH → 🔴 CRITICAL
+
+**Previous severity:** 🟠 HIGH  
+**New severity:** 🔴 CRITICAL  
+**Reason:** Full scope re-examination of `portfolio.js` confirms the vulnerability is worse than initially assessed.
+
+`getPortfolioSummary` (`portfolio.js:766`) and `getAccounts` (`portfolio.js:962`) both query:
+```sql
+WHERE user_id = ? OR user_id IS NULL
+```
+This means all `user_id IS NULL` (legacy/unassigned) accounts are **automatically included in every authenticated user's dashboard and portfolio total** — not just accessible via direct ID manipulation. Any user logging in sees all orphan accounts as their own, with their balances added to their portfolio value. This is a **passive data leak requiring no attacker action beyond logging in**.
+
+Combined with the upload flow at `portfolio.js:477` (same `OR user_id IS NULL` query), any new screenshot upload can also match and overwrite an orphan account belonging to a different real user. This makes SEC-007 a **CRITICAL data integrity and privacy breach**.
+
+### New Finding
+
+---
+
+#### [SEC-031] 🔵 LOW — Floating-point arithmetic for financial calculations
+
+**File:** `backend/services/calculations.js`, `backend/routes/portfolio.js`  
+**Description:** All monetary values are stored and computed using IEEE 754 double-precision floating-point (`Number`, `parseFloat`, `Math.pow`). This introduces well-known precision errors: `0.1 + 0.2 = 0.30000000000000004`. For a portfolio tracker summing many holdings and applying compound interest, these errors accumulate. A user with many small-value holdings may see portfolio totals that drift by cents over time. While not a security vulnerability, it is a correctness issue in a financial application.  
+**Recommendation:** Use integer arithmetic (store cents, not euros) or a decimal arithmetic library (`decimal.js`, `big.js`) for all money operations. At minimum, round all displayed totals to 2 decimal places consistently.  
+**Developer checked:** ⬜ No  
+**Reverified fixed:** —
+
+---
+
+### Full Reverification — All 30 Findings
+
+| ID | Severity | Title | Dev Checked | Fixed? |
+|---|---|---|---|---|
+| SEC-001 | 🔴 CRITICAL | Wildcard CORS | ⬜ No | ❌ Open |
+| SEC-002 | 🔴 CRITICAL | Unauthenticated `/api/debug` | ⬜ No | ❌ Open |
+| SEC-003 | 🔴 CRITICAL | No file type validation on uploads | ⬜ No | ❌ Open |
+| SEC-004 | 🔴 CRITICAL | Uploaded files served publicly | ⬜ No | ❌ Open |
+| SEC-007 | 🔴 CRITICAL ⬆ | Legacy accounts on every user dashboard (`user_id IS NULL` in summary + list queries) | ⬜ No | ❌ Open |
+| SEC-005 | 🟠 HIGH | Hardcoded fallback JWT secret | ⬜ No | ❌ Open |
+| SEC-006 | 🟠 HIGH | `devLink` password token in API response | ⬜ No | ❌ Open |
+| SEC-008 | 🟠 HIGH | No rate limiting on auth endpoints | ⬜ No | ❌ Open |
+| SEC-009 | 🟠 HIGH | AI prompt injection via `platform` field | ⬜ No | ❌ Open |
+| SEC-010 | 🟠 HIGH | Unauthenticated test-email endpoint | ⬜ No | ❌ Open |
+| SEC-025 | 🟠 HIGH | `Infinity` accepted in financial fields | ⬜ No | ❌ Open |
+| SEC-026 | 🟠 HIGH | 8 HIGH-severity npm CVEs | ⬜ No | ❌ Open |
+| SEC-011 | 🟡 MEDIUM | JWT in `localStorage` | ⬜ No | ❌ Open |
+| SEC-012 | 🟡 MEDIUM | No security headers | ⬜ No | ❌ Open |
+| SEC-013 | 🟡 MEDIUM | Raw DB errors to client | ⬜ No | ❌ Open |
+| SEC-014 | 🟡 MEDIUM | Screenshots retained indefinitely | ⬜ No | ❌ Open |
+| SEC-015 | 🟡 MEDIUM | Single PG connection (no pool) | ⬜ No | ❌ Open |
+| SEC-016 | 🟡 MEDIUM | No email verification gate | ⬜ No | ❌ Open |
+| SEC-017 | 🟡 MEDIUM | `raw_data` stored unencrypted | ⬜ No | ❌ Open |
+| SEC-027 | 🟡 MEDIUM | JWT not invalidated on password change | ⬜ No | ❌ Open |
+| SEC-028 | 🟡 MEDIUM | Password reset tokens in plaintext DB | ⬜ No | ❌ Open |
+| SEC-029 | 🟡 MEDIUM | Docker container runs as root | ⬜ No | ❌ Open |
+| SEC-018 | 🔵 LOW | Weak password policy | ⬜ No | ❌ Open |
+| SEC-019 | 🔵 LOW | Default seed credentials (`changeme123`) | ⬜ No | ❌ Open |
+| SEC-020 | 🔵 LOW | No audit trail for financial mutations | ⬜ No | ❌ Open |
+| SEC-021 | 🔵 LOW | Hardcoded currency fallback rates | ⬜ No | ❌ Open |
+| SEC-022 | 🔵 LOW | `dotenv` re-read per request | ⬜ No | ❌ Open |
+| SEC-030 | 🔵 LOW | No max length on string fields | ⬜ No | ❌ Open |
+| SEC-031 | 🔵 LOW | Floating-point financial arithmetic | ⬜ No | ❌ Open *(new)* |
+| SEC-023 | ⚪ INFO | No DB transactions for uploads | ⬜ No | ❌ Open |
+| SEC-024 | ⚪ INFO | Yahoo Finance unauthenticated | ⬜ No | ❌ Open |
+
+### Run #5 Summary
+
+**Previously open:** 29  
+**Fixed this run:** 0  
+**Severity upgrades:** 1 — SEC-007 HIGH → CRITICAL  
+**New findings:** 1 — SEC-031 (floating-point arithmetic)  
+**Total open:** 30  
+**Current totals: 5 Critical · 7 High · 10 Medium · 6 Low · 2 Info**
+
+> **4th consecutive cycle with zero developer fixes on `main`.**  
+> SEC-007 is now CRITICAL: all legacy accounts auto-appear on every user's dashboard — no exploit needed, just log in.  
+> The 5 Critical findings are all independently exploitable by any authenticated (or in some cases unauthenticated) user.
