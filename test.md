@@ -968,3 +968,127 @@ SEC-006 is now confirmed as a **data destruction** risk: any authenticated user 
 ---
 
 *Next review scheduled: 2026-04-29T00:41:22Z*
+
+---
+
+## Run #8 — 2026-04-29T00:11:34Z
+
+### Developer Fix Check
+
+No commits since Run #7. All 22 issues remain open.
+
+| Key indicator | Result | Status |
+|---|---|---|
+| `'dev-secret-change-in-production'` in `auth.js:8` | count=1 | `[OPEN]` |
+| `requireAuth` wrapping `/api/debug` | absent | `[OPEN]` |
+| `rateLimit` / `express-rate` in `server.js` | count=0 | `[OPEN]` |
+| `express.static('uploads')` in `server.js` | count=1 | `[OPEN]` |
+| `cors()` no-arg in `server.js` | count=1 | `[OPEN]` |
+| `user_id IS NULL` across auth + data queries | count=6 | `[OPEN]` |
+| `helmet` in `server.js` | count=0 | `[OPEN]` |
+| `USER` directive in `Dockerfile` | count=0 | `[OPEN]` |
+| `npm audit` backend vuln total | 17 (unchanged) | `[OPEN]` |
+
+---
+
+### [NEW] SEC-020 — CSV Formula Injection in Portfolio / Holdings / History Exports
+- **Severity**: Medium
+- **File**: `frontend/src/components/ReportsPage.jsx:19-27`
+- **Description**: The `escapeCsv()` function that protects all three CSV exports (portfolio summary, holdings, value history) only quotes fields containing commas, double-quotes, or newlines. It does **not** strip or prefix formula-trigger characters (`=`, `+`, `-`, `@`). Any user-controlled string stored in the database — account name, platform, tag, stock symbol, display name — is exported verbatim. If a malicious actor stores a value such as `=HYPERLINK("http://evil.com","Click")` or `=CMD|'/C calc'!A0` as an account name or symbol, that payload is written directly into the CSV file. When a victim opens the file in Microsoft Excel or LibreOffice Calc, the formula executes in the context of the local user's spreadsheet application.
+
+  Attack vectors: account name, platform name, tag, stock symbol (SEC-019 allows arbitrary-length values; no allowlist on most fields).
+
+- **Evidence**:
+  ```js
+  // ReportsPage.jsx:19 — no formula-prefix sanitisation
+  function escapeCsv(value) {
+    const str = String(value ?? '');
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;  // ← =HYPERLINK(...) passes through unchanged
+  }
+  ```
+- **Recommendation**: Prefix any cell that starts with `=`, `+`, `-`, or `@` with a single quote or tab to neutralise formula parsing:
+  ```js
+  function escapeCsv(value) {
+    let str = String(value ?? '');
+    if (/^[=+\-@\t\r]/.test(str)) str = `'${str}`;  // neutralise formula prefix
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  }
+  ```
+- **Status**: `[OPEN]`
+- **First reported**: 2026-04-29T00:11:34Z
+- **Developer check**: ☐
+
+---
+
+### [NEW] INF-004 — Real Personal Email Address Hardcoded in Committed Script
+- **Severity**: Low (privacy / OPSEC)
+- **File**: `backend/scripts/backupUserAccount.js:7`
+- **Description**: A real personal email address (`penchev.bg@gmail.com`) is hardcoded in the usage example comment of a script that is committed to the repository. If this repository is or becomes public, this associates a real person's email address with the codebase permanently in git history. The address is already in the git object store and would be visible in any clone or mirror.
+- **Evidence**:
+  ```js
+  // backupUserAccount.js:7
+  *   cd backend && node scripts/backupUserAccount.js --email=penchev.bg@gmail.com --out=penchev-backup.json
+  ```
+- **Recommendation**: Replace with a generic placeholder (`user@example.com`) in the comment. To remove from git history, use `git filter-repo` or BFG Repo Cleaner — note this rewrites history and requires force-pushing.
+- **Status**: `[OPEN]`
+- **First reported**: 2026-04-29T00:11:34Z
+- **Developer check**: ☐
+
+---
+
+### Areas Cleared This Run
+
+| Surface | Finding |
+|---|---|
+| **Account lockout** | No lockout mechanism exists (already implied by SEC-003 — no rate limiting). Brute-force risk fully covered there. |
+| **Password complexity** | Only 8-char minimum enforced (`auth.js:33`). No uppercase/number/symbol requirement. Low standalone risk given rate-limit absence already documented in SEC-003. |
+| **JWT session fixation** | JWT is issued at registration, login, and email verification only — no re-issuance that could fix a session. No session fixation risk. |
+| **`getHoldingsProjection`** | Protected by `requireAccountAuth` middleware; queries only by `accountId` which middleware already verified belongs to the user (SEC-006 aside). No additional exposure. |
+| **`backupUserAccount.js` data handling** | Script correctly warns output contains password hashes ("treat the file as secret"). Writes to local file or stdout — no network transmission. No runtime API exposure. |
+| **ReportsPage CSV download** | Client-side only — data already held in React state from prior API call. No additional server-side data exposure. CSV injection found (SEC-020 above). |
+| **Three.js splash screen** | Static 3D animation; no user data rendered; no external network calls from the Three.js component. No security surface. |
+
+---
+
+## Summary — Run #8 (2026-04-29T00:11:34Z)
+
+**0 issues fixed. 2 new issues added.**
+
+| ID | Severity | Title | Status |
+|---|---|---|---|
+| SEC-001 | Critical | Hardcoded fallback JWT secret | [OPEN] |
+| SEC-002 | High | Unauthenticated `/api/debug` endpoint | [OPEN] |
+| SEC-003 | High | No rate limiting on auth endpoints | [OPEN] |
+| SEC-004 | High | Uploads served as public static files | [OPEN] |
+| SEC-005 | High | Wide-open CORS policy | [OPEN] |
+| SEC-006 | High | NULL user_id bypass — read, modify, delete of shared accounts | [OPEN] |
+| SEC-017 | High | Docker container runs as root | [OPEN] |
+| SEC-018 | High | 25 known-vulnerable dependencies (12 High CVEs) | [OPEN] |
+| SEC-007 | Medium | Password reset token stored in plaintext | [OPEN] |
+| SEC-008 | Medium | Reset token in API response + React state + live link | [OPEN] |
+| SEC-009 | Medium | No security headers (Helmet missing) | [OPEN] |
+| SEC-010 | Medium | JWT not invalidated on password change | [OPEN] |
+| SEC-011 | Medium | No MIME type validation on uploads | [OPEN] |
+| SEC-014 | Medium | Raw internal error messages sent to client | [OPEN] |
+| SEC-015 | Medium | Unauthenticated open email relay endpoint | [OPEN] |
+| SEC-020 | Medium | CSV formula injection in portfolio/holdings/history exports | [OPEN] |
+| INF-002 | Medium | JWT in localStorage — XSS token theft | [OPEN] |
+| INF-003 | Medium | Default seed user with hardcoded password | [OPEN] |
+| SEC-012 | Low | Email verification not enforced | [OPEN] |
+| SEC-013 | Low | OpenAI error details leaked to client | [OPEN] |
+| SEC-016 | Low | No bounds validation on financial fields | [OPEN] |
+| SEC-019 | Low | No max length on user-supplied string fields | [OPEN] |
+| INF-004 | Low | Real personal email hardcoded in committed script | [OPEN] |
+| INF-001 | High (ops) | SQLite in production — data loss risk | [OPEN] |
+
+**Total: 24 issues — 1 Critical, 7 High, 8 Medium, 5 Low, 3 Operational**
+
+---
+
+*Next review scheduled: 2026-04-29T01:11:34Z*
