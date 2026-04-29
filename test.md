@@ -743,3 +743,90 @@ Combined with the upload flow at `portfolio.js:477` (same `OR user_id IS NULL` q
 > **4th consecutive cycle with zero developer fixes on `main`.**  
 > SEC-007 is now CRITICAL: all legacy accounts auto-appear on every user's dashboard — no exploit needed, just log in.  
 > The 5 Critical findings are all independently exploitable by any authenticated (or in some cases unauthenticated) user.
+
+---
+
+## Run #6 — 2026-04-29T01:00:00Z
+
+**Trigger:** Hourly monitor tick  
+**New commits on `main` since Run #5:** None  
+**Parallel agent activity:** `claude/cool-hawking-UiAbk` (Run #8) surfaced two scope expansions. Both independently verified against the live codebase this cycle.
+
+### Scope Expansion — SEC-006: `devLink` also rendered in React frontend
+
+**Previous scope:** API response body returns plaintext reset token when email delivery fails.  
+**Expanded scope:** The token travels further — it is stored in React component state and rendered as a live clickable hyperlink visible on screen.
+
+**Full data flow verified:**
+
+| Step | File | Line | What happens |
+|---|---|---|---|
+| 1 | `backend/routes/auth.js` | 197 | Server returns `{ devLink: "https://…/reset?token=<hex>" }` in JSON |
+| 2 | `frontend/src/components/ForgotPasswordPage.jsx` | 22 | `if (res.devLink) setDevLink(res.devLink)` — token stored in React state |
+| 3 | `frontend/src/components/ForgotPasswordPage.jsx` | 12 | `const [devLink, setDevLink] = useState(null)` — lives in component memory |
+| 4 | `frontend/src/components/ForgotPasswordPage.jsx` | 43 | `<a href={devLink}>Reset password →</a>` — rendered as a live link |
+| 5 | `frontend/src/components/CheckEmailPage.jsx` | 23 | Same `<a href={devLink}>` pattern |
+
+**Additional attack surfaces this reveals:**
+- Token visible in browser network tab (DevTools) to anyone with physical access
+- Token in React DevTools component state tree
+- Token displayed as on-screen hyperlink — visible to anyone behind the victim's shoulder
+- Any XSS on the forgot-password or check-email page steals a live account-takeover token
+- Shared-computer scenario: browser history records the reset URL
+
+**This finding should be upgraded from 🟠 HIGH → 🔴 CRITICAL** given the token is now both server-side and client-side exposed, and both must be fixed independently (server: `NODE_ENV` guard; frontend: remove `devLink` render in production builds).
+
+---
+
+### Scope Expansion — SEC-007: `deleteAccount` has no ownership filter in handler
+
+**Previous scope:** Auth middleware permits `user_id IS NULL` accounts, enabling IDOR read/write.  
+**Expanded scope:** `deleteAccount` (`portfolio.js:2178`) queries `SELECT * FROM accounts WHERE id = ?` — **no `user_id` column in the WHERE clause at all**. The handler trusts `requireAccountAuth` middleware entirely, which itself passes for any NULL-owner account.
+
+**Confirmed cascade on successful delete:**
+```sql
+DELETE FROM account_history  WHERE account_id = ?   -- all history
+DELETE FROM screenshots      WHERE account_id = ?   -- all screenshots
+DELETE FROM holdings         WHERE account_id = ?   -- all holdings
+DELETE FROM transactions     WHERE account_id = ?   -- all transactions
+DELETE FROM accounts         WHERE id = ?           -- the account itself
+```
+
+Five-table hard delete. No soft-delete. No recycle bin. No admin confirmation gate. **Irreversible.** Any authenticated user who can see a legacy account on their dashboard (which is every user, per the Run #5 finding) can permanently destroy it in one API call.
+
+---
+
+### Severity Upgrade — SEC-006: HIGH → 🔴 CRITICAL
+
+Given the confirmed full data-flow from API response → React state → on-screen hyperlink, SEC-006 is upgraded from HIGH to CRITICAL. The reset token is exposed at multiple layers, requires fixes in two separate codebases (backend + frontend), and enables account takeover even when the attacker only has read access to the screen.
+
+---
+
+### Reverification — All 30 Findings
+
+No fixes detected on `main`. All 30 remain open. Spot-checked key files:
+- `server.js` — CORS wildcard, static uploads serve, debug endpoint: ❌ all unchanged
+- `auth.js` — JWT secret fallback, devLink return, user_id IS NULL, rate limiting: ❌ all unchanged
+- `aiService.js` — platform interpolation, dotenv per-call: ❌ unchanged
+- `database.js` — pg.Client not Pool: ❌ unchanged
+- `Dockerfile` — no USER directive: ❌ unchanged
+- `package.json` — npm audit still 8 HIGH CVEs: ❌ unchanged
+
+### Run #6 Summary
+
+**Previously open:** 30  
+**Fixed this run:** 0  
+**New standalone findings:** 0  
+**Scope expansions:** 2 — SEC-006 (devLink in React frontend), SEC-007 (deleteAccount cascade)  
+**Severity upgrades:** 1 — SEC-006 HIGH → CRITICAL  
+**Total open:** 30  
+**Current totals: 6 Critical · 6 High · 10 Medium · 6 Low · 2 Info**
+
+| ID | New status | Reason |
+|---|---|---|
+| SEC-006 | 🔴 CRITICAL ⬆ | devLink rendered as live hyperlink in React; token exposed at API + state + DOM |
+| SEC-007 | 🔴 CRITICAL (confirmed) | deleteAccount cascade: 5-table irreversible hard-delete, no ownership check in handler |
+
+> **5th consecutive cycle with zero developer fixes on `main`.**  
+> There are now **6 Critical findings.** Three of them require under 15 minutes total to close (JWT secret guard, `/api/debug` auth, remove `OR user_id IS NULL`).  
+> `npm audit fix` in `backend/` would resolve SEC-026 (8 HIGH CVEs) in under 60 seconds with no code changes.
