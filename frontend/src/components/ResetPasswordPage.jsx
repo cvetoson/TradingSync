@@ -3,6 +3,8 @@ import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import * as api from '../services/api';
 import AuthCard from './AuthCard';
 
+const inputCls = 'auth-input w-full px-3.5 py-2.5 rounded-lg text-sm transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-opacity-30';
+
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -45,10 +47,10 @@ export default function ResetPasswordPage() {
     return (
       <AuthCard subtitle="Invalid reset link">
         <div className="space-y-4">
-          <p className="text-blue-100 text-center">This password reset link is invalid or has expired.</p>
+          <p className="text-center text-sm" style={{ color: 'var(--text-2)' }}>This password reset link is invalid or has expired.</p>
           <Link
             to="/forgot-password"
-            className="block w-full text-center py-2.5 px-4 rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition"
+            className="auth-submit block w-full text-center py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition"
           >
             Request a new link
           </Link>
@@ -60,7 +62,7 @@ export default function ResetPasswordPage() {
   if (success) {
     return (
       <AuthCard subtitle="Password updated">
-        <p className="text-green-200 text-center mb-4">Your password has been reset. Redirecting to sign in...</p>
+        <p className="text-center text-sm" style={{ color: 'var(--text-2)' }}>Your password has been reset. Redirecting to sign in…</p>
       </AuthCard>
     );
   }
@@ -69,17 +71,17 @@ export default function ResetPasswordPage() {
     <AuthCard subtitle="Set a new password">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="bg-red-500/20 border border-red-400/50 text-red-100 px-4 py-2 rounded-lg text-sm">
+          <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-2 rounded-md text-sm">
             {error}
           </div>
         )}
         <div>
-          <label className="block text-sm font-medium text-blue-100 mb-1">New password (min 8 characters)</label>
+          <label className="block text-xs font-medium mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>New password (min 8 characters)</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-blue-200 focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+            className={inputCls}
             placeholder="••••••••"
             required
             minLength={8}
@@ -87,12 +89,12 @@ export default function ResetPasswordPage() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-blue-100 mb-1">Confirm password</label>
+          <label className="block text-xs font-medium mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Confirm password</label>
           <input
             type="password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-blue-200 focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+            className={inputCls}
             placeholder="••••••••"
             required
             minLength={8}
@@ -102,13 +104,13 @@ export default function ResetPasswordPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2.5 px-4 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="auth-submit w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition disabled:opacity-50 mt-1"
         >
           {loading ? 'Updating...' : 'Update password'}
         </button>
       </form>
-      <p className="mt-6 text-center text-blue-100 text-sm">
-        <Link to="/" className="text-blue-300 hover:text-white font-medium underline">
+      <p className="mt-5 text-center text-sm" style={{ color: 'var(--text-3)' }}>
+        <Link to="/" className="text-blue-500 hover:text-blue-400 font-medium transition">
           Back to sign in
         </Link>
       </p>

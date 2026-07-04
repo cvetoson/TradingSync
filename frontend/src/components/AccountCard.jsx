@@ -14,7 +14,7 @@ const ACCOUNT_TYPES = [
 export default function AccountCard({ account, currency, onUpdate, onViewDetails }) {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
-  const formattedValue = new Intl.NumberFormat('en-US', {
+  const formattedValue = new Intl.NumberFormat('de-DE', {
     style: 'currency', currency: currency || 'EUR', minimumFractionDigits: 2
   }).format(account.currentValue);
 

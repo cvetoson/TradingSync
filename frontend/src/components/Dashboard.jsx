@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import AssetIcon from './AssetIcons';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
 
@@ -9,7 +10,7 @@ const INSTRUMENT_LABELS = {
 };
 
 const fmt = (value, currency = 'EUR') =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2 }).format(value);
+  new Intl.NumberFormat('de-DE', { style: 'currency', currency, minimumFractionDigits: 2 }).format(value);
 
 const UNTAGGED_LABEL = 'Untagged';
 
@@ -173,7 +174,10 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
         </div>
         <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
           <p className="text-xs uppercase tracking-wider font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Top Asset Type</p>
-          <div className="text-base font-bold truncate leading-tight" style={{ color: 'var(--text-1)' }}>{instrumentPieData[0]?.name || '—'}</div>
+          <div className="flex items-center gap-2">
+            {instrumentPieData[0]?.type && <AssetIcon type={instrumentPieData[0].type} size={28} />}
+            <div className="text-base font-bold truncate leading-tight" style={{ color: 'var(--text-1)' }}>{instrumentPieData[0]?.name || '—'}</div>
+          </div>
           <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
             {instrumentPieData[0] ? `${((instrumentPieData[0].value / totalValue) * 100).toFixed(1)}% of portfolio` : '—'}
           </p>
@@ -289,6 +293,9 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                   }}
                 >
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                  {viewMode === 'instrument' && entry.type && (
+                    <AssetIcon type={entry.type} size={16} />
+                  )}
                   <span className="truncate max-w-[120px]" title={entry.name}>
                     {entry.name.length > 16 ? entry.name.substring(0, 14) + '…' : entry.name}
                   </span>
@@ -361,6 +368,9 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sliceColor }} />
+                      {viewMode === 'instrument' && item.type && (
+                        <AssetIcon type={item.type} size={22} />
+                      )}
                       <span className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{item.name}</span>
                     </div>
                     <span className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>{fmt(item.value, currency)}</span>

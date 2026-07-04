@@ -1,5 +1,8 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import fs from 'fs';
 import dotenv from 'dotenv';
@@ -9,7 +12,7 @@ import { initDatabase, isPostgreSQL } from './database.js';
 import { getRecentErrors } from './lib/errorLog.js';
 import { getLastEmailError, sendEmail } from './services/emailService.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
-import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword } from './routes/auth.js';
+import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, logout, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword } from './routes/auth.js';
 import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountTag, updateAccountBalance, updateAccountInterestRate, updateAccountContributedAmount, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, updateHoldingPurchasePrice, deleteHolding, verifyHoldingSymbol } from './routes/portfolio.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,10 +23,41 @@ dotenv.config({ path: join(__dirname, '.env') });
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Railway/behind-proxy: trust the first proxy hop so rate limiting sees real client IPs
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
+// Throttle credential endpoints: blocks password/reset-token brute force
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again in a few minutes.' },
+});
+
 // Middleware
-app.use(cors());
+// Security headers. In production the API also serves the SPA, so keep the CSP
+// relaxed enough for Vite's built assets rather than helmet's strict default.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'same-site' } }));
+
+// Restrict CORS to the known app origin(s). In production, same-origin serving
+// means CORS is barely exercised, but this removes the wide-open default.
+const allowedOrigins = [process.env.APP_URL, 'http://localhost:5173', 'http://localhost:3001'].filter(Boolean);
+app.use(cors({
+  origin(origin, cb) {
+    // Allow same-origin/non-browser requests (no Origin header) and known origins.
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  credentials: true, // allow the httpOnly auth cookie on cross-origin requests
+}));
 app.use(express.json());
-app.use(express.static(join(__dirname, 'uploads')));
+app.use(cookieParser());
+// NOTE: uploaded screenshots are intentionally NOT served statically — they contain
+// users' financial data and no client code fetches them by URL. Serve them through an
+// authenticated route if that ever changes.
 
 // Serve frontend in production
 const frontendPath = join(__dirname, '..', 'frontend', 'dist');
@@ -38,13 +72,29 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + '.' + file.originalname.split('.').pop());
+    // Force a safe extension from the validated MIME type; never trust originalname.
+    const ext = ALLOWED_IMAGE_TYPES[file.mimetype] || 'bin';
+    cb(null, file.fieldname + '-' + uniqueSuffix + '.' + ext);
   }
 });
 
-const upload = multer({ 
+// Whitelist of accepted screenshot image types → canonical file extension.
+const ALLOWED_IMAGE_TYPES = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+};
+
+const upload = multer({
   storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_IMAGE_TYPES[file.mimetype]) return cb(null, true);
+    cb(new Error('Unsupported file type — please upload a PNG, JPEG, WebP, GIF, or HEIC image.'));
+  },
 });
 
 // Ensure uploads directory exists (multer needs it)
@@ -66,12 +116,13 @@ async function start() {
     if (r.created > 0) console.log(`✅ Backfilled history for ${r.created} account(s)`);
   }).catch((err) => console.error('Error backfilling history:', err));
 
-  // Auth routes (public)
-  app.post('/api/auth/register', register);
-  app.post('/api/auth/verify-email', verifyEmail);
-  app.post('/api/auth/login', login);
-  app.post('/api/auth/forgot-password', forgotPassword);
-  app.post('/api/auth/reset-password', resetPassword);
+  // Auth routes (public, rate-limited)
+  app.post('/api/auth/register', authLimiter, register);
+  app.post('/api/auth/verify-email', authLimiter, verifyEmail);
+  app.post('/api/auth/login', authLimiter, login);
+  app.post('/api/auth/forgot-password', authLimiter, forgotPassword);
+  app.post('/api/auth/reset-password', authLimiter, resetPassword);
+  app.post('/api/auth/logout', logout);
 
   // Protected routes (require authentication)
   app.get('/api/auth/me', requireAuth, getProfile);
@@ -139,8 +190,10 @@ async function start() {
     });
   }
 
-  // Debug endpoint – for AI/remote troubleshooting (no secrets)
-  app.get('/api/debug', (req, res) => {
+  // Debug endpoint – requires auth. Reports only configuration booleans, never the
+  // raw recent-error/email-error text (which can contain DB internals).
+  app.get('/api/debug', requireAuth, (req, res) => {
+    if (!req.userId) return res.status(401).json({ error: 'Authentication required' });
     res.json({
       status: 'ok',
       database: isPostgreSQL() ? 'PostgreSQL' : 'SQLite',
@@ -149,8 +202,8 @@ async function start() {
       hasSmtp: !!(process.env.RESEND_API_KEY || (process.env.SMTP_HOST && process.env.SMTP_USER)),
       smtpConfigured: !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
       appUrl: process.env.APP_URL || '(not set)',
-      recentErrors: getRecentErrors(),
-      lastEmailError: getLastEmailError() || null,
+      recentErrorCount: getRecentErrors().length,
+      hasEmailError: !!getLastEmailError(),
     });
   });
 
@@ -181,6 +234,18 @@ async function start() {
       }
     });
   }
+
+  // Central error handler: converts multer/file-filter and other thrown errors into
+  // JSON with a generic message, so raw internals never reach the client.
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    const isMulter = err && (err.name === 'MulterError' || /Unsupported file type/.test(err.message || ''));
+    const status = isMulter ? 400 : (err.status || 500);
+    const message = isMulter ? err.message : 'Something went wrong. Please try again.';
+    if (!isMulter) console.error('[ERROR]', req.method, req.path, err?.message);
+    res.status(status).json({ error: message });
+  });
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);

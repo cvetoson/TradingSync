@@ -1,41 +1,61 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import * as api from '../services/api';
 
-const AUTH_KEY = 'tradingsync_token';
 const USER_KEY = 'tradingsync_user';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem(AUTH_KEY);
-    const storedUser = localStorage.getItem(USER_KEY);
-    if (stored && storedUser) {
-      try {
-        setToken(stored);
-        setUser(JSON.parse(storedUser));
-      } catch {
-        localStorage.removeItem(AUTH_KEY);
-        localStorage.removeItem(USER_KEY);
-      }
+    let cancelled = false;
+
+    // Optimistically show the cached user (non-secret) to avoid a login flash,
+    // then confirm the session against the httpOnly cookie via /auth/me.
+    const cached = localStorage.getItem(USER_KEY);
+    if (cached) {
+      try { setUser(JSON.parse(cached)); } catch { localStorage.removeItem(USER_KEY); }
     }
-    setLoading(false);
+
+    api.getProfile()
+      .then((me) => {
+        if (cancelled) return;
+        const fresh = { id: me.id, email: me.email, displayName: me.displayName };
+        setUser(fresh);
+        localStorage.setItem(USER_KEY, JSON.stringify(fresh));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // No valid session cookie — ensure we're logged out.
+        setUser(null);
+        localStorage.removeItem(USER_KEY);
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    // api.js dispatches this on a 401 so an expired session logs the user out everywhere.
+    const onForcedLogout = () => {
+      setUser(null);
+      localStorage.removeItem(USER_KEY);
+    };
+    window.addEventListener('auth:logout', onForcedLogout);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('auth:logout', onForcedLogout);
+    };
   }, []);
 
-  const login = (token, user) => {
-    setToken(token);
-    setUser(user);
-    localStorage.setItem(AUTH_KEY, token);
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  // Called after a successful login/register/verify — the JWT is already in the cookie.
+  const login = (loggedInUser) => {
+    setUser(loggedInUser);
+    localStorage.setItem(USER_KEY, JSON.stringify(loggedInUser));
   };
 
-  const logout = () => {
-    setToken(null);
+  const logout = async () => {
+    await api.logout(); // clears the httpOnly cookie server-side
     setUser(null);
-    localStorage.removeItem(AUTH_KEY);
     localStorage.removeItem(USER_KEY);
   };
 
@@ -46,7 +66,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem(USER_KEY, JSON.stringify(next));
   };
 
-  const value = { user, token, loading, login, logout, updateUser, isAuthenticated: !!token };
+  const value = { user, loading, login, logout, updateUser, isAuthenticated: !!user };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
@@ -55,8 +75,4 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
-}
-
-export function getStoredToken() {
-  return localStorage.getItem(AUTH_KEY);
 }

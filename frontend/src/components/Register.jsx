@@ -20,7 +20,7 @@ export default function Register({ onSwitchToLogin }) {
     setLoading(true);
     try {
       const res = await api.register(email, password, confirmPassword, displayName);
-      login(res.token, res.user);
+      login(res.user);
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Registration failed. Please try again.');
     } finally {
@@ -28,7 +28,7 @@ export default function Register({ onSwitchToLogin }) {
     }
   };
 
-  const inputCls = "w-full px-3 py-2.5 rounded-md text-sm transition focus:outline-none focus:ring-1 focus:ring-blue-500";
+  const inputCls = 'auth-input w-full px-3.5 py-2.5 rounded-lg text-sm transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-opacity-30';
   const labelCls = "block text-xs font-medium mb-1.5 uppercase tracking-wider";
 
   return (
@@ -40,29 +40,25 @@ export default function Register({ onSwitchToLogin }) {
         <div>
           <label className={labelCls} style={{ color: 'var(--text-3)' }}>Email</label>
           <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls}
-            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
             placeholder="you@example.com" required autoComplete="email" />
         </div>
         <div>
           <label className={labelCls} style={{ color: 'var(--text-3)' }}>Display name (optional)</label>
           <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} className={inputCls}
-            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
             placeholder="Your name" autoComplete="name" />
         </div>
         <div>
           <label className={labelCls} style={{ color: 'var(--text-3)' }}>Password (min 8 characters)</label>
           <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputCls}
-            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
             placeholder="••••••••" required minLength={8} autoComplete="new-password" />
         </div>
         <div>
           <label className={labelCls} style={{ color: 'var(--text-3)' }}>Confirm password</label>
           <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className={inputCls}
-            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
             placeholder="••••••••" required minLength={8} autoComplete="new-password" />
         </div>
         <button type="submit" disabled={loading}
-          className="w-full py-2.5 px-4 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition disabled:opacity-50 mt-2">
+          className="auth-submit w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition disabled:opacity-50 mt-1">
           {loading ? 'Creating account...' : 'Register'}
         </button>
       </form>

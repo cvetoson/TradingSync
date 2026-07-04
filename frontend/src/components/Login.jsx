@@ -17,7 +17,7 @@ export default function Login({ onSwitchToRegister }) {
     setLoading(true);
     try {
       const res = await api.login(email, password);
-      login(res.token, res.user);
+      login(res.user);
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'Login failed';
       setError(msg);
@@ -26,7 +26,7 @@ export default function Login({ onSwitchToRegister }) {
     }
   };
 
-  const inputCls = "w-full px-3 py-2.5 rounded-md text-sm transition focus:outline-none focus:ring-1 focus:ring-blue-500";
+  const inputCls = 'auth-input w-full px-3.5 py-2.5 rounded-lg text-sm transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-opacity-30';
 
   return (
     <AuthCard subtitle="Sign in to your account">
@@ -43,7 +43,6 @@ export default function Login({ onSwitchToRegister }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className={inputCls}
-            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
             placeholder="you@example.com"
             required
             autoComplete="email"
@@ -59,7 +58,6 @@ export default function Login({ onSwitchToRegister }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className={inputCls}
-            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-1)' }}
             placeholder="••••••••"
             required
             autoComplete="current-password"
@@ -68,7 +66,7 @@ export default function Login({ onSwitchToRegister }) {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2.5 px-4 rounded-md bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition disabled:opacity-50 mt-2"
+          className="auth-submit w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition disabled:opacity-50 mt-1"
         >
           {loading ? 'Signing in...' : 'Sign in'}
         </button>

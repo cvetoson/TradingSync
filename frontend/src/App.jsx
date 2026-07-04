@@ -9,7 +9,8 @@ import AccountDetailView from './components/AccountDetailView';
 import PlatformDetailView from './components/PlatformDetailView';
 import AnalyticsPage from './components/AnalyticsPage';
 import ReportsPage from './components/ReportsPage';
-import SplashScreen from './components/SplashScreen';
+import Login from './components/Login';
+import Register from './components/Register';
 import CheckEmailPage from './components/CheckEmailPage';
 import VerifyEmailPage from './components/VerifyEmailPage';
 import ForgotPasswordPage from './components/ForgotPasswordPage';
@@ -30,6 +31,7 @@ const PLATFORM_CATEGORY_TO_MANUAL = {
 
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
+  const [showRegister, setShowRegister] = useState(false);
 
   if (loading) {
     return (
@@ -46,7 +48,9 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
-    return <SplashScreen />;
+    return showRegister
+      ? <Register onSwitchToLogin={() => setShowRegister(false)} />
+      : <Login onSwitchToRegister={() => setShowRegister(true)} />;
   }
 
   return <DashboardContent />;

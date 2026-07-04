@@ -125,7 +125,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
 
   const formatCurrency = (value, currencyCode) => {
     const code = currencyCode || currency || 'EUR';
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('de-DE', {
       style: 'currency',
       currency: code,
       minimumFractionDigits: 2
@@ -134,7 +134,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
 
   const formatChange = (change) => {
     const formatted = formatCurrency(Math.abs(change));
-    return change >= 0 ? `+${formatted}` : `-${formatted}`;
+    return change >= 0 ? `+${formatted}` : `−${formatted}`;
   };
 
   const formatPercent = (value) => {

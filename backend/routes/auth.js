@@ -5,12 +5,72 @@ import { getDatabase } from '../database.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
 import { logError } from '../lib/errorLog.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const JWT_SECRET = (() => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET environment variable must be set in production — refusing to start with the built-in development secret.');
+  }
+  console.warn('⚠️  JWT_SECRET not set — using an insecure development-only secret.');
+  return 'dev-secret-change-in-production';
+})();
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+
+// httpOnly cookie holding the JWT. Keeping the token out of JS-readable storage
+// (localStorage) removes the XSS-token-theft risk.
+const AUTH_COOKIE = 'auth_token';
+const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, matches JWT default expiry
+
+function authCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // HTTPS-only in production
+    sameSite: 'lax', // sent on top-level navigation, blocked on cross-site POST (CSRF defense)
+    maxAge: COOKIE_MAX_AGE_MS,
+    path: '/',
+  };
+}
+
+function setAuthCookie(res, token) {
+  res.cookie(AUTH_COOKIE, token, authCookieOptions());
+}
+
+function clearAuthCookie(res) {
+  // Options (except maxAge) must match those used to set it, or the browser won't clear it.
+  const { maxAge, ...opts } = authCookieOptions();
+  res.clearCookie(AUTH_COOKIE, opts);
+}
+
+/** Extract the JWT from the auth cookie, falling back to an Authorization: Bearer header. */
+function extractToken(req) {
+  if (req.cookies && req.cookies[AUTH_COOKIE]) return req.cookies[AUTH_COOKIE];
+  const authHeader = req.headers.authorization;
+  return authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+}
 
 function randomToken() {
   return crypto.randomBytes(32).toString('hex');
+}
+
+export function logout(req, res) {
+  clearAuthCookie(res);
+  res.json({ success: true });
+}
+
+/**
+ * Resolve the public app base URL for links in emails.
+ * Priority: explicit APP_URL → in production, the actual request origin (Railway
+ * sets X-Forwarded-*) so links point to wherever the app is served → dev frontend port.
+ * This prevents reset links from hardcoding localhost when APP_URL is unset in production.
+ */
+function resolveAppUrl(req) {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, '');
+  if (process.env.NODE_ENV === 'production') {
+    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const host = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
+    if (host) return `${proto}://${host}`;
+  }
+  const devPort = process.env.VITE_DEV_PORT || 5173;
+  return `http://localhost:${devPort}`;
 }
 
 export async function register(req, res) {
@@ -60,9 +120,9 @@ export async function register(req, res) {
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES_IN }
       );
+      setAuthCookie(res, jwtToken);
       res.status(201).json({
         success: true,
-        token: jwtToken,
         user: { id: this.lastID, email: emailNorm, displayName: displayNameVal },
       });
     }
@@ -102,9 +162,9 @@ export async function verifyEmail(req, res) {
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
           );
+          setAuthCookie(res, jwtToken);
           res.json({
             success: true,
-            token: jwtToken,
             user: { id: user.id, email: user.email, displayName: user.display_name },
           });
         }
@@ -142,9 +202,9 @@ export async function login(req, res) {
           JWT_SECRET,
           { expiresIn: JWT_EXPIRES_IN }
         );
+        setAuthCookie(res, token);
         res.json({
           success: true,
-          token,
           user: { id: user.id, email: user.email, displayName: user.display_name },
         });
       } catch (e) {
@@ -186,11 +246,14 @@ export async function forgotPassword(req, res) {
           return res.status(500).json({ error: 'Could not process request. Please try again.' });
         }
 
-        const emailResult = await sendPasswordResetEmail(emailNorm, resetToken, APP_URL);
-        if (emailResult.devLink) {
-          if (!emailResult.sent) {
-            console.error('📧 Password reset email failed:', emailResult.error);
-          }
+        const emailResult = await sendPasswordResetEmail(emailNorm, resetToken, resolveAppUrl(req));
+        if (!emailResult.sent) {
+          console.error('📧 Password reset email failed:', emailResult.error);
+        }
+        // The reset link is a bearer credential for the victim's account: returning
+        // it to the (unauthenticated) caller allows account takeover. Only expose it
+        // in local development, where no email provider is configured.
+        if (emailResult.devLink && process.env.NODE_ENV !== 'production') {
           return res.json({
             success: true,
             message: 'If that email exists, we sent a reset link',
@@ -308,8 +371,7 @@ export async function changePassword(req, res) {
 }
 
 export function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = extractToken(req);
 
   if (!token) {
     return res.status(401).json({ error: 'Authentication required' });
@@ -326,8 +388,7 @@ export function requireAuth(req, res, next) {
 }
 
 export function optionalAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = extractToken(req);
 
   if (!token) {
     req.userId = null;
@@ -352,7 +413,7 @@ export function requireAccountAuth(req, res, next) {
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
   const db = getDatabase();
-  db.get('SELECT id FROM accounts WHERE id = ? AND (user_id = ? OR user_id IS NULL)', [accountId, userId], (err, row) => {
+  db.get('SELECT id FROM accounts WHERE id = ? AND user_id = ?', [accountId, userId], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!row) return res.status(404).json({ error: 'Account not found' });
     next();
@@ -367,7 +428,7 @@ export function requireHistoryAuth(req, res, next) {
 
   const db = getDatabase();
   db.get(
-    'SELECT h.id FROM account_history h JOIN accounts a ON h.account_id = a.id WHERE h.id = ? AND (a.user_id = ? OR a.user_id IS NULL)',
+    'SELECT h.id FROM account_history h JOIN accounts a ON h.account_id = a.id WHERE h.id = ? AND a.user_id = ?',
     [historyId, userId],
     (err, row) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -385,7 +446,7 @@ export function requireHoldingAuth(req, res, next) {
 
   const db = getDatabase();
   db.get(
-    'SELECT h.id FROM holdings h JOIN accounts a ON h.account_id = a.id WHERE h.id = ? AND (a.user_id = ? OR a.user_id IS NULL)',
+    'SELECT h.id FROM holdings h JOIN accounts a ON h.account_id = a.id WHERE h.id = ? AND a.user_id = ?',
     [holdingId, userId],
     (err, row) => {
       if (err) return res.status(500).json({ error: err.message });
