@@ -2,7 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import AssetIcon from './AssetIcons';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
+const COLORS = ['#4a7fb8', '#4ade80', '#e8a33d', '#8b6dab', '#c1614a', '#06b6d4', '#84cc16', '#f97316', '#64748b', '#a78bfa'];
 
 const INSTRUMENT_LABELS = {
   stocks: 'ETF & Stocks', crypto: 'Cryptocurrency', p2p: 'P2P Lending',
@@ -66,16 +66,16 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
 
   if (!portfolioData || !hasData) {
     return (
-      <div className="rounded-xl border p-12 text-center" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-        <div className="w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-6"
-          style={{ background: 'var(--bg-inner)' }}>
-          <svg className="w-8 h-8" style={{ color: 'var(--text-3)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="glass-card p-12 text-center">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
+          style={{ background: 'rgba(200,146,62,0.1)', border: '1px solid rgba(200,146,62,0.2)' }}>
+          <svg className="w-8 h-8" style={{ color: 'var(--accent)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
         </div>
         <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-1)' }}>No Portfolio Data Yet</h2>
         <p className="text-sm mb-6" style={{ color: 'var(--text-3)' }}>Upload screenshots from your trading platforms to get started</p>
-        <button onClick={onUploadClick} className="bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 px-5 rounded-lg text-sm transition">
+        <button onClick={onUploadClick} className="btn-gold text-white font-semibold py-2.5 px-5 rounded-xl text-sm cursor-pointer">
           Add First Account
         </button>
       </div>
@@ -124,25 +124,32 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
   const freshnessLabel = minsAgo === null ? '' : minsAgo < 1 ? 'Just now' : minsAgo < 60 ? `${minsAgo}m ago` : minsAgo < 1440 ? `${Math.floor(minsAgo / 60)}h ago` : `${Math.floor(minsAgo / 1440)}d ago`;
 
   return (
-    <div className="space-y-5">
-      {/* Portfolio header */}
-      <div className="rounded-xl border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+    <div className="grid grid-cols-12 gap-4">
+      {/* Hero — total portfolio value */}
+      <div className="glass-card p-6 col-span-12 lg:col-span-8 relative overflow-hidden">
+        <div
+          className="absolute pointer-events-none"
+          aria-hidden="true"
+          style={{ right: -60, top: -60, width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle, rgba(200,146,62,0.14), transparent 70%)' }}
+        />
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wider font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Total Portfolio Value</p>
-            <div className="text-4xl font-bold tracking-tight" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
+            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-2" style={{ color: 'var(--text-3)' }}>Total Portfolio Value</p>
+            <div className="text-4xl font-bold tracking-tight tabular-nums" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
             {hasPortfolioGrowth && (
-              <div className="flex items-center gap-2 mt-2">
-                <span className="text-sm font-semibold" style={{ color: portfolioGrowthColor }}>
-                  {portfolioGrowthLabel}
-                </span>
-                <span className="text-xs" style={{ color: 'var(--text-3)' }}>
-                  cost-basis growth
-                </span>
-              </div>
+              <span
+                className="inline-flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded-full text-xs font-semibold"
+                style={{
+                  color: portfolioGrowthColor,
+                  background: Number(portfolioGrowthPercent) >= 0 ? 'rgba(74,222,128,0.09)' : 'rgba(248,113,113,0.09)',
+                  border: `1px solid ${Number(portfolioGrowthPercent) >= 0 ? 'rgba(74,222,128,0.18)' : 'rgba(248,113,113,0.18)'}`,
+                }}
+              >
+                {portfolioGrowthLabel} cost-basis growth
+              </span>
             )}
-            <div className="flex items-center gap-1.5 mt-2">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: freshnessColor }} />
+            <div className="flex items-center gap-1.5 mt-3">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: freshnessColor, boxShadow: `0 0 8px ${freshnessColor}` }} />
               <p className="text-xs" style={{ color: 'var(--text-3)' }}>
                 Updated <span style={{ color: freshnessColor, fontWeight: 500 }}>{freshnessLabel}</span>
               </p>
@@ -150,7 +157,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
           </div>
           <button
             onClick={onUploadClick}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-md text-sm transition shrink-0"
+            className="btn-gold flex items-center gap-2 text-white font-semibold py-2.5 px-5 rounded-xl text-sm shrink-0 cursor-pointer min-h-[44px]"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -160,45 +167,51 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
         </div>
       </div>
 
-      {/* Hero stats row */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-          <p className="text-xs uppercase tracking-wider font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Accounts</p>
-          <div className="text-2xl font-bold" style={{ color: 'var(--text-1)' }}>{accounts.length}</div>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>{platforms.length} platforms</p>
-        </div>
-        <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-          <p className="text-xs uppercase tracking-wider font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Largest Platform</p>
-          <div className="text-lg font-bold truncate" style={{ color: 'var(--text-1)' }}>{topPlatform?.name || '—'}</div>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>{topPlatform ? fmt(topPlatform.value, currency) : '—'}</p>
-        </div>
-        <div className="rounded-xl border p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-          <p className="text-xs uppercase tracking-wider font-medium mb-1.5" style={{ color: 'var(--text-3)' }}>Top Asset Type</p>
-          <div className="flex items-center gap-2">
-            {instrumentPieData[0]?.type && <AssetIcon type={instrumentPieData[0].type} size={28} />}
-            <div className="text-base font-bold truncate leading-tight" style={{ color: 'var(--text-1)' }}>{instrumentPieData[0]?.name || '—'}</div>
+      {/* Quick stats — stacked beside the hero */}
+      <div className="glass-card p-5 col-span-12 lg:col-span-4 flex flex-col justify-between gap-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Accounts</p>
+            <div className="text-2xl font-bold" style={{ color: 'var(--text-1)' }}>{accounts.length}</div>
           </div>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
-            {instrumentPieData[0] ? `${((instrumentPieData[0].value / totalValue) * 100).toFixed(1)}% of portfolio` : '—'}
+          <p className="text-xs text-right" style={{ color: 'var(--text-3)' }}>{platforms.length} platforms</p>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Largest Platform</p>
+            <div className="text-base font-bold truncate" style={{ color: 'var(--text-1)' }}>{topPlatform?.name || '—'}</div>
+          </div>
+          <p className="text-xs text-right tabular-nums shrink-0" style={{ color: 'var(--text-3)' }}>{topPlatform ? fmt(topPlatform.value, currency) : '—'}</p>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            {instrumentPieData[0]?.type && <AssetIcon type={instrumentPieData[0].type} size={24} />}
+            <div className="min-w-0">
+              <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-0.5" style={{ color: 'var(--text-3)' }}>Top Asset Type</p>
+              <div className="text-sm font-bold truncate leading-tight" style={{ color: 'var(--text-1)' }}>{instrumentPieData[0]?.name || '—'}</div>
+            </div>
+          </div>
+          <p className="text-xs text-right shrink-0" style={{ color: 'var(--text-3)' }}>
+            {instrumentPieData[0] ? `${((instrumentPieData[0].value / totalValue) * 100).toFixed(1)}%` : '—'}
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Donut chart */}
-      <div className="rounded-lg border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <div className="glass-card p-6 lg:col-span-5">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
               {viewMode === 'platform' ? 'By Platform' : viewMode === 'instrument' ? 'By Instrument' : 'By Tag'}
             </h3>
-            <div className="flex rounded-md p-0.5 border flex-wrap gap-0.5 justify-end" style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}>
+            <div className="flex rounded-full p-1 border flex-wrap gap-0.5 justify-end" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--glass-border)' }}>
               {VIEW_MODES.map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => { setViewMode(id); setActiveSegment(null); }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                    viewMode === id ? 'bg-blue-600 text-white' : ''
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-full transition cursor-pointer ${
+                    viewMode === id ? 'btn-gold text-white' : ''
                   }`}
                   style={viewMode !== id ? { color: 'var(--text-3)' } : {}}
                 >
@@ -319,7 +332,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
         </div>
 
         {/* Allocation list */}
-        <div className="rounded-lg border p-6" style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+        <div className="glass-card p-6 lg:col-span-7">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <h3 className="text-sm font-semibold shrink-0" style={{ color: 'var(--text-1)' }}>
               {viewMode === 'platform' ? 'Platforms' : viewMode === 'instrument' ? 'Instruments' : 'Tags'}
@@ -355,15 +368,15 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                         ? { name: item.name, value: item.value, accounts: item.accounts || [], categories: item.type ? { [item.type]: item.accounts } : {} }
                         : { name: item.name, value: item.value, accounts: item.accounts || [], categories: item.categories || {} }
                   )}
-                  className="w-full text-left p-3 rounded-md border transition-all group"
+                  className="w-full text-left p-3 rounded-xl border transition-all group cursor-pointer"
                   data-name={item.name}
                   style={{
-                    background: 'var(--bg-inner)',
-                    borderColor: activeSegment === item.name ? sliceColor : 'var(--border)',
+                    background: 'var(--glass-row-bg)',
+                    borderColor: activeSegment === item.name ? sliceColor : 'transparent',
                     opacity: activeSegment && activeSegment !== item.name ? 0.4 : 1,
                   }}
                   onMouseEnter={e => { if (!activeSegment || activeSegment === item.name) e.currentTarget.style.borderColor = sliceColor; }}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = activeSegment === item.name ? sliceColor : 'var(--border)'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = activeSegment === item.name ? sliceColor : 'transparent'}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">

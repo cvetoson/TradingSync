@@ -105,12 +105,18 @@ function DashboardContent() {
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--bg-page)' }}>
-      {/* Sidebar */}
-      <aside className="w-14 sm:w-52 flex flex-col py-5 shrink-0 border-r"
-        style={{ background: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}>
+      {/* Ambient background: aurora glows + fading grid, shared with the auth pages */}
+      <div className="app-ambient" aria-hidden="true">
+        <div className="app-ambient-glow app-ambient-glow-a" />
+        <div className="app-ambient-glow app-ambient-glow-b" />
+        <div className="app-ambient-grid" />
+      </div>
+
+      {/* Sidebar — floating glass rail */}
+      <aside className="glass-card w-14 sm:w-52 flex flex-col py-5 shrink-0 relative z-[1] m-3 sm:m-4 sticky top-3 sm:top-4 h-[calc(100vh-1.5rem)] sm:h-[calc(100vh-2rem)]">
         {/* Brand */}
         <div className="px-3 lg:px-4 mb-8 flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-md flex items-center justify-center shrink-0">
+          <div className="btn-gold w-9 h-9 rounded-xl flex items-center justify-center shrink-0">
             <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
@@ -128,10 +134,10 @@ function DashboardContent() {
             <button
               key={item.id}
               onClick={() => setActivePage(item.id)}
-              className="w-full flex items-center gap-3 px-2 sm:px-3 py-2.5 rounded-lg transition text-sm"
+              className="w-full flex items-center gap-3 px-2 sm:px-3 py-2.5 rounded-xl transition text-sm cursor-pointer min-h-[44px] border"
               style={activePage === item.id
-                ? { background: 'var(--sidebar-active-bg)', color: 'var(--sidebar-active-text)' }
-                : { color: 'var(--sidebar-text)' }}
+                ? { background: 'var(--sidebar-active-bg)', color: 'var(--sidebar-active-text)', borderColor: 'rgba(200,146,62,0.25)' }
+                : { color: 'var(--sidebar-text)', borderColor: 'transparent' }}
               title={item.label}
             >
               <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -172,21 +178,20 @@ function DashboardContent() {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        {/* Top bar */}
-        <header className="h-14 flex items-center justify-between px-6 shrink-0 border-b"
-          style={{ borderColor: 'var(--border)', background: 'var(--bg-sidebar)' }}>
-          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>
+      <main className="flex-1 flex flex-col min-h-screen overflow-hidden relative z-[1]">
+        {/* Top bar — transparent so the ambient background shows through */}
+        <header className="h-16 flex items-center justify-between px-6 shrink-0">
+          <h2 className="font-bold text-lg tracking-tight" style={{ color: 'var(--text-1)' }}>
             {activePage === 'portfolio' ? 'Portfolio' : activePage === 'analytics' ? 'Analytics' : 'Reports'}
           </h2>
           <button
             type="button"
             onClick={() => setShowSettings(true)}
-            className="flex items-center gap-2.5"
+            className="flex items-center gap-2.5 cursor-pointer"
             style={{ background: 'transparent' }}
             title="Open settings"
           >
-            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+            <div className="btn-gold w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">
               {initials}
             </div>
             <span className="text-sm hidden sm:block" style={{ color: 'var(--text-2)' }}>
