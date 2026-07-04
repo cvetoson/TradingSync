@@ -1,9 +1,21 @@
 .auth-shell {
+  /* The landing/auth pages are dark-branded: pin the dark palette regardless of
+     the app theme, so the hero's light text never sits on a light background. */
+  --bg-page: #08080c;
+  --bg-card: #0f0f14;
+  --bg-input: #08080c;
+  --border: #1c1c24;
+  --border-hover: #2a2a36;
+  --text-1: #f8fafc;
+  --text-2: #94a3b8;
+  --text-3: #64748b;
+
   position: relative;
   min-height: 100vh;
   display: flex;
   background: var(--bg-page);
   overflow: hidden;
+  color-scheme: dark;
 }
 
 /* ---- Ambient background (whole page) ---- */
