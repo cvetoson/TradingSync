@@ -1,81 +1,60 @@
 import './AuthCard.css';
 
+// Illustrative allocation for the logged-out hero (not user data)
 const ALLOCATION = [
   { label: 'Equities', pct: 30, color: '#4a7fb8' },
-  { label: 'Crypto', pct: 20, color: '#c8923e' },
-  { label: 'Bonds', pct: 15, color: '#8d9748' },
+  { label: 'Crypto', pct: 20, color: '#4ade80' },
+  { label: 'Bonds', pct: 15, color: '#e8a33d' },
   { label: 'Cash', pct: 15, color: '#8b6dab' },
-  { label: 'Real estate', pct: 10, color: '#c1614a' },
-  { label: 'Alternatives', pct: 10, color: '#7a7a8c' },
+  { label: 'Real estate', pct: 10, color: '#06b6d4' },
+  { label: 'Alternatives', pct: 10, color: '#c1614a' },
 ];
 
-const SPARK_POINTS = '0,46 14,42 28,44 42,36 56,38 70,30 84,33 98,24 112,27 126,18 140,21 154,12 168,15 182,8 196,10 210,4';
+const CHIP_POSITIONS = ['auth-orbit-1', 'auth-orbit-2', 'auth-orbit-3', 'auth-orbit-4', 'auth-orbit-5'];
 
-function PortfolioDonut() {
-  const r = 42;
+function DonutHero() {
+  const r = 78;
   const c = 2 * Math.PI * r;
   let offset = 0;
 
   return (
-    <svg viewBox="0 0 120 120" className="auth-donut" aria-hidden="true">
-      <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="14" />
-      {ALLOCATION.map((seg) => {
-        const dash = (seg.pct / 100) * c;
-        const gap = c - dash;
-        const el = (
-          <circle
-            key={seg.label}
-            cx="60"
-            cy="60"
-            r={r}
-            fill="none"
-            stroke={seg.color}
-            strokeWidth="14"
-            strokeLinecap="round"
-            strokeDasharray={`${dash} ${gap}`}
-            strokeDashoffset={-offset}
-            className="auth-donut-segment"
-          />
-        );
-        offset += dash;
-        return el;
-      })}
-      <circle cx="60" cy="60" r="28" fill="rgba(8, 8, 12, 0.9)" />
-      <text x="60" y="57" textAnchor="middle" className="auth-donut-value">+12.4%</text>
-      <text x="60" y="70" textAnchor="middle" className="auth-donut-caption">YTD</text>
-    </svg>
-  );
-}
-
-function Sparkline() {
-  return (
-    <div className="auth-spark-card">
-      <div className="auth-spark-head">
-        <div>
-          <p className="auth-spark-label">Total portfolio</p>
-          <p className="auth-spark-value">€ 85 986,49</p>
-        </div>
-        <span className="auth-spark-badge">▲ 1.36%</span>
-      </div>
-      <svg viewBox="0 0 210 52" className="auth-spark" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <linearGradient id="authSparkFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="rgba(200, 146, 62, 0.35)" />
-            <stop offset="100%" stopColor="rgba(200, 146, 62, 0)" />
-          </linearGradient>
-        </defs>
-        <polygon points={`${SPARK_POINTS} 210,52 0,52`} fill="url(#authSparkFill)" />
-        <polyline
-          points={SPARK_POINTS}
-          fill="none"
-          stroke="var(--accent)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="auth-spark-line"
-        />
-        <circle cx="210" cy="4" r="3" fill="var(--accent)" className="auth-spark-dot" />
+    <div className="auth-donut-stage">
+      <svg className="auth-donut-hero" viewBox="0 0 200 200" aria-hidden="true">
+        <circle cx="100" cy="100" r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="16" />
+        {ALLOCATION.map((seg) => {
+          const dash = (seg.pct / 100) * c - 4; // small gap between segments
+          const el = (
+            <circle
+              key={seg.label}
+              className="auth-donut-seg"
+              cx="100"
+              cy="100"
+              r={r}
+              stroke={seg.color}
+              strokeDasharray={`${dash} ${c - dash}`}
+              strokeDashoffset={-offset}
+            >
+              <title>{`${seg.label} ${seg.pct}%`}</title>
+            </circle>
+          );
+          offset += (seg.pct / 100) * c;
+          return el;
+        })}
       </svg>
+      <div className="auth-donut-center">
+        <div>
+          <div className="auth-donut-center-label">Total Portfolio</div>
+          <div className="auth-donut-center-value">124.560&thinsp;€</div>
+          <span className="auth-donut-center-badge">▲ +12,4% YTD</span>
+        </div>
+      </div>
+      {ALLOCATION.slice(0, CHIP_POSITIONS.length).map((seg, i) => (
+        <div key={seg.label} className={`auth-orbit-chip ${CHIP_POSITIONS[i]}`}>
+          <span className="auth-orbit-dot" style={{ background: seg.color }} />
+          {seg.label}
+          <span className="auth-orbit-pct">{seg.pct}%</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -90,38 +69,26 @@ export default function AuthCard({ subtitle, children }) {
         <div className="auth-bg-grid" />
       </div>
 
-      {/* Hero panel */}
+      {/* Hero panel — the allocation ring is the landing visual */}
       <div className="auth-hero">
         <div className="auth-hero-inner">
-          <Sparkline />
+          <p className="auth-eyebrow">Portfolio intelligence</p>
+          <h2 className="auth-headline">
+            See your whole wealth<br />
+            <span className="auth-headline-accent">in one ring.</span>
+          </h2>
+          <p className="auth-tagline">
+            Brokers, banks, crypto wallets and P2P platforms — synced into a single live allocation with AI screenshot import.
+          </p>
 
-          <div className="auth-visual">
-            <PortfolioDonut />
-            <div className="auth-allocation">
-              {ALLOCATION.map((seg) => (
-                <div key={seg.label} className="auth-allocation-row">
-                  <span className="auth-allocation-dot" style={{ background: seg.color }} />
-                  <span className="auth-allocation-label">{seg.label}</span>
-                  <span className="auth-allocation-pct">{seg.pct}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <DonutHero />
 
-          <div className="auth-hero-copy">
-            <p className="auth-eyebrow">Portfolio intelligence</p>
-            <h2 className="auth-headline">
-              Every asset,<br />
-              <span className="auth-headline-accent">one place.</span>
-            </h2>
-            <p className="auth-tagline">
-              Sync brokers, wallets, and banks into a single live dashboard — powered by AI screenshot import.
-            </p>
-            <div className="auth-pills">
-              {['Live prices', 'AI import', 'Multi-platform'].map((f) => (
-                <span key={f} className="auth-pill">{f}</span>
-              ))}
-            </div>
+          <div className="auth-trust">
+            <div><div className="auth-trust-n">9+</div><div className="auth-trust-t">platforms</div></div>
+            <div className="auth-trust-sep" />
+            <div><div className="auth-trust-n">AI</div><div className="auth-trust-t">screenshot import</div></div>
+            <div className="auth-trust-sep" />
+            <div><div className="auth-trust-n">Live</div><div className="auth-trust-t">market prices</div></div>
           </div>
         </div>
       </div>

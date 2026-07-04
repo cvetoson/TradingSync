@@ -24,6 +24,12 @@
   --tooltip-bg:      #1e293b;
   --tooltip-border:  #334155;
   --tooltip-text:    #f8fafc;
+  /* Glass surfaces: near-opaque in light mode so text keeps 4.5:1 contrast */
+  --glass-bg:        linear-gradient(165deg, rgba(255,255,255,0.92), rgba(255,255,255,0.78));
+  --glass-border:    rgba(15,23,42,0.08);
+  --glass-border-hover: rgba(200,146,62,0.5);
+  --glass-row-bg:    rgba(15,23,42,0.03);
+  --ambient-opacity: 0.18;
 }
 
 /* ── Dark theme (Finary-inspired) ─────────────────────── */
@@ -41,13 +47,19 @@
   --text-2:          #94a3b8;
   --text-3:          #64748b;
   --text-4:          #334155;
-  --sidebar-active-bg:   rgba(200,146,62,0.16);
+  --sidebar-active-bg:   linear-gradient(120deg, rgba(200,146,62,0.2), rgba(200,146,62,0.06));
   --sidebar-active-text: #d6a553;
   --sidebar-hover:   rgba(255,255,255,0.04);
   --sidebar-text:    #94a3b8;
   --tooltip-bg:      #0f0f14;
   --tooltip-border:  #1c1c24;
   --tooltip-text:    #f8fafc;
+  /* Glass surfaces (dark): translucent over the ambient glow */
+  --glass-bg:        linear-gradient(165deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012));
+  --glass-border:    rgba(148,163,184,0.14);
+  --glass-border-hover: rgba(200,146,62,0.35);
+  --glass-row-bg:    rgba(255,255,255,0.025);
+  --ambient-opacity: 0.4;
 }
 
 body {
@@ -74,3 +86,46 @@ body {
 .focus\:text-blue-500:focus { color: var(--accent) !important; }
 .border-blue-500,
 .focus\:ring-blue-500:focus { border-color: var(--accent) !important; }
+
+/* ── App-wide ambient background (aurora glows + fading grid) ── */
+.app-ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+.app-ambient-glow { position: absolute; border-radius: 50%; filter: blur(90px); opacity: var(--ambient-opacity); }
+.app-ambient-glow-a { width: 480px; height: 480px; top: -12%; left: 5%; background: radial-gradient(circle, rgba(200,146,62,0.3), transparent 70%); }
+.app-ambient-glow-b { width: 420px; height: 420px; bottom: -15%; right: -5%; background: radial-gradient(circle, rgba(74,127,184,0.22), transparent 70%); }
+.app-ambient-grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(148,163,184,0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148,163,184,0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black 30%, transparent 100%);
+}
+
+/* ── Glass surface ── */
+.glass-card {
+  border-radius: 18px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.glass-hover { transition: border-color 0.2s; }
+.glass-hover:hover { border-color: var(--glass-border-hover); }
+
+/* ── Gold gradient primary button / brand chip ── */
+.btn-gold {
+  background: linear-gradient(145deg, #d9a355 0%, var(--accent) 60%, var(--accent-2) 130%) !important;
+  box-shadow: 0 4px 16px rgba(200,146,62,0.32), inset 0 1px 0 rgba(255,255,255,0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.btn-gold:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(200,146,62,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.btn-gold:active:not(:disabled) { transform: translateY(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-gold, .glass-hover { transition: none; }
+}
