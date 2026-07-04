@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom';
 import * as api from '../services/api';
 import AuthCard from './AuthCard';
 
+const inputCls = 'auth-input w-full px-3.5 py-2.5 rounded-lg text-sm transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-opacity-30';
+
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
   const [devLink, setDevLink] = useState(null);
 
   const handleSubmit = async (e) => {
@@ -31,29 +32,30 @@ export default function ForgotPasswordPage() {
     return (
       <AuthCard subtitle="Check your email">
         <div className="space-y-4">
-          <p className="text-blue-100 text-center">
-            If an account exists for <strong className="text-white">{email}</strong>, we sent a password reset link.
+          <p className="text-center text-sm" style={{ color: 'var(--text-2)' }}>
+            If an account exists for <strong style={{ color: 'var(--text-1)' }}>{email}</strong>, we sent a password reset link.
           </p>
           {devLink ? (
             <div className="space-y-2">
-              <p className="text-amber-200 text-sm text-center">
+              <p className="text-center text-sm" style={{ color: 'var(--accent)' }}>
                 Email could not be sent. Use this link to reset your password:
               </p>
               <a
                 href={devLink}
-                className="block w-full text-center py-2.5 px-4 rounded-md bg-amber-500/30 hover:bg-amber-500/50 text-amber-100 font-medium transition border border-amber-400/50"
+                className="auth-submit block w-full text-center py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition"
               >
                 Reset password →
               </a>
             </div>
           ) : (
-            <p className="text-blue-200 text-sm text-center">
-              The link expires in 1 hour. Check your inbox for the email.
+            <p className="text-center text-sm" style={{ color: 'var(--text-3)' }}>
+              The link expires in 1 hour. Check your inbox (and your spam folder).
             </p>
           )}
           <Link
             to="/"
-            className="block w-full text-center py-2.5 px-4 rounded-md bg-white/10 hover:bg-white/20 text-white transition"
+            className="block w-full text-center py-2.5 px-4 rounded-lg text-sm font-medium transition"
+            style={{ background: 'var(--bg-input)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
           >
             Back to sign in
           </Link>
@@ -66,17 +68,17 @@ export default function ForgotPasswordPage() {
     <AuthCard subtitle="Reset your password">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="bg-red-500/20 border border-red-400/50 text-red-100 px-4 py-2 rounded-md text-sm">
+          <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-2 rounded-md text-sm">
             {error}
           </div>
         )}
         <div>
-          <label className="block text-sm font-medium text-blue-100 mb-1">Email</label>
+          <label className="block text-xs font-medium mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Email</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white placeholder-blue-200 focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+            className={inputCls}
             placeholder="you@example.com"
             required
             autoComplete="email"
@@ -85,13 +87,13 @@ export default function ForgotPasswordPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2.5 px-4 rounded-md bg-blue-500 hover:bg-blue-600 text-white font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="auth-submit w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition disabled:opacity-50 mt-1"
         >
           {loading ? 'Sending...' : 'Send reset link'}
         </button>
       </form>
-      <p className="mt-6 text-center text-blue-100 text-sm">
-        <Link to="/" className="text-blue-300 hover:text-white font-medium underline">
+      <p className="mt-5 text-center text-sm" style={{ color: 'var(--text-3)' }}>
+        <Link to="/" className="text-blue-500 hover:text-blue-400 font-medium transition">
           Back to sign in
         </Link>
       </p>

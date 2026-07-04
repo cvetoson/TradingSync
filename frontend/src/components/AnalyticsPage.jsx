@@ -27,7 +27,7 @@ const TIME_RANGES = [
 ];
 
 const fmt = (value, currency = 'EUR') =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2 }).format(value);
+  new Intl.NumberFormat('de-DE', { style: 'currency', currency, minimumFractionDigits: 2 }).format(value);
 
 /** Drop absurd history balances (bad imports/sync); keeps the line chart scale usable */
 const MAX_SANE_HISTORY_BALANCE = 1e12;

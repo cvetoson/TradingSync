@@ -50,7 +50,11 @@ async function getTransporter() {
  * Uses SMTP if configured, else Resend (RESEND_API_KEY), else fails.
  */
 export async function sendEmail({ to, subject, html, text }) {
-  const from = process.env.EMAIL_FROM || process.env.RESEND_FROM || 'Trading Sync <noreply@tradingsync.app>';
+  // Gmail (and most SMTP providers) require the From address to match the
+  // authenticated account, or they rewrite it and flag the message as spam.
+  // Prefer an explicit EMAIL_FROM, then the SMTP user, before the branded default.
+  const smtpFrom = process.env.SMTP_USER ? `Trading Sync <${process.env.SMTP_USER}>` : null;
+  const from = process.env.EMAIL_FROM || smtpFrom || process.env.RESEND_FROM || 'Trading Sync <noreply@tradingsync.app>';
 
   // 1. Try SMTP first (Gmail, etc.)
   const transport = await getTransporter();

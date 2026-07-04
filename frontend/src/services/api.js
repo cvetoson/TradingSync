@@ -1,39 +1,34 @@
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-const AUTH_KEY = 'tradingsync_token';
+const USER_KEY = 'tradingsync_user';
 
+// withCredentials sends/receives the httpOnly auth cookie. The JWT is never stored
+// in JS-readable storage, so no request interceptor attaches a bearer token.
 const api = axios.create({
   baseURL: API_BASE_URL,
-});
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem(AUTH_KEY);
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  withCredentials: true,
 });
 
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      // Token expired or invalid - clear storage so user is redirected to login
-      localStorage.removeItem('tradingsync_token');
-      localStorage.removeItem('tradingsync_user');
+      // Session expired/invalid — drop cached user and let the app redirect to login.
+      localStorage.removeItem(USER_KEY);
+      window.dispatchEvent(new Event('auth:logout'));
     }
     return Promise.reject(err);
   }
 );
 
 export async function login(email, password) {
-  const { data } = await axios.post(`${API_BASE_URL}/auth/login`, { email, password });
+  const { data } = await api.post('/auth/login', { email, password });
   return data;
 }
 
 export async function register(email, password, confirmPassword, displayName) {
-  const { data } = await axios.post(`${API_BASE_URL}/auth/register`, {
+  const { data } = await api.post('/auth/register', {
     email,
     password,
     confirmPassword,
@@ -43,22 +38,30 @@ export async function register(email, password, confirmPassword, displayName) {
 }
 
 export async function verifyEmail(token) {
-  const { data } = await axios.post(`${API_BASE_URL}/auth/verify-email`, { token });
+  const { data } = await api.post('/auth/verify-email', { token });
   return data;
 }
 
 export async function forgotPassword(email) {
-  const { data } = await axios.post(`${API_BASE_URL}/auth/forgot-password`, { email });
+  const { data } = await api.post('/auth/forgot-password', { email });
   return data;
 }
 
 export async function resetPassword(token, password, confirmPassword) {
-  const { data } = await axios.post(`${API_BASE_URL}/auth/reset-password`, {
+  const { data } = await api.post('/auth/reset-password', {
     token,
     password,
     confirmPassword,
   });
   return data;
+}
+
+export async function logout() {
+  try {
+    await api.post('/auth/logout');
+  } catch {
+    // Best-effort — clearing the cookie server-side; the client clears its own state regardless.
+  }
 }
 
 export async function getProfile() {

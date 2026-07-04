@@ -22,7 +22,7 @@ export default function PlatformDetailView({ platform, currency, onClose, onView
   const accountsInCategory = platform.categories?.[currentCategory] || [];
 
   const formatCurrency = (value) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'EUR', minimumFractionDigits: 2 }).format(value);
+    new Intl.NumberFormat('de-DE', { style: 'currency', currency: currency || 'EUR', minimumFractionDigits: 2 }).format(value);
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.6)' }}>

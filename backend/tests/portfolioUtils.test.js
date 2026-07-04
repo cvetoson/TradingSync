@@ -152,7 +152,10 @@ describe('compoundP2PToNow', () => {
     today.setHours(0, 0, 0, 0);
     const past = new Date(today);
     past.setDate(past.getDate() - 365);
-    const isoYmd = past.toISOString().slice(0, 10);
+    // Build the ISO date string from local components — past.toISOString() converts to UTC
+    // and can shift the date by ±1 day depending on timezone, which throws off the day count
+    // and creates flaky behavior near DST boundaries. Local components are what users see.
+    const isoYmd = `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}-${String(past.getDate()).padStart(2, '0')}`;
     const result = compoundP2PToNow(1000, 10, isoYmd);
     const expected = 1000 * Math.pow(1.1, 365 / 365);
     assert.ok(Math.abs(result - expected) < 0.01, `Expected ~${expected}, got ${result}`);

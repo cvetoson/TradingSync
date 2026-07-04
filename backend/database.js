@@ -371,3 +371,15 @@ export function initDatabase() {
 export function isPostgreSQL() {
   return !!isPostgres;
 }
+
+/** Close the database connection (used by test teardown so node:test can exit cleanly). */
+export async function closeDatabase() {
+  if (pgClient) {
+    try { await pgClient.end(); } catch (e) { /* swallow */ }
+    pgClient = null;
+  }
+  if (sqliteDb) {
+    try { await new Promise((resolve) => sqliteDb.close(() => resolve())); } catch (e) { /* swallow */ }
+    sqliteDb = null;
+  }
+}

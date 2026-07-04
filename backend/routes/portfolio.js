@@ -1,7 +1,7 @@
 import { getDatabase } from '../database.js';
 import { analyzeScreenshot } from '../services/aiService.js';
 import { calculatePortfolioValue } from '../services/calculations.js';
-import { fetchCurrentPrice, getProjectedPrice3M, fetchUsdToEurRate, fetchGbpToEurRate, fetchHkdToEurRate, yahooSearchTicker } from '../services/marketData.js';
+import { fetchCurrentPrice, getProjectedPrice3M, fetchUsdToEurRate, fetchGbpToEurRate, fetchHkdToEurRate } from '../services/marketData.js';
 import {
   LSE_GBP_ETF_SYMBOLS,
   LSE_USD_ETF_SYMBOLS,
@@ -306,7 +306,7 @@ export async function uploadScreenshot(req, res) {
         const userId = req.userId || null;
         // Check if this specific account already exists (user's account or unassigned legacy)
         db.get(
-          'SELECT * FROM accounts WHERE platform = ? AND account_name = ? AND (user_id = ? OR user_id IS NULL) ORDER BY last_updated DESC LIMIT 1',
+          'SELECT * FROM accounts WHERE platform = ? AND account_name = ? AND user_id = ? ORDER BY last_updated DESC LIMIT 1',
           [detectedPlatform, accountName, userId],
           (err, existingAccount) => {
             if (err) {
@@ -595,7 +595,7 @@ export function getPortfolioSummary(req, res) {
     `SELECT a.*, 
             (SELECT COUNT(*) FROM holdings h WHERE h.account_id = a.id) as holdings_count
      FROM accounts a
-     WHERE a.user_id = ? OR a.user_id IS NULL
+     WHERE a.user_id = ?
      ORDER BY a.last_updated DESC`,
     [userId],
     async (err, accounts) => {
@@ -790,12 +790,17 @@ export function getAccounts(req, res) {
   const userId = req.userId;
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
+  // Explicit columns only — never return raw_data (full extracted financial JSON)
+  // or screenshot_path (server filesystem paths) to the client.
   db.all(
-    'SELECT * FROM accounts WHERE user_id = ? OR user_id IS NULL ORDER BY last_updated DESC',
+    `SELECT id, platform, account_name, account_type, balance, contributed_amount,
+            interest_rate, currency, tag, last_updated
+     FROM accounts WHERE user_id = ? ORDER BY last_updated DESC`,
     [userId],
     (err, accounts) => {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        console.error('[getAccounts]', err.message);
+        return res.status(500).json({ error: 'Could not load accounts.' });
       }
       res.json(accounts);
     }
@@ -1153,9 +1158,9 @@ export function getAccountHoldings(req, res) {
                 const symInner = normalizedSymbol(holding.symbol);
                 const isIsinSym = /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(symInner);
                 let listTickerForCurrency = symInner;
+                // Numeric 3-5 digit symbols are SEHK codes (e.g. 1211 → 1211.HK) — assume HKD by pattern.
                 if (!isIsinSym && assetType !== 'bond' && /^\d{3,5}$/.test(symInner)) {
-                  const resolved = await yahooSearchTicker(symInner);
-                  if (resolved) listTickerForCurrency = normalizedSymbol(resolved);
+                  listTickerForCurrency = symInner + '.HK';
                 }
                 const isHkdHolding = holdingCurrency === 'HKD' || listTickerForCurrency.endsWith('.HK');
                 // Yahoo returns: LSE GBP ETFs = pence; LSE USD ETFs (ECAR) + US stocks (NVDA, META) + XAG/XAU/crypto = USD
@@ -1255,7 +1260,8 @@ export function getAccountHoldings(req, res) {
         // Sync account balance only when we actually have holdings.
         // If OCR missed holdings, forcing 0 here would erase a valid snapshot balance.
         if (holdingsWithPrices.length > 0) {
-          await syncAccountBalanceFromHoldings(accountId, totalValueEur).catch(() => {});
+          const unpricedCount = holdingsWithPrices.filter((h) => !(h.totalValueEur > 0)).length;
+          await syncAccountBalanceFromHoldings(accountId, totalValueEur, unpricedCount).catch(() => {});
         }
 
         res.json({
@@ -1356,13 +1362,16 @@ export function getAccountHistory(req, res) {
     return res.status(400).json({ error: 'accountId is required' });
   }
 
-  // Get account details
+  // Get account details — explicit columns, no raw_data/screenshot_path/user_id.
   db.get(
-    'SELECT * FROM accounts WHERE id = ?',
+    `SELECT id, platform, account_name, account_type, balance, contributed_amount,
+            interest_rate, currency, tag, last_updated
+     FROM accounts WHERE id = ?`,
     [accountId],
     (err, account) => {
       if (err) {
-        return res.status(500).json({ error: err.message });
+        console.error('[getAccountHistory]', err.message);
+        return res.status(500).json({ error: 'Could not load account history.' });
       }
 
       if (!account) {
@@ -1513,7 +1522,12 @@ export async function updateAccountWithScreenshot(req, res) {
           }
           const interestRate = accountData.interestRate || existingAccount.interest_rate;
           const currency = extractedData.currency || existingAccount.currency || 'EUR';
-          const detectedPlatform = extractedData.platform || existingAccount.platform;
+          // Updating an existing account must not move it to another platform; only
+          // fill in the platform when the account doesn't have a real one yet.
+          const hasRealPlatform = existingAccount.platform && existingAccount.platform !== 'Unknown Platform';
+          const detectedPlatform = hasRealPlatform
+            ? existingAccount.platform
+            : (extractedData.platform || existingAccount.platform);
           const snap = resolveP2pSnapshotFromUpload(accountData, balance, interestRate, existingAccount.account_type);
           const defaultContributedAmount = isP2pOrSavingsType(existingAccount.account_type) ? snap.historyBalance : null;
 
@@ -1689,11 +1703,8 @@ export async function verifyHoldingSymbol(req, res) {
       const eurNative = isEurNativeSymbol(symbol, assetType);
       let currency = eurNative ? 'EUR' : 'USD';
       if (!eurNative) {
-        if (symbol.endsWith('.HK')) currency = 'HKD';
-        else if (/^\d{3,5}$/.test(symbol)) {
-          const r = await yahooSearchTicker(symbol);
-          if (r && String(r).toUpperCase().endsWith('.HK')) currency = 'HKD';
-        }
+        // Numeric 3-5 digit symbols are SEHK codes → HKD-denominated.
+        if (symbol.endsWith('.HK') || /^\d{3,5}$/.test(symbol)) currency = 'HKD';
       }
       return res.json({
         found: true,
@@ -1772,23 +1783,32 @@ export function updateHoldingSymbol(req, res) {
 
 // Recompute account balance from holdings sum (EUR) for stocks/crypto; keeps card in sync with detail view
 // When totalEur is provided, use it directly (avoids race with in-flight DB updates)
-async function syncAccountBalanceFromHoldings(accountId, totalEur = null) {
+async function syncAccountBalanceFromHoldings(accountId, totalEur = null, unpricedCount = 0) {
   if (!accountId) return;
   const db = getDatabase();
   const acctRow = await new Promise((resolve) => {
-    db.get('SELECT account_type FROM accounts WHERE id = ?', [accountId], (e, row) => resolve(row));
+    db.get('SELECT account_type, balance FROM accounts WHERE id = ?', [accountId], (e, row) => resolve(row));
   });
   const acctType = acctRow?.account_type || '';
   const balanceManagedTypes = ['p2p', 'savings', 'bank'];
   if (balanceManagedTypes.includes(acctType)) {
     return;
   }
+  const existingBalance = Number(acctRow?.balance) || 0;
   if (totalEur != null && typeof totalEur === 'number' && !Number.isNaN(totalEur)) {
     if (totalEur <= 0) {
+      // A zero total usually means prices are missing (e.g. holdings just replaced
+      // by a screenshot upload), not that the account is worthless. Keep the last
+      // known balance (often the snapshot value just read from the screenshot).
+      if (existingBalance > 0) return;
       const countRow = await new Promise((resolve) => {
         db.get('SELECT COUNT(*) AS c FROM holdings WHERE account_id = ?', [accountId], (_e, row) => resolve(row));
       });
       if (!countRow?.c) return;
+    } else if (unpricedCount > 0 && existingBalance > 0 && totalEur < existingBalance * 0.5) {
+      // Some holdings have no price and the priced subset sums to far less than the
+      // last known balance — a partial-price sum, not the real account value.
+      return;
     }
     await dbRun(db, 'UPDATE accounts SET balance = ? WHERE id = ?', [totalEur, accountId]);
     return;
@@ -1805,6 +1825,9 @@ async function syncAccountBalanceFromHoldings(accountId, totalEur = null) {
       const list = holdings || [];
       if (list.length === 0) return;
       const total = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpToEur, hkdToEur), 0);
+      if (total <= 0 && existingBalance > 0) return;
+      const unpriced = list.filter((h) => !(Number(h.current_price) > 0) && !(Number(h.purchase_price) > 0)).length;
+      if (unpriced > 0 && existingBalance > 0 && total < existingBalance * 0.5) return;
       db.run('UPDATE accounts SET balance = ? WHERE id = ?', [total, accountId], () => {});
     }
   );

@@ -1,6 +1,17 @@
-import { describe, it } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateFutureValue, calculatePortfolioValue } from '../services/calculations.js';
+import { initDatabase, closeDatabase } from '../database.js';
+
+// calculatePortfolioValue calls getDatabase() (the lazy SQLite handle is fine for these
+// tests — none of them write rows). We initialize once before any DB-touching test runs,
+// and close after so node:test can exit cleanly when Postgres is configured.
+before(async () => {
+  await initDatabase();
+});
+after(async () => {
+  await closeDatabase();
+});
 
 // ── calculateFutureValue ──────────────────────────────────────────────────
 

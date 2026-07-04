@@ -22,7 +22,7 @@ export default function VerifyEmailPage() {
     api
       .verifyEmail(token)
       .then((res) => {
-        login(res.token, res.user);
+        login(res.user);
         setStatus('success');
         navigate('/', { replace: true });
       })
