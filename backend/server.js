@@ -204,6 +204,8 @@ async function start() {
       appUrl: process.env.APP_URL || '(not set)',
       recentErrorCount: getRecentErrors().length,
       hasEmailError: !!getLastEmailError(),
+      // Auth-gated: the provider error text is needed to diagnose delivery issues.
+      lastEmailError: getLastEmailError() || null,
     });
   });
 
