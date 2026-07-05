@@ -55,6 +55,9 @@ export async function sendEmail({ to, subject, html, text }) {
   // Prefer an explicit EMAIL_FROM, then the SMTP user, before the branded default.
   const smtpFrom = process.env.SMTP_USER ? `Trading Sync <${process.env.SMTP_USER}>` : null;
   const from = process.env.EMAIL_FROM || smtpFrom || process.env.RESEND_FROM || 'Trading Sync <noreply@tradingsync.app>';
+  // Resend rejects From addresses on domains you haven't verified (e.g. gmail.com),
+  // so it needs its own sender: RESEND_FROM, or Resend's built-in test sender.
+  const resendFrom = process.env.RESEND_FROM || process.env.EMAIL_FROM || 'Trading Sync <onboarding@resend.dev>';
 
   // 1. Try SMTP first (Gmail, etc.)
   const transport = await getTransporter();
@@ -80,7 +83,7 @@ export async function sendEmail({ to, subject, html, text }) {
       if (resend) {
         try {
           const { error } = await resend.emails.send({
-            from: from.includes('<') ? from : `Trading Sync <${from}>`,
+            from: resendFrom.includes('<') ? resendFrom : `Trading Sync <${resendFrom}>`,
             to: [to],
             subject,
             html: html || text || '',
@@ -100,7 +103,7 @@ export async function sendEmail({ to, subject, html, text }) {
   if (resend) {
     try {
       const { error } = await resend.emails.send({
-        from: from.includes('<') ? from : `Trading Sync <${from}>`,
+        from: resendFrom.includes('<') ? resendFrom : `Trading Sync <${resendFrom}>`,
         to: [to],
         subject,
         html: html || text || '',
