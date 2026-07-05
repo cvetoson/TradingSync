@@ -57,7 +57,12 @@ export async function sendEmail({ to, subject, html, text }) {
   const from = process.env.EMAIL_FROM || smtpFrom || process.env.RESEND_FROM || 'Trading Sync <noreply@tradingsync.app>';
   // Resend rejects From addresses on domains you haven't verified (e.g. gmail.com),
   // so it needs its own sender: RESEND_FROM, or Resend's built-in test sender.
-  const resendFrom = process.env.RESEND_FROM || process.env.EMAIL_FROM || 'Trading Sync <onboarding@resend.dev>';
+  // Freemail domains can never be verified — never pass them to Resend.
+  const FREEMAIL = /@(gmail|googlemail|yahoo|outlook|hotmail|live|icloud|abv|mail)\./i;
+  const resendCandidate = process.env.RESEND_FROM || process.env.EMAIL_FROM;
+  const resendFrom = (resendCandidate && !FREEMAIL.test(resendCandidate))
+    ? resendCandidate
+    : 'Trading Sync <onboarding@resend.dev>';
 
   // 1. Try SMTP first (Gmail, etc.)
   const transport = await getTransporter();
