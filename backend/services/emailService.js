@@ -155,7 +155,10 @@ export async function sendVerificationEmail(email, token, appUrl) {
 
 /**
  * Send password reset email.
- * Returns devLink when email send fails (e.g. Resend recipient not allowed, SMTP blocked) so user can still reset.
+ * If direct delivery fails and ADMIN_FALLBACK_EMAIL is set, the reset email is
+ * relayed to the admin inbox with a "forward this" wrapper — a stopgap while the
+ * sending domain is unverified (Resend only delivers to the account owner then).
+ * Returns devLink when all sends fail so dev environments can still reset.
  */
 export async function sendPasswordResetEmail(email, token, appUrl) {
   const base = (appUrl || '').replace(/\/+$/, '');
@@ -169,8 +172,27 @@ export async function sendPasswordResetEmail(email, token, appUrl) {
     <p>If you didn't request this, you can ignore this email.</p>
   `;
   const result = await sendEmail({ to: email, subject: 'Reset your Trading Sync password', html });
-  if (!result.sent) {
-    return { ...result, devLink: resetUrl };
+  if (result.sent) return result;
+
+  const admin = (process.env.ADMIN_FALLBACK_EMAIL || '').trim();
+  if (admin && admin.toLowerCase() !== String(email).toLowerCase()) {
+    const relayHtml = `
+      <p style="background:#fff7e6;border:1px solid #e5c07b;padding:10px;border-radius:6px">
+        <strong>Admin relay:</strong> direct delivery to <strong>${email}</strong> failed
+        (sending domain not verified yet). Please forward this email to them.
+      </p>
+      ${html}
+    `;
+    const relay = await sendEmail({
+      to: admin,
+      subject: `[Forward to ${email}] Reset your Trading Sync password`,
+      html: relayHtml,
+    });
+    if (relay.sent) {
+      console.log(`📧 Password reset for ${email} relayed to admin fallback inbox`);
+      return { sent: true, relayedToAdmin: true };
+    }
   }
-  return result;
+
+  return { ...result, devLink: resetUrl };
 }
