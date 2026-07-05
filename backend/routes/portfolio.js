@@ -106,104 +106,102 @@ function deduplicateHoldings(holdings) {
   return Array.from(bySymbol.values());
 }
 
-// Shared insert logic for holdings (used by saveHoldings and saveHoldingsMerge)
-function insertHoldings(db, accountId, holdings, currency, resolve, reject) {
-  const deduped = deduplicateHoldings(holdings);
-  let insertedCount = 0;
-  let errorOccurred = false;
-  const totalHoldings = deduped.length;
-  deduped.forEach((holding) => {
-    if (errorOccurred) return;
-    const symbol = holding.symbol;
-    if (!symbol) {
-      insertedCount++;
-      if (insertedCount === totalHoldings) resolve();
-      return;
-    }
-    const rawCurrentValue = holding.currentValue ?? holding.current_value ?? holding.value ?? holding.amount;
-    const currentValueNum = rawCurrentValue != null ? parseFloat(rawCurrentValue) : null;
-    let quantity = parseFloat(holding.quantity) || 0;
-    let purchasePrice = holding.purchasePrice ? parseFloat(holding.purchasePrice) : (holding.purchase_price != null ? parseFloat(holding.purchase_price) : null);
-    let currentPrice = holding.currentPrice ? parseFloat(holding.currentPrice) : (holding.current_price != null ? parseFloat(holding.current_price) : null);
-    const assetType = inferAssetType(holding);
-    const holdingCurrency = holding.currency || currency || 'EUR';
-    if (currentValueNum != null && !isNaN(currentValueNum)) {
-      const totalValue = currentValueNum;
-      if (symbol === 'CASH' || symbol === 'CASH_BALANCE' || symbol.toUpperCase().includes('CASH')) {
+// Normalize an incoming (AI-extracted or manual) holding into DB fields
+function normalizeIncomingHolding(holding, currency) {
+  const symbol = holding.symbol;
+  const rawCurrentValue = holding.currentValue ?? holding.current_value ?? holding.value ?? holding.amount;
+  const currentValueNum = rawCurrentValue != null ? parseFloat(rawCurrentValue) : null;
+  let quantity = parseFloat(holding.quantity) || 0;
+  let purchasePrice = holding.purchasePrice ? parseFloat(holding.purchasePrice) : (holding.purchase_price != null ? parseFloat(holding.purchase_price) : null);
+  let currentPrice = holding.currentPrice ? parseFloat(holding.currentPrice) : (holding.current_price != null ? parseFloat(holding.current_price) : null);
+  const assetType = inferAssetType(holding);
+  const holdingCurrency = holding.currency || currency || 'EUR';
+  if (currentValueNum != null && !isNaN(currentValueNum)) {
+    const totalValue = currentValueNum;
+    if (symbol === 'CASH' || symbol === 'CASH_BALANCE' || symbol.toUpperCase().includes('CASH')) {
+      quantity = 1;
+      currentPrice = totalValue;
+      purchasePrice = totalValue;
+    } else {
+      if (quantity > 0) {
+        const calculatedPrice = totalValue / quantity;
+        currentPrice = calculatedPrice;
+        if (purchasePrice == null) purchasePrice = calculatedPrice;
+      } else {
         quantity = 1;
         currentPrice = totalValue;
-        purchasePrice = totalValue;
-      } else {
-        if (quantity > 0) {
-          const calculatedPrice = totalValue / quantity;
-          currentPrice = calculatedPrice;
-          if (purchasePrice == null) purchasePrice = calculatedPrice;
-        } else {
-          quantity = 1;
-          currentPrice = totalValue;
-          if (purchasePrice == null) purchasePrice = totalValue;
-        }
+        if (purchasePrice == null) purchasePrice = totalValue;
       }
-    } else if (currentPrice != null && !isNaN(currentPrice)) {
-      if (purchasePrice == null) purchasePrice = currentPrice;
-      if (quantity <= 0) quantity = 1;
-    } else if (!currentPrice && quantity > 0 && purchasePrice != null) {
-      currentPrice = purchasePrice;
     }
-    db.run(
-      `INSERT INTO holdings (account_id, symbol, quantity, purchase_price, current_price, currency, asset_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [accountId, symbol, quantity, purchasePrice, currentPrice, holdingCurrency, assetType],
-      (insertErr) => {
-        if (insertErr) {
-          errorOccurred = true;
-          reject(insertErr);
-          return;
-        }
-        insertedCount++;
-        if (insertedCount === totalHoldings) resolve();
-      }
-    );
-  });
+  } else if (currentPrice != null && !isNaN(currentPrice)) {
+    if (purchasePrice == null) purchasePrice = currentPrice;
+    if (quantity <= 0) quantity = 1;
+  } else if (!currentPrice && quantity > 0 && purchasePrice != null) {
+    currentPrice = purchasePrice;
+  }
+  return { symbol, quantity, purchasePrice, currentPrice, assetType, holdingCurrency };
 }
 
-// Helper function to save holdings for an account (replaces existing)
-function saveHoldings(accountId, holdings, currency) {
+/**
+ * Upsert holdings by symbol — the single write path for all screenshot flows.
+ * - Existing symbol: update quantity and current price; NEVER overwrite an
+ *   already-set purchase_price (it may be user-entered), only fill it when NULL.
+ * - New symbol: insert.
+ * - Symbols not present in the incoming batch are left untouched, so uploading
+ *   several partial screenshots accumulates instead of resetting the account.
+ */
+export function saveHoldingsUpsert(accountId, holdings, currency) {
   if (!holdings || !Array.isArray(holdings) || holdings.length === 0) {
     return Promise.resolve();
   }
   const db = getDatabase();
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('saveHoldings timeout')), 10000);
-    db.run('DELETE FROM holdings WHERE account_id = ?', [accountId], (deleteErr) => {
-      clearTimeout(timeout);
-      if (deleteErr) {
-        reject(deleteErr);
-        return;
-      }
-      try {
-        insertHoldings(db, accountId, holdings, currency, resolve, reject);
-      } catch (e) {
-        reject(e);
+    db.all('SELECT id, symbol, purchase_price FROM holdings WHERE account_id = ?', [accountId], (selErr, rows) => {
+      if (selErr) return reject(selErr);
+      const existingBySymbol = new Map(
+        (rows || []).map((r) => [String(r.symbol || '').trim().toUpperCase(), r])
+      );
+      const deduped = deduplicateHoldings(holdings).filter((h) => h.symbol);
+      if (deduped.length === 0) return resolve();
+      let done = 0;
+      let failed = false;
+      const finish = (err) => {
+        if (failed) return;
+        if (err) { failed = true; return reject(err); }
+        done++;
+        if (done === deduped.length) resolve();
+      };
+      for (const raw of deduped) {
+        const h = normalizeIncomingHolding(raw, currency);
+        const existing = existingBySymbol.get(String(h.symbol).trim().toUpperCase());
+        if (existing) {
+          db.run(
+            `UPDATE holdings
+             SET quantity = ?,
+                 current_price = COALESCE(?, current_price),
+                 purchase_price = COALESCE(purchase_price, ?),
+                 currency = ?,
+                 last_updated = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [h.quantity, h.currentPrice, h.purchasePrice, h.holdingCurrency, existing.id],
+            finish
+          );
+        } else {
+          db.run(
+            `INSERT INTO holdings (account_id, symbol, quantity, purchase_price, current_price, currency, asset_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [accountId, h.symbol, h.quantity, h.purchasePrice, h.currentPrice, h.holdingCurrency, h.assetType],
+            finish
+          );
+        }
       }
     });
   });
 }
 
-// Helper: add holdings to account without deleting existing (merge mode)
-function saveHoldingsMerge(accountId, holdings, currency) {
-  if (!holdings || !Array.isArray(holdings) || holdings.length === 0) {
-    return Promise.resolve();
-  }
-  const db = getDatabase();
-  return new Promise((resolve, reject) => {
-    try {
-      insertHoldings(db, accountId, holdings, currency, resolve, reject);
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
+// Back-compat aliases: every flow now upserts (no delete-and-reinsert).
+const saveHoldings = saveHoldingsUpsert;
+const saveHoldingsMerge = saveHoldingsUpsert;
 
 // Helper function to detect account type (same as in aiService)
 function detectAccountType(platform) {
