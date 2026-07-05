@@ -74,6 +74,7 @@ export async function sendEmail({ to, subject, html, text }) {
         setTimeout(() => reject(new Error('Email send timed out')), EMAIL_TIMEOUT_MS)
       );
       await Promise.race([sendPromise, timeoutPromise]);
+      lastEmailError = null;
       return { sent: true };
     } catch (err) {
       lastEmailError = err.message;
@@ -88,7 +89,7 @@ export async function sendEmail({ to, subject, html, text }) {
             subject,
             html: html || text || '',
           });
-          if (!error) return { sent: true };
+          if (!error) { lastEmailError = null; return { sent: true }; }
           lastEmailError = error.message;
         } catch (e) {
           lastEmailError = e.message;
@@ -113,6 +114,7 @@ export async function sendEmail({ to, subject, html, text }) {
         console.error('Resend error:', error.message);
         return { sent: false, error: error.message };
       }
+      lastEmailError = null;
       return { sent: true };
     } catch (err) {
       lastEmailError = err.message;
