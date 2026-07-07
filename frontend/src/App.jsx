@@ -28,6 +28,7 @@ const PLATFORM_CATEGORY_TO_MANUAL = {
   bank: 'fixed-income',
   unknown: 'alternative'
 };
+const HOURLY_REFRESH_MS = 60 * 60 * 1000;
 
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
@@ -77,6 +78,13 @@ function DashboardContent() {
   const [activePage, setActivePage] = useState('portfolio');
 
   useEffect(() => { loadPortfolio(); }, [refreshTrigger]);
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setRefreshTrigger(prev => prev + 1);
+    }, HOURLY_REFRESH_MS);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   const loadPortfolio = async () => {
     try {
