@@ -20,6 +20,7 @@ backend/uploads/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+test-report/
 
 # Build outputs
 frontend/dist/

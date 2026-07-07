@@ -8,6 +8,7 @@
     "server": "cd backend && npm run dev",
     "client": "cd frontend && npm run dev",
     "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "validate:report": "node scripts/run-validation-report.mjs",
     "build": "cd frontend && npm run build",
     "start": "npm run build && cd backend && NODE_ENV=production node server.js",
     "seed": "cd backend && node -r dotenv/config scripts/seedDefaultUser.js",
