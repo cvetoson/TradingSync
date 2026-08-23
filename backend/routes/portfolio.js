@@ -1160,10 +1160,13 @@ export function getAccountHoldings(req, res) {
             // For stocks/ETFs: if stored price is unreasonably high (>10k), likely AI extracted total value as price - force refetch
             const isStockOrEtf = ['stock', 'etf'].includes(assetTypeLower);
             const forceRefetchWrongPrice = isStockOrEtf && currentPrice != null && currentPrice > 10000;
-            // LSE GBP ETFs (EQQQ, IITU, VFEM, etc.) trade ~£5 (~€6). If cached price > 50 EUR, AI likely stored total as price. If < 1, wrong scale.
+            // LSE GBP ETFs (EQQQ, IITU, VFEM, etc.) trade ~£35–£520 (~€40–€620). A cached EUR price
+            // above 2000 means the pence quote was stored undivided (or the AI stored a position
+            // total as the price); below 1 means the wrong scale. The old "> 50" ceiling was stale
+            // and forced a network refetch of every LSE ETF on every load, bypassing the price cache.
             const holdingCurrency = (holding.currency || 'EUR').toUpperCase();
             const forceRefetchCorruptedLseGbp = isStockOrEtf && currentPrice != null && LSE_GBP_ETF_SYMBOLS.includes(sym) &&
-              (currentPrice < 1 || (holdingCurrency === 'EUR' && currentPrice > 50));
+              (currentPrice < 1 || (holdingCurrency === 'EUR' && currentPrice > 2000));
             // SMSD (Samsung LSE) trades ~$50-200; cached €903 is implausible - force refetch
             const forceRefetchSmsd = sym === 'SMSD' && currentPrice != null && currentPrice > 500;
             // META trades ~$600; cached €34 implies wrong ticker/source - force refetch

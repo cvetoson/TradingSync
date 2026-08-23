@@ -10,6 +10,7 @@
  */
 
 import { stooqLatestClose, stooqHistoricalCloses, toStooqSymbol } from './stooqPrices.js';
+import { normalizeLseGbpQuote } from '../lib/portfolioUtils.js';
 export {
   fetchUsdToEurRate,
   fetchGbpToEurRate,
@@ -185,10 +186,10 @@ export async function fetchCurrentPrice(symbol, assetType = 'stock') {
         if (price == null) price = await fetchTickerPrice(sym + '.US');
       }
 
-      // LSE GBP ETFs: Stooq quotes some in pence (e.g. EQQQ=49208), some in pounds (e.g. VUSA=100).
-      // Magnitude heuristic: pence range is 1000-50000 for typical retail ETF prices.
-      if (price != null && usedLseTicker && lseGbpEtfs.includes(sym) && price >= 1000 && price < 50000) {
-        price = price / 100;
+      // LSE GBP ETFs: Stooq quotes some in pence (e.g. EQQQ≈52000), some in pounds (e.g. VUSA≈100).
+      // See normalizeLseGbpQuote — no upper ceiling, or EQQQ stops being divided once it passes £500.
+      if (price != null && usedLseTicker && lseGbpEtfs.includes(sym)) {
+        price = normalizeLseGbpQuote(price);
       }
 
       // SMSD GDR multiplier hack: Yahoo price was way below broker price; preserved for parity.

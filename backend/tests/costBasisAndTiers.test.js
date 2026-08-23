@@ -5,6 +5,7 @@ import {
   holdingValueInEur,
   holdingPurchaseCostInEur,
   accountTier,
+  normalizeLseGbpQuote,
 } from '../lib/portfolioUtils.js';
 
 const USD = 0.85, GBP = 1.17, HKD = 0.11;
@@ -119,5 +120,26 @@ describe('accountTier', () => {
   });
   it('handles null account', () => {
     assert.equal(accountTier(null), 'manual');
+  });
+});
+
+describe('normalizeLseGbpQuote (LSE pence → pounds)', () => {
+  it('divides a pence quote above the old 50,000 ceiling (EQQQ ≈ 52,027p → £520.27)', () => {
+    assert.equal(normalizeLseGbpQuote(52027), 520.27);
+  });
+  it('divides a pence quote inside the old range (IITU ≈ 3,660p → £36.60)', () => {
+    assert.equal(normalizeLseGbpQuote(3660), 36.6);
+  });
+  it('leaves a pounds quote alone (VUSA ≈ £100)', () => {
+    assert.equal(normalizeLseGbpQuote(100), 100);
+  });
+  it('treats exactly the threshold as pence', () => {
+    assert.equal(normalizeLseGbpQuote(1000), 10);
+  });
+  it('returns null for non-finite or non-positive input', () => {
+    assert.equal(normalizeLseGbpQuote(null), null);
+    assert.equal(normalizeLseGbpQuote(NaN), null);
+    assert.equal(normalizeLseGbpQuote(0), null);
+    assert.equal(normalizeLseGbpQuote(-5), null);
   });
 });

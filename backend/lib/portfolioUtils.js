@@ -3,6 +3,21 @@ export const LSE_USD_ETF_SYMBOLS = ['ECAR', 'NVDA', 'META', 'SMSD'];
 export const LSE_CHF_SYMBOLS = ['ABBN'];
 export const EUR_NATIVE_SYMBOLS = ['IFX', 'TEF', 'MLAA', 'DTE'];
 
+/**
+ * Normalise an LSE GBP ETF quote to pounds. Stooq returns some LSE lines in pence
+ * (GBX, e.g. EQQQ ≈ 52000) and others in pounds (e.g. VUSA ≈ 100). Any quote of
+ * 1000 or more is pence: no ETF in LSE_GBP_ETF_SYMBOLS trades anywhere near £1000,
+ * while the cheapest of them is well above 1000p. There is deliberately no upper
+ * ceiling — the old 50,000 cap silently stopped dividing EQQQ once it rose past
+ * £500, storing ~€61k/share.
+ */
+export const LSE_GBX_PENCE_THRESHOLD = 1000;
+export function normalizeLseGbpQuote(price) {
+  const n = Number(price);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n >= LSE_GBX_PENCE_THRESHOLD ? n / 100 : n;
+}
+
 /** Yahoo chart for these is already EUR (e.g. 2B76.DE iShares UCITS); must not apply USD→EUR. */
 export function isEurNativeSymbol(sym, assetTypeLower) {
   const s = String(sym || '').trim().toUpperCase();
