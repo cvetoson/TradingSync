@@ -359,18 +359,14 @@ export async function uploadScreenshot(req, res) {
                             generateDailyHistoryForAccount(existingAccount.id, snap.historyBalance, interestRate, currency);
                           }
 
-                          // For stock/crypto accounts, save holdings (non-blocking)
-                          if ((finalAccountType === 'stocks' || finalAccountType === 'crypto' || finalAccountType === 'precious') && extractedData.holdings) {
-                            // Save holdings asynchronously without blocking the response
-                            saveHoldings(existingAccount.id, extractedData.holdings, currency)
-                              .then(() => {
-                                console.log('[UPLOAD] Holdings saved successfully for account', existingAccount.id);
-                              })
-                              .catch((holdingsErr) => {
-                                console.error('[UPLOAD] Error saving holdings (non-blocking):', holdingsErr);
-                              });
-                          }
-                          
+                          // Save holdings before counting this account as processed, so the
+                          // response (and the client's immediate re-fetch) sees the new rows.
+                          const holdingsDone = ((finalAccountType === 'stocks' || finalAccountType === 'crypto' || finalAccountType === 'precious') && extractedData.holdings)
+                            ? saveHoldings(existingAccount.id, extractedData.holdings, currency)
+                                .then(() => console.log('[UPLOAD] Holdings saved successfully for account', existingAccount.id))
+                                .catch((holdingsErr) => console.error('[UPLOAD] Error saving holdings:', holdingsErr))
+                            : Promise.resolve();
+                          holdingsDone.then(() => {
                           // Always proceed with account creation regardless of holdings
                           createdAccounts.push({ ...existingAccount, balance: snap.accountBalance, interestRate, accountType: finalAccountType });
                           processedCount++;
@@ -382,6 +378,7 @@ export async function uploadScreenshot(req, res) {
                               message: `${createdAccounts.length} account(s) processed successfully`
                             }));
                           }
+                          });
                         }
                       );
                     }
@@ -429,19 +426,13 @@ export async function uploadScreenshot(req, res) {
                             generateDailyHistoryForAccount(accountId, snap.historyBalance, interestRate, currency);
                           }
 
-                          // For stock/crypto accounts, save holdings (non-blocking)
-                          if ((finalAccountType === 'stocks' || finalAccountType === 'crypto' || finalAccountType === 'precious') && extractedData.holdings) {
-                            console.log(`[UPLOAD] Saving ${extractedData.holdings.length} holdings for account ${accountId} (non-blocking)`);
-                            // Save holdings asynchronously without blocking the response
-                            saveHoldings(accountId, extractedData.holdings, currency)
-                              .then(() => {
-                                console.log(`[UPLOAD] Successfully saved holdings for account ${accountId}`);
-                              })
-                              .catch((holdingsErr) => {
-                                console.error('[UPLOAD] Error saving holdings (non-blocking):', holdingsErr);
-                              });
-                          }
-                          
+                          // Save holdings before counting this account as processed (see above).
+                          const holdingsDone = ((finalAccountType === 'stocks' || finalAccountType === 'crypto' || finalAccountType === 'precious') && extractedData.holdings)
+                            ? saveHoldings(accountId, extractedData.holdings, currency)
+                                .then(() => console.log(`[UPLOAD] Successfully saved holdings for account ${accountId}`))
+                                .catch((holdingsErr) => console.error('[UPLOAD] Error saving holdings:', holdingsErr))
+                            : Promise.resolve();
+                          holdingsDone.then(() => {
                           // Always proceed with account creation regardless of holdings
                           createdAccounts.push({ id: accountId, platform: detectedPlatform, accountName, balance: snap.accountBalance, interestRate, accountType: finalAccountType });
                           processedCount++;
@@ -454,6 +445,7 @@ export async function uploadScreenshot(req, res) {
                               message: `${createdAccounts.length} account(s) created successfully`
                             }));
                           }
+                          });
                         }
                       );
                     }
@@ -1653,17 +1645,7 @@ export async function updateAccountWithScreenshot(req, res) {
                         generateDailyHistoryForAccount(accountId, snap.historyBalance, interestRate, currency);
                       }
 
-                      // For stock/crypto accounts, save holdings (async, but don't wait)
-                      if ((existingAccount.account_type === 'stocks' || existingAccount.account_type === 'crypto' || existingAccount.account_type === 'precious') && extractedData.holdings) {
-                        saveHoldings(accountId, extractedData.holdings, currency)
-                          .catch((holdingsErr) => {
-                            console.error('Error saving holdings:', holdingsErr);
-                            // Continue anyway - don't block the response
-                          });
-                      }
-
-                      // Return updated account data immediately
-                      res.json({
+                      const respond = () => res.json({
                         success: true,
                         account: {
                           id: accountId,
@@ -1678,6 +1660,21 @@ export async function updateAccountWithScreenshot(req, res) {
                         },
                         message: 'Account updated successfully'
                       });
+
+                      // Holdings must be saved BEFORE we respond: the client re-fetches the
+                      // account's holdings the moment it gets the response, and that fetch
+                      // re-syncs the balance from whatever rows exist. Responding first let it
+                      // overwrite the freshly written balance with the sum of the OLD rows.
+                      if ((existingAccount.account_type === 'stocks' || existingAccount.account_type === 'crypto' || existingAccount.account_type === 'precious') && extractedData.holdings) {
+                        saveHoldings(accountId, extractedData.holdings, currency)
+                          .catch((holdingsErr) => {
+                            console.error('Error saving holdings:', holdingsErr);
+                            // The balance and history are already written; respond anyway.
+                          })
+                          .then(respond);
+                      } else {
+                        respond();
+                      }
                     }
                   );
                 }
