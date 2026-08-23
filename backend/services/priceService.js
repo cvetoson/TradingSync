@@ -76,21 +76,21 @@ function isStaticHolding(holding) {
 }
 
 /**
- * Fetch a fresh native price for one holding and persist it in EUR (or HKD native),
- * mirroring the conversion rules of the request-path fetch so cached and fresh
- * prices are always in the same unit.
- * @returns {boolean} whether a price was stored
+ * Fetch a fresh price for a symbol and express it the way the holdings table stores
+ * prices: EUR for everything except HKD listings (stored in HKD). Mirrors the
+ * conversion rules of the page-load fetch so cached and fresh prices share one unit.
+ * @returns {{price:number, currency:string}|null}
  */
-export async function refreshHoldingPrice(db, holding, rates, registry) {
+export async function fetchPriceForHolding(holding, rates, registry) {
   const sym = String(holding.symbol || '').trim().toUpperCase();
-  const assetT = (holding.asset_type || '').toLowerCase();
+  const assetT = (holding.asset_type || holding.assetType || '').toLowerCase();
   let price;
   try {
-    price = await fetchCurrentPrice(holding.symbol, holding.asset_type);
+    price = await fetchCurrentPrice(holding.symbol, holding.asset_type || holding.assetType);
   } catch (e) {
     price = null;
   }
-  if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return false;
+  if (price == null || !Number.isFinite(Number(price)) || Number(price) <= 0) return null;
   price = Number(price);
 
   const reg = registry ? registry[sym] : null;
@@ -100,18 +100,54 @@ export async function refreshHoldingPrice(db, holding, rates, registry) {
   const eurNative = reg ? regCurrency === 'EUR' : isEurNativeSymbol(sym, assetT);
   const isHkd = sym.endsWith('.HK') || (holding.currency || '').toUpperCase() === 'HKD' || regCurrency === 'HKD';
 
-  if (isChfListing || eurNative) {
-    // fetchCurrentPrice already returns EUR for CHF listings; EUR-natives are native EUR
-    await dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [price, 'EUR', holding.id]);
-  } else if (isGbpListing) {
-    await dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [price * rates.gbpToEur, 'EUR', holding.id]);
-  } else if (isHkd) {
-    await dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [price, 'HKD', holding.id]);
-  } else {
-    // Default: USD quote (US stocks, LSE USD lines, crypto, XAG/XAU)
-    await dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [price * rates.usdToEur, 'EUR', holding.id]);
+  // fetchCurrentPrice already returns EUR for CHF listings; EUR-natives are native EUR
+  if (isChfListing || eurNative) return { price, currency: 'EUR' };
+  if (isGbpListing) return { price: price * rates.gbpToEur, currency: 'EUR' };
+  if (isHkd) return { price, currency: 'HKD' };
+  // Default: USD quote (US stocks, LSE USD lines, crypto, XAG/XAU)
+  return { price: price * rates.usdToEur, currency: 'EUR' };
+}
+
+/**
+ * Fetch a fresh price for one holding and persist it.
+ * A 'placeholder' row (stored as 1 × position value because no live price was available
+ * at upload time) is healed here: its value is kept and the quantity becomes
+ * value ÷ live price, so the position no longer collapses to one share.
+ * @returns {boolean} whether a price was stored
+ */
+export async function refreshHoldingPrice(db, holding, rates, registry) {
+  const fresh = await fetchPriceForHolding(holding, rates, registry);
+  if (!fresh) return false;
+  const isPlaceholder = holding.quantity_source === 'placeholder';
+  const storedValue = Number(holding.quantity) * Number(holding.current_price);
+  if (isPlaceholder && Number.isFinite(storedValue) && storedValue > 0 && fresh.currency === (holding.currency || 'EUR').toUpperCase()) {
+    await dbRun(
+      db,
+      'UPDATE holdings SET quantity = ?, quantity_source = ?, current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
+      [storedValue / fresh.price, 'derived', fresh.price, fresh.currency, holding.id]
+    );
+    return true;
   }
+  await dbRun(
+    db,
+    'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
+    [fresh.price, fresh.currency, holding.id]
+  );
   return true;
+}
+
+/** Current FX rates in the shape the price helpers expect (with the same fallbacks as the scheduler). */
+export async function currentRates() {
+  const [usdToEur, gbpToEur, hkdToEur] = await Promise.all([
+    fetchUsdToEurRate(),
+    fetchGbpToEurRate(),
+    fetchHkdToEurRate(),
+  ]);
+  return {
+    usdToEur: Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || usdToEur || 0.846,
+    gbpToEur: gbpToEur || 1.17,
+    hkdToEur: hkdToEur || 0.11,
+  };
 }
 
 /** Refresh every priceable holding whose stored price is older than maxAgeMinutes. */
@@ -126,16 +162,7 @@ export async function refreshAllPrices(maxAgeMinutes) {
   const priceable = holdings.filter((h) => !isStaticHolding(h));
   if (priceable.length === 0) return { refreshed: 0, failed: 0 };
 
-  const [usdToEur, gbpToEur, hkdToEur] = await Promise.all([
-    fetchUsdToEurRate(),
-    fetchGbpToEurRate(),
-    fetchHkdToEurRate(),
-  ]);
-  const rates = {
-    usdToEur: Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || usdToEur || 0.846,
-    gbpToEur: gbpToEur || 1.17,
-    hkdToEur: hkdToEur || 0.11,
-  };
+  const rates = await currentRates();
   const registry = await loadInstrumentRegistry();
 
   let refreshed = 0;

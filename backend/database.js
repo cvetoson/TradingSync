@@ -256,6 +256,11 @@ async function initPostgres() {
   if (!holdingColNames.includes('cost_basis_eur')) {
     await run(`ALTER TABLE holdings ADD COLUMN cost_basis_eur DOUBLE PRECISION`);
   }
+  // 'screenshot' (read from the broker), 'derived' (value ÷ live price), 'placeholder'
+  // (1 × position value — no live price was available; healed on the next refresh), 'manual'
+  if (!holdingColNames.includes('quantity_source')) {
+    await run(`ALTER TABLE holdings ADD COLUMN quantity_source TEXT`);
+  }
 
   console.log('✅ PostgreSQL database initialized successfully');
 }
@@ -354,6 +359,9 @@ export function initDatabase() {
       db.all(`PRAGMA table_info(holdings)`, (err, cols) => {
         if (!err && cols && !cols.some((c) => c.name === 'cost_basis_eur')) {
           db.run(`ALTER TABLE holdings ADD COLUMN cost_basis_eur REAL`);
+        }
+        if (!err && cols && !cols.some((c) => c.name === 'quantity_source')) {
+          db.run(`ALTER TABLE holdings ADD COLUMN quantity_source TEXT`);
         }
       });
 

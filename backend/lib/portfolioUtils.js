@@ -40,11 +40,18 @@ function classifyListing(sym, assetT, storedCurrency, price, registry) {
   const reg = registry ? registry[sym] : null;
   const regCurrency = reg ? String(reg.currency || 'EUR').toUpperCase() : null;
   const regDivisor = reg ? Number(reg.price_divisor) || 1 : 1;
+  // Pence detection has no upper ceiling (see normalizeLseGbpQuote): a stored LSE GBP
+  // price of 1000+ is a raw GBX quote, whatever its size.
   const isPence = (reg ? regDivisor === 100 : LSE_GBP_ETF_SYMBOLS.includes(sym))
-    && price != null && price >= 1000 && price < 50000;
-  const isUsdListed = reg ? regCurrency === 'USD' : LSE_USD_ETF_SYMBOLS.includes(sym);
+    && price != null && price >= LSE_GBX_PENCE_THRESHOLD;
+  const stored = storedCurrency ? String(storedCurrency).toUpperCase() : null;
+  // Every price writer (screenshot upload, page-load refetch, background scheduler)
+  // stores USD listings already converted to EUR with currency = 'EUR'. The listing's
+  // native currency therefore only matters when the row carries no currency of its own;
+  // applying it on top of an explicit 'EUR' double-converted NVDA/META/SMSD/ECAR.
+  const isUsdListed = !stored && (reg ? regCurrency === 'USD' : LSE_USD_ETF_SYMBOLS.includes(sym));
   const eurNative = reg ? regCurrency === 'EUR' : isEurNativeSymbol(sym, assetT);
-  let currency = eurNative ? 'EUR' : (storedCurrency || 'EUR').toUpperCase();
+  let currency = eurNative ? 'EUR' : (stored || 'EUR');
   if (sym.endsWith('.HK') || regCurrency === 'HKD') currency = 'HKD';
   return { currency, isPence, isUsdListed };
 }
@@ -211,6 +218,89 @@ export function parseFlexibleNumberInput(raw) {
 }
 
 /** DB drivers may return DOUBLE PRECISION as string; avoid string + number bugs in totals. */
+/**
+ * Normalise one holding as extracted from a screenshot into what the holdings table
+ * stores. Returns quantity/currentPrice so that quantity × currentPrice = the value
+ * shown in the screenshot, plus the broker's own cost basis when it printed a P&L.
+ *
+ * The value printed by the broker is the ground truth; the quantity is whatever makes
+ * quantity × price reproduce it and survive the next live-price refresh:
+ * - quantity visible → price = value ÷ quantity ('screenshot')
+ * - quantity not visible, existing quantity set by hand → keep it, price = value ÷ qty ('manual')
+ * - quantity not visible, livePrice (same currency as the value) known → quantity = value ÷ livePrice ('derived')
+ * - quantity not visible, existingQuantity known → keep it for now, price = value ÷ qty ('placeholder':
+ *   the old quantity may be stale, so the first live price re-derives it from the stored value)
+ * - otherwise → 1 × value ('placeholder'), re-derived the same way
+ *
+ * purchasePrice is never fabricated from the current value (that used to pin a 0% P&L
+ * forever). It is derived only from an explicit purchase price or from value − profitLoss.
+ */
+export function normalizeIncomingHolding(holding, currency, opts = {}) {
+  const symbol = String(holding.symbol || '').trim();
+  const symU = symbol.toUpperCase();
+  const rawValue = holding.currentValue ?? holding.current_value ?? holding.value ?? holding.amount;
+  const valueNum = rawValue != null && Number.isFinite(Number(rawValue)) ? Number(rawValue) : null;
+  const rawPnl = holding.profitLoss ?? holding.profit_loss ?? holding.pnl;
+  const profitLoss = rawPnl != null && Number.isFinite(Number(rawPnl)) ? Number(rawPnl) : null;
+  const rawPnlPct = holding.profitLossPercent ?? holding.profit_loss_percent;
+  const profitLossPercent = rawPnlPct != null && Number.isFinite(Number(rawPnlPct)) ? Number(rawPnlPct) : null;
+  let quantity = Number(holding.quantity) || 0;
+  let purchasePrice = holding.purchasePrice != null ? Number(holding.purchasePrice)
+    : (holding.purchase_price != null ? Number(holding.purchase_price) : null);
+  if (!Number.isFinite(purchasePrice) || purchasePrice <= 0) purchasePrice = null;
+  let currentPrice = holding.currentPrice != null ? Number(holding.currentPrice)
+    : (holding.current_price != null ? Number(holding.current_price) : null);
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0) currentPrice = null;
+  const assetType = inferAssetType(holding);
+  const holdingCurrency = holding.currency || currency || 'EUR';
+  const existingQuantity = Number(opts.existingQuantity) > 0 ? Number(opts.existingQuantity) : null;
+  const existingIsManual = existingQuantity != null && opts.existingSource === 'manual';
+  const livePrice = Number(opts.livePrice) > 0 ? Number(opts.livePrice) : null;
+  let quantitySource = quantity > 0 ? 'screenshot' : null;
+  let costBasis = null;
+
+  if (symU === 'CASH' || symU === 'CASH_BALANCE' || symU.includes('CASH')) {
+    const cash = valueNum ?? currentPrice ?? 0;
+    return { symbol, quantity: 1, purchasePrice: cash, currentPrice: cash, assetType, holdingCurrency,
+      quantitySource: 'screenshot', costBasis: cash, profitLoss: 0, profitLossPercent: 0 };
+  }
+
+  if (valueNum != null) {
+    if (quantity > 0) {
+      currentPrice = valueNum / quantity;
+    } else if (existingIsManual) {
+      quantity = existingQuantity;
+      currentPrice = valueNum / quantity;
+      quantitySource = 'manual';
+    } else if (livePrice) {
+      quantity = valueNum / livePrice;
+      currentPrice = livePrice;
+      quantitySource = 'derived';
+    } else if (existingQuantity) {
+      quantity = existingQuantity;
+      currentPrice = valueNum / quantity;
+      quantitySource = 'placeholder';
+    } else {
+      quantity = 1;
+      currentPrice = valueNum;
+      quantitySource = 'placeholder';
+    }
+    if (profitLoss != null) costBasis = valueNum - profitLoss;
+    else if (profitLossPercent != null && profitLossPercent > -100) costBasis = valueNum / (1 + profitLossPercent / 100);
+  } else if (currentPrice != null) {
+    if (quantity <= 0) { quantity = 1; quantitySource = 'placeholder'; }
+    if (profitLoss != null) costBasis = quantity * currentPrice - profitLoss;
+  } else if (quantity > 0 && purchasePrice != null) {
+    currentPrice = purchasePrice;
+  }
+
+  if (purchasePrice == null && costBasis != null && quantity > 0) purchasePrice = costBasis / quantity;
+  if (costBasis == null && purchasePrice != null && quantity > 0) costBasis = purchasePrice * quantity;
+
+  return { symbol, quantity, purchasePrice, currentPrice, assetType, holdingCurrency,
+    quantitySource, costBasis, profitLoss, profitLossPercent };
+}
+
 export function coerceFiniteNumber(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;

@@ -22,13 +22,19 @@ import {
   MAX_SANE_HISTORY_BALANCE,
   sanitizeHistoryBalance,
   resolveP2pSnapshotFromUpload,
+  normalizeIncomingHolding,
 } from '../lib/portfolioUtils.js';
-import { loadInstrumentRegistry } from '../services/priceService.js';
+import { loadInstrumentRegistry, fetchPriceForHolding, currentRates } from '../services/priceService.js';
 
 /** Promise wrapper for db.run so we can await DB writes before returning */
 function dbRun(db, sql, params) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, (err) => (err ? reject(err) : resolve()));
+  });
+}
+function dbAll(db, sql, params) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || [])));
   });
 }
 
@@ -110,96 +116,83 @@ function deduplicateHoldings(holdings) {
 }
 
 // Normalize an incoming (AI-extracted or manual) holding into DB fields
-function normalizeIncomingHolding(holding, currency) {
-  const symbol = holding.symbol;
-  const rawCurrentValue = holding.currentValue ?? holding.current_value ?? holding.value ?? holding.amount;
-  const currentValueNum = rawCurrentValue != null ? parseFloat(rawCurrentValue) : null;
-  let quantity = parseFloat(holding.quantity) || 0;
-  let purchasePrice = holding.purchasePrice ? parseFloat(holding.purchasePrice) : (holding.purchase_price != null ? parseFloat(holding.purchase_price) : null);
-  let currentPrice = holding.currentPrice ? parseFloat(holding.currentPrice) : (holding.current_price != null ? parseFloat(holding.current_price) : null);
-  const assetType = inferAssetType(holding);
-  const holdingCurrency = holding.currency || currency || 'EUR';
-  if (currentValueNum != null && !isNaN(currentValueNum)) {
-    const totalValue = currentValueNum;
-    if (symbol === 'CASH' || symbol === 'CASH_BALANCE' || symbol.toUpperCase().includes('CASH')) {
-      quantity = 1;
-      currentPrice = totalValue;
-      purchasePrice = totalValue;
-    } else {
-      if (quantity > 0) {
-        const calculatedPrice = totalValue / quantity;
-        currentPrice = calculatedPrice;
-        if (purchasePrice == null) purchasePrice = calculatedPrice;
-      } else {
-        quantity = 1;
-        currentPrice = totalValue;
-        if (purchasePrice == null) purchasePrice = totalValue;
-      }
-    }
-  } else if (currentPrice != null && !isNaN(currentPrice)) {
-    if (purchasePrice == null) purchasePrice = currentPrice;
-    if (quantity <= 0) quantity = 1;
-  } else if (!currentPrice && quantity > 0 && purchasePrice != null) {
-    currentPrice = purchasePrice;
-  }
-  return { symbol, quantity, purchasePrice, currentPrice, assetType, holdingCurrency };
-}
-
 /**
  * Upsert holdings by symbol — the single write path for all screenshot flows.
- * - Existing symbol: update quantity and current price; NEVER overwrite an
- *   already-set purchase_price (it may be user-entered), only fill it when NULL.
- * - New symbol: insert.
+ * - Existing symbol: keep its quantity when the screenshot shows only a value (price =
+ *   value ÷ quantity); update the price; NEVER overwrite an already-set purchase_price
+ *   (it may be user-entered), only fill it when NULL. The broker's own P&L, when
+ *   printed, re-pins cost_basis_eur — it is the ground truth for that position.
+ * - New symbol: insert. Quantity is read from the screenshot, else derived from a live
+ *   price, else stored as a 1 × value placeholder healed by the next price refresh.
  * - Symbols not present in the incoming batch are left untouched, so uploading
  *   several partial screenshots accumulates instead of resetting the account.
  */
-export function saveHoldingsUpsert(accountId, holdings, currency) {
-  if (!holdings || !Array.isArray(holdings) || holdings.length === 0) {
-    return Promise.resolve();
-  }
+export async function saveHoldingsUpsert(accountId, holdings, currency) {
+  if (!holdings || !Array.isArray(holdings) || holdings.length === 0) return;
   const db = getDatabase();
-  return new Promise((resolve, reject) => {
-    db.all('SELECT id, symbol, purchase_price FROM holdings WHERE account_id = ?', [accountId], (selErr, rows) => {
-      if (selErr) return reject(selErr);
-      const existingBySymbol = new Map(
-        (rows || []).map((r) => [String(r.symbol || '').trim().toUpperCase(), r])
+  const rows = await dbAll(db, 'SELECT id, symbol, quantity, quantity_source, purchase_price FROM holdings WHERE account_id = ?', [accountId]);
+  const existingBySymbol = new Map(
+    (rows || []).map((r) => [String(r.symbol || '').trim().toUpperCase(), r])
+  );
+  const deduped = deduplicateHoldings(holdings).filter((h) => h.symbol);
+  if (deduped.length === 0) return;
+
+  // Live prices are needed for value-only rows (to derive a quantity that survives the
+  // next refresh); fetched lazily, rates/registry once.
+  let ratesPromise = null;
+  let registryPromise = null;
+  const livePriceFor = async (raw) => {
+    ratesPromise = ratesPromise || currentRates().catch(() => ({ usdToEur: 0.846, gbpToEur: 1.17, hkdToEur: 0.11 }));
+    registryPromise = registryPromise || loadInstrumentRegistry();
+    const [rates, registry] = await Promise.all([ratesPromise, registryPromise]);
+    const fresh = await fetchPriceForHolding(raw, rates, registry).catch(() => null);
+    // Only usable when the live price is in the same currency as the screenshot value
+    const rawCurrency = String(raw.currency || currency || 'EUR').toUpperCase();
+    return fresh && fresh.currency === rawCurrency ? fresh.price : null;
+  };
+
+  for (const raw of deduped) {
+    const key = String(raw.symbol).trim().toUpperCase();
+    const existing = existingBySymbol.get(key);
+    const hasValue = (raw.currentValue ?? raw.current_value ?? raw.value ?? raw.amount) != null;
+    const hasQuantity = Number(raw.quantity) > 0;
+    const opts = {};
+    if (existing && Number(existing.quantity) > 0) {
+      opts.existingQuantity = Number(existing.quantity);
+      opts.existingSource = existing.quantity_source || null;
+    }
+    if (!hasQuantity && hasValue && !/CASH/i.test(key) && opts.existingSource !== 'manual') {
+      opts.livePrice = await livePriceFor(raw);
+    }
+    const h = normalizeIncomingHolding(raw, currency, opts);
+    const isEur = String(h.holdingCurrency || 'EUR').toUpperCase() === 'EUR';
+    const costBasisEur = isEur && h.costBasis != null && h.costBasis > 0 ? h.costBasis : null;
+    const pnlKnown = h.profitLoss != null || h.profitLossPercent != null;
+
+    if (existing) {
+      await dbRun(
+        db,
+        `UPDATE holdings
+         SET quantity = ?,
+             quantity_source = COALESCE(?, quantity_source),
+             current_price = COALESCE(?, current_price),
+             purchase_price = COALESCE(purchase_price, ?),
+             cost_basis_eur = CASE WHEN ? THEN ? ELSE cost_basis_eur END,
+             currency = ?,
+             last_updated = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [h.quantity, h.quantitySource, h.currentPrice, h.purchasePrice,
+          pnlKnown && costBasisEur != null, costBasisEur, h.holdingCurrency, existing.id]
       );
-      const deduped = deduplicateHoldings(holdings).filter((h) => h.symbol);
-      if (deduped.length === 0) return resolve();
-      let done = 0;
-      let failed = false;
-      const finish = (err) => {
-        if (failed) return;
-        if (err) { failed = true; return reject(err); }
-        done++;
-        if (done === deduped.length) resolve();
-      };
-      for (const raw of deduped) {
-        const h = normalizeIncomingHolding(raw, currency);
-        const existing = existingBySymbol.get(String(h.symbol).trim().toUpperCase());
-        if (existing) {
-          db.run(
-            `UPDATE holdings
-             SET quantity = ?,
-                 current_price = COALESCE(?, current_price),
-                 purchase_price = COALESCE(purchase_price, ?),
-                 currency = ?,
-                 last_updated = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [h.quantity, h.currentPrice, h.purchasePrice, h.holdingCurrency, existing.id],
-            finish
-          );
-        } else {
-          db.run(
-            `INSERT INTO holdings (account_id, symbol, quantity, purchase_price, current_price, currency, asset_type)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [accountId, h.symbol, h.quantity, h.purchasePrice, h.currentPrice, h.holdingCurrency, h.assetType],
-            finish
-          );
-        }
-      }
-    });
-  });
+    } else {
+      await dbRun(
+        db,
+        `INSERT INTO holdings (account_id, symbol, quantity, quantity_source, purchase_price, current_price, cost_basis_eur, currency, asset_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [accountId, h.symbol, h.quantity, h.quantitySource, h.purchasePrice, h.currentPrice, costBasisEur, h.holdingCurrency, h.assetType]
+      );
+    }
+  }
 }
 
 // Back-compat aliases: every flow now upserts (no delete-and-reinsert).
@@ -274,6 +267,15 @@ export async function uploadScreenshot(req, res) {
         error: 'OpenAI API key is invalid or expired',
         details: 'Please update your API key in backend/.env file. Get a new key at https://platform.openai.com/api-keys',
         extractedData: extractedData
+      });
+    }
+
+    // Any other extraction failure (truncated/invalid JSON, vision error, ...) must not
+    // be recorded as a successful upload: nothing was read from the screenshot.
+    if (extractedData.error) {
+      return res.status(422).json({
+        error: 'Could not read the screenshot',
+        details: extractedData.error
       });
     }
 
@@ -1234,6 +1236,20 @@ export function getAccountHoldings(req, res) {
                   priceCurrency = holdingCurrency;
                   holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, holding.id]);
                 }
+                // Heal a 'placeholder' row (1 × position value, stored when no live price was
+                // available at upload): keep its value, derive the real quantity from this price.
+                if (holding.quantity_source === 'placeholder' && currentPrice > 0 && priceCurrency === holdingCurrency) {
+                  const storedValue = Number(holding.quantity) * Number(holding.current_price);
+                  if (Number.isFinite(storedValue) && storedValue > 0) {
+                    const derivedQty = storedValue / currentPrice;
+                    holding.quantity = derivedQty;
+                    holding.quantity_source = 'derived';
+                    const prev = holding._updatePromise || Promise.resolve();
+                    holding._updatePromise = prev.then(() =>
+                      dbRun(db, 'UPDATE holdings SET quantity = ?, quantity_source = ? WHERE id = ?', [derivedQty, 'derived', holding.id])
+                    );
+                  }
+                }
               } else {
                 // Fetch failed - use cached price from last successful fetch if available; show "Live (X ago)" not yellow Screenshot
                 let cachedPrice = holding.current_price != null ? Number(holding.current_price) : null;
@@ -1526,6 +1542,15 @@ export async function updateAccountWithScreenshot(req, res) {
             });
           }
 
+          // Any other extraction failure (truncated/invalid JSON, vision error, ...) must not
+          // be recorded as a successful upload: nothing was read from the screenshot.
+          if (extractedData.error) {
+            return res.status(422).json({
+              error: 'Could not read the screenshot',
+              details: extractedData.error
+            });
+          }
+
           // Extract balance and interest rate from the first account found (or use existing if multiple)
           const accounts = extractedData.accounts || [];
           if (accounts.length === 0) {
@@ -1705,6 +1730,15 @@ export async function addHoldingsFromScreenshot(req, res) {
         }
         if (extractedData.error && (extractedData.error.includes('401') || extractedData.error.includes('API key'))) {
           return res.status(500).json({ error: 'OpenAI API key is invalid or expired' });
+        }
+
+        // Any other extraction failure (truncated/invalid JSON, vision error, ...) must not
+        // be recorded as a successful upload: nothing was read from the screenshot.
+        if (extractedData.error) {
+          return res.status(422).json({
+            error: 'Could not read the screenshot',
+            details: extractedData.error
+          });
         }
 
         const holdings = extractedData.holdings || [];
@@ -1896,8 +1930,8 @@ export function updateHoldingQuantity(req, res) {
 
   db.run(
     // Quantity changes the position's cost basis; clear the pin so it re-pins on next load
-    'UPDATE holdings SET quantity = ?, cost_basis_eur = NULL WHERE id = ?',
-    [quantityValue, holdingId],
+    'UPDATE holdings SET quantity = ?, quantity_source = ?, cost_basis_eur = NULL WHERE id = ?',
+    [quantityValue, 'manual', holdingId],
     function(err) {
       if (err) {
         return res.status(500).json({ error: err.message });
