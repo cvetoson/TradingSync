@@ -46,8 +46,10 @@ function createPgAdapter(client) {
     run(sql, params, callback) {
       const isInsert = /^\s*INSERT\s+/i.test(sql.trim());
       let pgSql = sql;
+      // RETURNING * (not RETURNING id): tables keyed by a natural key, e.g. instruments(symbol),
+      // have no id column, and Postgres would reject the statement outright.
       if (isInsert && !/RETURNING\s+/i.test(sql)) {
-        pgSql = sql.replace(/;\s*$/, '') + ' RETURNING id';
+        pgSql = sql.replace(/;\s*$/, '') + ' RETURNING *';
       }
       const { sql: finalSql, params: pgParams } = toPgParams(pgSql, params);
       client
