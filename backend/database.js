@@ -23,7 +23,7 @@ const dbPath = process.env.DATABASE_PATH || join(__dirname, 'trading_sync.db');
 
 const isPostgres = DATABASE_URL && /^postgres(ql)?:\/\//i.test(DATABASE_URL);
 
-let pgClient = null;
+let pgPool = null;
 let sqliteDb = null;
 
 /** Convert SQLite ? placeholders to PostgreSQL $1, $2, ... */
@@ -62,7 +62,9 @@ function createPgAdapter(client) {
           if (typeof callback === 'function') callback.call(ctx, null);
         })
         .catch((err) => {
-          if (typeof callback === 'function') callback(err);
+          // Match sqlite3's contract: `this` carries lastID/changes even on error, so
+          // continue-after-error handlers reading this.lastID don't throw a TypeError.
+          if (typeof callback === 'function') callback.call({ lastID: undefined, changes: 0 }, err);
         });
     },
     all(sql, params, callback) {
@@ -77,10 +79,10 @@ function createPgAdapter(client) {
 
 export function getDatabase() {
   if (isPostgres) {
-    if (!pgClient) {
+    if (!pgPool) {
       throw new Error('Database not initialized. Call initDatabase() first.');
     }
-    return createPgAdapter(pgClient);
+    return createPgAdapter(pgPool);
   }
   if (!sqliteDb) {
     sqliteDb = new sqlite3.Database(dbPath);
@@ -89,10 +91,15 @@ export function getDatabase() {
 }
 
 async function initPostgres() {
-  pgClient = new pg.Client({ connectionString: DATABASE_URL });
-  await pgClient.connect();
+  // Pool, not Client: a single Client dies for good when the backend drops the
+  // socket (idle timeouts, PG restarts) — an unhandled 'error' event would kill
+  // the whole process. The pool replaces broken connections per-query.
+  pgPool = new pg.Pool({ connectionString: DATABASE_URL });
+  pgPool.on('error', (err) => {
+    console.error('[PG POOL] idle client error:', err?.message);
+  });
 
-  const run = (sql, params = []) => pgClient.query(sql, params);
+  const run = (sql, params = []) => pgPool.query(sql, params);
 
   await run(`
     CREATE TABLE IF NOT EXISTS users (
@@ -261,6 +268,11 @@ async function initPostgres() {
   if (!holdingColNames.includes('quantity_source')) {
     await run(`ALTER TABLE holdings ADD COLUMN quantity_source TEXT`);
   }
+  // Where current_price came from: 'live' (market API), 'screenshot', 'manual'.
+  // Drives the price-source badge, so users can trust what they see.
+  if (!holdingColNames.includes('price_source')) {
+    await run(`ALTER TABLE holdings ADD COLUMN price_source TEXT`);
+  }
 
   console.log('✅ PostgreSQL database initialized successfully');
 }
@@ -363,6 +375,9 @@ export function initDatabase() {
         if (!err && cols && !cols.some((c) => c.name === 'quantity_source')) {
           db.run(`ALTER TABLE holdings ADD COLUMN quantity_source TEXT`);
         }
+        if (!err && cols && !cols.some((c) => c.name === 'price_source')) {
+          db.run(`ALTER TABLE holdings ADD COLUMN price_source TEXT`);
+        }
       });
 
       // Instrument registry: per-listing currency + price divisor (100 = pence quotes)
@@ -452,9 +467,9 @@ export function isPostgreSQL() {
 
 /** Close the database connection (used by test teardown so node:test can exit cleanly). */
 export async function closeDatabase() {
-  if (pgClient) {
-    try { await pgClient.end(); } catch (e) { /* swallow */ }
-    pgClient = null;
+  if (pgPool) {
+    try { await pgPool.end(); } catch (e) { /* swallow */ }
+    pgPool = null;
   }
   if (sqliteDb) {
     try { await new Promise((resolve) => sqliteDb.close(() => resolve())); } catch (e) { /* swallow */ }

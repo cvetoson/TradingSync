@@ -178,7 +178,9 @@ function DashboardContent() {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col min-h-screen overflow-hidden relative z-[1]">
+      {/* h-screen (not min-h-screen): main must not grow past the viewport, or the inner
+          overflow-y-auto container never scrolls and the sticky sidebar detaches */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-[1]">
         {/* Top bar — transparent so the ambient background shows through */}
         <header className="h-16 flex items-center justify-between px-6 shrink-0">
           <h2 className="font-bold text-lg tracking-tight" style={{ color: 'var(--text-1)' }}>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { updateAccountName, updateAccountType, updateAccountPlatform, updateAccountBalance, updateAccountInterestRate, updateAccountContributedAmount, updateAccountTag, deleteAccount } from '../services/api';
+import useModalBehavior from '../hooks/useModalBehavior';
 
 /** Parse amount from free text: 10000, 10,000, 10.000 (EU thousands), 1.234,56 (EU), 1,234.56 (US). Separators optional. */
 function parseMoneyInput(raw) {
@@ -49,6 +50,12 @@ function parseMoneyInput(raw) {
   return parseFloat(s);
 }
 
+/** Prefill for the balance field: accruing accounts carry long floats (1000.0113992…) — show cents. */
+function prefillBalance(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '0';
+}
+
 const ACCOUNT_TYPES = [
   { value: 'p2p',     label: 'P2P Lending',           color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30', ring: 'ring-emerald-500' },
   { value: 'stocks',  label: 'ETF & Stocks',           color: 'bg-blue-500/10 text-blue-500 border-blue-500/30',         ring: 'ring-blue-500' },
@@ -60,10 +67,11 @@ const ACCOUNT_TYPES = [
 ];
 
 export default function AccountDetailsModal({ account, currency, onClose, onUpdate }) {
+  useModalBehavior(onClose);
   const [accountName, setAccountName] = useState(account.accountName || '');
   const [platform, setPlatform] = useState(account.platform || '');
   const [accountType, setAccountType] = useState(account.accountType || account.account_type || 'unknown');
-  const [currentValue, setCurrentValue] = useState((account.currentValue || account.balance || 0).toString());
+  const [currentValue, setCurrentValue] = useState(prefillBalance(account.currentValue ?? account.balance ?? 0));
   const [contributedAmount, setContributedAmount] = useState(
     account.contributedAmount != null
       ? String(account.contributedAmount)
@@ -79,7 +87,7 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
     setAccountName(account.accountName || '');
     setPlatform(account.platform || '');
     setAccountType(account.accountType || account.account_type || 'unknown');
-    setCurrentValue((account.currentValue || account.balance || 0).toString());
+    setCurrentValue(prefillBalance(account.currentValue ?? account.balance ?? 0));
     setContributedAmount(
       account.contributedAmount != null
         ? String(account.contributedAmount)
@@ -106,7 +114,9 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
         setIsSaving(false);
         return;
       }
-      if (newBalance !== comparableOld) { await updateAccountBalance(account.id, newBalance); updates.push('balance'); }
+      // Compare at cent precision: the prefill is rounded to 2 decimals, so an exact
+      // comparison against the raw accrued float would rebase the accrual on every save.
+      if (Math.round(newBalance * 100) !== Math.round(comparableOld * 100)) { await updateAccountBalance(account.id, newBalance); updates.push('balance'); }
       const newIR = interestRate.trim() === '' ? null : parseMoneyInput(interestRate);
       if (interestRate.trim() !== '' && Number.isNaN(newIR)) {
         alert('Please enter a valid interest rate (e.g. 7.5 or 7,5).');
@@ -165,7 +175,7 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
         style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-bold" style={{ color: 'var(--text-1)' }}>Account Details</h2>
-          <button onClick={onClose} className="p-1 rounded-md transition" style={{ color: 'var(--text-3)' }}>
+          <button onClick={onClose} className="p-2 -m-1 rounded-md transition" style={{ color: 'var(--text-3)' }} title="Close">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>

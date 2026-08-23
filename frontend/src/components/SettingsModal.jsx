@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import * as api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import useModalBehavior from '../hooks/useModalBehavior';
 
 export default function SettingsModal({ onClose }) {
+  useModalBehavior(onClose);
   const { user, updateUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [displayName, setDisplayName] = useState(user?.displayName || '');
@@ -83,7 +85,7 @@ export default function SettingsModal({ onClose }) {
             <h2 className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>Settings</h2>
             <button
               onClick={onClose}
-              className="p-1 rounded-md transition"
+              className="p-2 -m-1 rounded-md transition"
               style={{ color: 'var(--text-3)' }}
               onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-inner)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}

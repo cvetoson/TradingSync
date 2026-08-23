@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import multer from 'multer';
 import fs from 'fs';
 import dotenv from 'dotenv';
@@ -24,6 +24,12 @@ dotenv.config({ path: join(__dirname, '.env') });
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Last-resort guard: a rejected promise that escapes a route handler must not kill
+// the process (Express 4 does not catch async rejections). Log and keep serving.
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason?.stack || reason);
+});
+
 // Railway/behind-proxy: trust the first proxy hop so rate limiting sees real client IPs
 if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
@@ -36,6 +42,18 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts. Please try again in a few minutes.' },
+});
+
+// Throttle screenshot uploads: each one is a paid OpenAI Vision call and a stored
+// file, so an authenticated user must not be able to loop them unbounded.
+// Keyed per user (routes sit behind requireAuth, so req.userId is set).
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.UPLOAD_RATE_LIMIT_PER_HOUR) || 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.userId ? `user:${req.userId}` : ipKeyGenerator(req.ip)),
+  message: { error: 'Too many uploads. Please try again later.' },
 });
 
 // Middleware
@@ -129,7 +147,7 @@ async function start() {
   app.get('/api/auth/me', requireAuth, getProfile);
   app.put('/api/auth/profile', requireAuth, updateProfile);
   app.put('/api/auth/change-password', requireAuth, changePassword);
-  app.post('/api/upload', requireAuth, (req, res, next) => {
+  app.post('/api/upload', requireAuth, uploadLimiter, (req, res, next) => {
     upload.single('screenshot')(req, res, (multerErr) => {
       if (multerErr) {
         console.error('[UPLOAD] Multer error:', multerErr);
@@ -163,8 +181,8 @@ async function start() {
   app.put('/api/accounts/:id/balance', requireAuth, requireAccountAuth, updateAccountBalance);
   app.put('/api/accounts/:id/interest-rate', requireAuth, requireAccountAuth, updateAccountInterestRate);
   app.put('/api/accounts/:id/contributed-amount', requireAuth, requireAccountAuth, updateAccountContributedAmount);
-  app.put('/api/accounts/:id/update', requireAuth, requireAccountAuth, upload.single('screenshot'), updateAccountWithScreenshot);
-  app.post('/api/accounts/:id/add-holdings', requireAuth, requireAccountAuth, upload.single('screenshot'), addHoldingsFromScreenshot);
+  app.put('/api/accounts/:id/update', requireAuth, uploadLimiter, requireAccountAuth, upload.single('screenshot'), updateAccountWithScreenshot);
+  app.post('/api/accounts/:id/add-holdings', requireAuth, uploadLimiter, requireAccountAuth, upload.single('screenshot'), addHoldingsFromScreenshot);
   app.delete('/api/accounts/:id', requireAuth, requireAccountAuth, deleteAccount);
   app.delete('/api/history/:id', requireAuth, requireHistoryAuth, deleteHistoryEntry);
   app.get('/api/holdings/verify-symbol', requireAuth, verifyHoldingSymbol);
@@ -195,10 +213,15 @@ async function start() {
     });
   }
 
-  // Debug endpoint – requires auth. Reports only configuration booleans, never the
-  // raw recent-error/email-error text (which can contain DB internals).
+  // Debug endpoint – requires auth. Reports configuration booleans to any signed-in
+  // user; the raw provider email-error text (which can contain addresses or infra
+  // details) is only included for the configured owner/admin account.
   app.get('/api/debug', requireAuth, (req, res) => {
     if (!req.userId) return res.status(401).json({ error: 'Authentication required' });
+    const ownerEmails = [process.env.ADMIN_EMAIL, process.env.ADMIN_FALLBACK_EMAIL]
+      .filter(Boolean)
+      .map((e) => String(e).trim().toLowerCase());
+    const isOwner = !!req.userEmail && ownerEmails.includes(String(req.userEmail).toLowerCase());
     res.json({
       status: 'ok',
       database: isPostgreSQL() ? 'PostgreSQL' : 'SQLite',
@@ -209,8 +232,8 @@ async function start() {
       appUrl: process.env.APP_URL || '(not set)',
       recentErrorCount: getRecentErrors().length,
       hasEmailError: !!getLastEmailError(),
-      // Auth-gated: the provider error text is needed to diagnose delivery issues.
-      lastEmailError: getLastEmailError() || null,
+      // Owner-only: the provider error text is needed to diagnose delivery issues.
+      ...(isOwner ? { lastEmailError: getLastEmailError() || null } : {}),
     });
   });
 

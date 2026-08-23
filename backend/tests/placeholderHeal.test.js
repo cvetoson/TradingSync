@@ -29,7 +29,7 @@ describe('refreshHoldingPrice heals value-only rows', () => {
     dir = mkdtempSync(join(tmpdir(), 'ts-heal-'));
     db = new sqlite3.Database(join(dir, 'h.db'));
     await run(db, `CREATE TABLE holdings (id INTEGER PRIMARY KEY, account_id INTEGER, symbol TEXT, quantity REAL,
-      quantity_source TEXT, purchase_price REAL, current_price REAL, cost_basis_eur REAL, currency TEXT, asset_type TEXT, last_updated TEXT)`);
+      quantity_source TEXT, purchase_price REAL, current_price REAL, price_source TEXT, cost_basis_eur REAL, currency TEXT, asset_type TEXT, last_updated TEXT)`);
     // 1 × value placeholder (new symbol, Stooq was down at upload)
     await run(db, `INSERT INTO holdings (id, account_id, symbol, quantity, quantity_source, current_price, currency, asset_type)
       VALUES (1, 1, 'NVDA', 1, 'placeholder', 497.33, 'EUR', 'stock')`);

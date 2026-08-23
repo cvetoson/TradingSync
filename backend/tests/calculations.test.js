@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateFutureValue, calculatePortfolioValue } from '../services/calculations.js';
+import { calculatePortfolioValue } from '../services/calculations.js';
 import { initDatabase, closeDatabase } from '../database.js';
 
 // calculatePortfolioValue calls getDatabase() (the lazy SQLite handle is fine for these
@@ -11,41 +11,6 @@ before(async () => {
 });
 after(async () => {
   await closeDatabase();
-});
-
-// ── calculateFutureValue ──────────────────────────────────────────────────
-
-describe('calculateFutureValue', () => {
-  it('returns balance unchanged when rate is 0 and 0 months/days', () => {
-    assert.equal(calculateFutureValue(1000, 0, 0, 0), 1000);
-  });
-
-  it('applies compound interest for 12 months at 10%', () => {
-    const result = calculateFutureValue(1000, 10, 12, 0);
-    const expected = 1000 * Math.pow(1.1, (12 * 30) / 365);
-    assert.ok(Math.abs(result - expected) < 0.001, `Expected ~${expected}, got ${result}`);
-  });
-
-  it('applies compound interest for 365 days at 10%', () => {
-    // FV = 1000 * (1.10)^1 = 1100
-    const result = calculateFutureValue(1000, 10, 0, 365);
-    assert.ok(Math.abs(result - 1100) < 0.001, `Expected ~1100, got ${result}`);
-  });
-
-  it('applies compound interest for 30 days at 12%', () => {
-    const expected = 1000 * Math.pow(1.12, 30 / 365);
-    const result = calculateFutureValue(1000, 12, 0, 30);
-    assert.ok(Math.abs(result - expected) < 0.001, `Expected ~${expected}, got ${result}`);
-  });
-
-  it('handles large interest rate (100%) for 1 year', () => {
-    const result = calculateFutureValue(500, 100, 0, 365);
-    assert.ok(Math.abs(result - 1000) < 0.01, `Expected ~1000, got ${result}`);
-  });
-
-  it('returns 0 for 0 balance regardless of rate', () => {
-    assert.equal(calculateFutureValue(0, 15, 6, 0), 0);
-  });
 });
 
 // ── calculatePortfolioValue ───────────────────────────────────────────────
@@ -71,8 +36,18 @@ describe('calculatePortfolioValue', () => {
     assert.equal(result, 3000);
   });
 
-  it('unknown/savings type: resolves to balance directly', async () => {
-    const account = { account_type: 'savings', balance: 1500, interest_rate: 5, last_updated: new Date().toISOString() };
+  it('savings type accrues like p2p: same balance/rate/age gives the same value', async () => {
+    const lastYear = new Date();
+    lastYear.setFullYear(lastYear.getFullYear() - 1);
+    const base = { balance: 10000, interest_rate: 8, last_updated: lastYear.toISOString() };
+    const savings = await calculatePortfolioValue({ ...base, account_type: 'savings' });
+    const p2p = await calculatePortfolioValue({ ...base, account_type: 'p2p' });
+    assert.ok(savings > 10000, `Expected accrual > 10000, got ${savings}`);
+    assert.ok(Math.abs(savings - p2p) < 0.01, `Expected savings ${savings} ≈ p2p ${p2p}`);
+  });
+
+  it('savings type with no interest rate: resolves to balance', async () => {
+    const account = { account_type: 'savings', balance: 1500, interest_rate: null, last_updated: new Date().toISOString() };
     const result = await calculatePortfolioValue(account);
     assert.equal(result, 1500);
   });

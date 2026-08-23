@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AccountCard from './AccountCard';
 import AccountDetailView from './AccountDetailView';
+import useModalBehavior from '../hooks/useModalBehavior';
 
 const CATEGORY_TABS = [
   { value: 'stocks', label: 'ETF & Stocks' },
@@ -13,8 +14,22 @@ const CATEGORY_TABS = [
 ];
 
 export default function PlatformDetailView({ platform, currency, onClose, onViewAccountDetails, onUpdate, onAddNewAccount }) {
+  useModalBehavior(onClose);
   const [activeCategory, setActiveCategory] = useState(null);
   const [selectedAccount, setSelectedAccount] = useState(null);
+
+  // Keep the open detail view in sync after saves: onUpdate refreshes the platform
+  // prop upstream, but selectedAccount is a snapshot — without this the header cards
+  // show stale values (old balance, "Original amount: Not set") until reopened.
+  useEffect(() => {
+    setSelectedAccount((prev) => {
+      if (!prev || !platform?.categories) return prev;
+      const fresh = Object.values(platform.categories)
+        .flat()
+        .find((acc) => acc.id === prev.id);
+      return fresh || prev;
+    });
+  }, [platform]);
 
   const categoriesWithAccounts = CATEGORY_TABS.filter(tab => platform.categories?.[tab.value]?.length > 0);
   const defaultCategory = categoriesWithAccounts[0]?.value;
@@ -33,7 +48,7 @@ export default function PlatformDetailView({ platform, currency, onClose, onView
             <h2 className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>{platform.name}</h2>
             <p className="text-lg font-semibold text-blue-500 mt-0.5">{formatCurrency(platform.value)}</p>
           </div>
-          <button onClick={onClose} className="p-1 rounded-md transition" style={{ color: 'var(--text-3)' }}
+          <button onClick={onClose} className="p-2 -m-1 rounded-md transition" style={{ color: 'var(--text-3)' }} title="Close"
             onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-inner)'}
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -29,6 +29,16 @@ describe('parseFlexibleNumberInput', () => {
   it('parses large integer with dots "1.234.567" → 1234567', () => assert.equal(parseFlexibleNumberInput('1.234.567'), 1234567));
   it('parses "0,5" → 0.5', () => assert.equal(parseFlexibleNumberInput('0,5'), 0.5));
   it('parses zero', () => assert.equal(parseFlexibleNumberInput('0'), 0));
+  // Sign handling: the European-thousands heuristics must see the unsigned magnitude,
+  // otherwise '-1.234' parses 1000× smaller than '1.234'.
+  it('parses "-1.234" → -1234 (same magnitude as unsigned)', () =>
+    assert.equal(parseFlexibleNumberInput('-1.234'), -1234));
+  it('parses "-1.234,56" → -1234.56', () => assert.equal(parseFlexibleNumberInput('-1.234,56'), -1234.56));
+  it('parses "-1,234.56" → -1234.56', () => assert.equal(parseFlexibleNumberInput('-1,234.56'), -1234.56));
+  it('parses "+1.234" → 1234', () => assert.equal(parseFlexibleNumberInput('+1.234'), 1234));
+  it('parses "-500" → -500', () => assert.equal(parseFlexibleNumberInput('-500'), -500));
+  it('passes through a negative number unchanged', () => assert.equal(parseFlexibleNumberInput(-1234.5), -1234.5));
+  it('returns NaN for a bare "-"', () => assert.ok(Number.isNaN(parseFlexibleNumberInput('-'))));
 });
 
 // ── isEurNativeSymbol ──────────────────────────────────────────────────────
@@ -86,6 +96,16 @@ describe('holdingValueInEur', () => {
 
   it('returns 0 for zero quantity', () => {
     const h = { quantity: 0, current_price: 100, currency: 'USD', symbol: 'AAPL', asset_type: 'stock' };
+    assert.equal(holdingValueInEur(h, USD_TO_EUR, GBP_TO_EUR, HKD_TO_EUR), 0);
+  });
+
+  it('falls back to purchase_price when current_price is NULL (failed price fetch)', () => {
+    const h = { quantity: 2, current_price: null, purchase_price: 100, currency: 'EUR', symbol: 'FOO', asset_type: 'stock' };
+    assert.equal(holdingValueInEur(h, USD_TO_EUR, GBP_TO_EUR, HKD_TO_EUR), 200);
+  });
+
+  it('values at 0 when both prices are NULL', () => {
+    const h = { quantity: 2, current_price: null, purchase_price: null, currency: 'EUR', symbol: 'FOO', asset_type: 'stock' };
     assert.equal(holdingValueInEur(h, USD_TO_EUR, GBP_TO_EUR, HKD_TO_EUR), 0);
   });
 });
@@ -159,6 +179,23 @@ describe('compoundP2PToNow', () => {
     const result = compoundP2PToNow(1000, 10, isoYmd);
     const expected = 1000 * Math.pow(1.1, 365 / 365);
     assert.ok(Math.abs(result - expected) < 0.01, `Expected ~${expected}, got ${result}`);
+  });
+
+  it('counts exact calendar days across a DST spring-forward (no dropped accrual day)', () => {
+    // From an as-of date to today the day count must equal the UTC calendar-date diff,
+    // even when the local range contains a 23-hour DST day (the old local-midnight
+    // Math.floor lost one day of interest there).
+    const now = new Date();
+    const toUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const from = '2026-03-01'; // before the March DST change in Europe
+    const expectedDays = Math.round((toUtc - Date.UTC(2026, 2, 1)) / 86400000);
+    const result = compoundP2PToNow(10000, 8, from);
+    const expected = 10000 * Math.pow(1.08, expectedDays / 365);
+    assert.ok(Math.abs(result - expected) < 1e-9, `Expected ${expected} (for ${expectedDays} days), got ${result}`);
+  });
+
+  it('returns baseBalance for a malformed date string', () => {
+    assert.equal(compoundP2PToNow(1000, 10, 'not-a-date'), 1000);
   });
 });
 

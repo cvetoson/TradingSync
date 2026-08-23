@@ -71,7 +71,10 @@ function listingValueToEur(q, p, cls, usdToEur, gbpToEur, hkdToEur) {
 /** Compute holding value in EUR from raw DB data; applies pence→GBP for LSE European ETFs */
 export function holdingValueInEur(h, usdToEur, gbpToEur, hkdToEur, registry) {
   const q = Number(h.quantity) || 0;
-  const p = Number(h.current_price) ?? Number(h.purchase_price) ?? 0;
+  // Explicit null checks: Number(null) is 0, not nullish, so `??` would never
+  // reach the purchase_price fallback for rows whose price fetch failed.
+  const p = h.current_price != null ? Number(h.current_price)
+    : (h.purchase_price != null ? Number(h.purchase_price) : 0);
   const sym = String(h.symbol || '').trim().toUpperCase();
   const assetT = (h.asset_type || h.assetType || 'stock').toLowerCase();
   const cls = classifyListing(sym, assetT, h.currency, p, registry);
@@ -148,11 +151,14 @@ export function isPastCalendarDate(isoYmd) {
 /** Compound APY from as-of date (inclusive start) to now (inclusive end-of-day). */
 export function compoundP2PToNow(baseBalance, annualRatePct, fromIsoYmd) {
   if (baseBalance == null || annualRatePct == null || !fromIsoYmd) return baseBalance;
-  const from = new Date(`${fromIsoYmd}T12:00:00`);
-  const to = new Date();
-  from.setHours(0, 0, 0, 0);
-  to.setHours(0, 0, 0, 0);
-  const days = Math.max(0, Math.floor((to - from) / 86400000));
+  // Diff UTC calendar anchors: local-midnight arithmetic makes the DST spring-forward
+  // day 23 hours long, and Math.floor over that dropped a whole accrual day.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(fromIsoYmd).trim());
+  if (!m) return baseBalance;
+  const fromUtc = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const now = new Date();
+  const toUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.max(0, Math.round((toUtc - fromUtc) / 86400000));
   const r = annualRatePct / 100;
   return baseBalance * Math.pow(1 + r, days / 365);
 }
@@ -176,10 +182,21 @@ export function inferAssetType(holding) {
   return 'stock';
 }
 
-/** Parse locale-friendly numeric amount (supports 1,234.56 and 1.234,56). */
+/** Parse locale-friendly numeric amount (supports 1,234.56 and 1.234,56, with optional leading sign). */
 export function parseFlexibleNumberInput(raw) {
   if (raw === null || raw === undefined || raw === '') return null;
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : NaN;
+  // Strip a leading sign before the separator heuristics (a '-1' segment fails the
+  // all-digits checks, so '-1.234' parsed 1000× smaller than '1.234'); re-apply after.
+  const str = String(raw).trim();
+  const sign = str[0] === '-' ? -1 : 1;
+  const unsigned = str[0] === '-' || str[0] === '+' ? str.slice(1) : str;
+  if (!unsigned) return NaN;
+  const magnitude = parseUnsignedFlexibleNumber(unsigned);
+  return magnitude == null ? null : sign * magnitude;
+}
+
+function parseUnsignedFlexibleNumber(raw) {
   const s = String(raw).trim().replace(/\s/g, '').replace(/ /g, '');
   if (!s) return null;
   const lastComma = s.lastIndexOf(',');

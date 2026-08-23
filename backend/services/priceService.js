@@ -123,15 +123,17 @@ export async function refreshHoldingPrice(db, holding, rates, registry) {
   if (isPlaceholder && Number.isFinite(storedValue) && storedValue > 0 && fresh.currency === (holding.currency || 'EUR').toUpperCase()) {
     await dbRun(
       db,
-      'UPDATE holdings SET quantity = ?, quantity_source = ?, current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
-      [storedValue / fresh.price, 'derived', fresh.price, fresh.currency, holding.id]
+      "UPDATE holdings SET quantity = ?, quantity_source = ?, current_price = ?, price_source = 'live', currency = ?, last_updated = ? WHERE id = ?",
+      [storedValue / fresh.price, 'derived', fresh.price, fresh.currency, new Date().toISOString(), holding.id]
     );
     return true;
   }
   await dbRun(
     db,
-    'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
-    [fresh.price, fresh.currency, holding.id]
+    // ISO timestamp, not CURRENT_TIMESTAMP: SQLite's space-format string breaks the
+    // staleness comparison against the ISO cutoff in refreshAllPrices.
+    "UPDATE holdings SET current_price = ?, price_source = 'live', currency = ?, last_updated = ? WHERE id = ?",
+    [fresh.price, fresh.currency, new Date().toISOString(), holding.id]
   );
   return true;
 }
