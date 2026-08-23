@@ -160,9 +160,36 @@ async function initPostgres() {
       quantity DOUBLE PRECISION NOT NULL,
       purchase_price DOUBLE PRECISION,
       current_price DOUBLE PRECISION,
+      cost_basis_eur DOUBLE PRECISION,
       currency TEXT DEFAULT 'EUR',
       asset_type TEXT,
       last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Instrument registry: per-listing currency and price divisor (100 = quoted in pence),
+  // so pricing is data-driven instead of hardcoded ticker lists.
+  await run(`
+    CREATE TABLE IF NOT EXISTS instruments (
+      symbol TEXT PRIMARY KEY,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      price_divisor DOUBLE PRECISION NOT NULL DEFAULT 1,
+      yahoo_symbol TEXT,
+      notes TEXT
+    )
+  `);
+
+  // Dated deposits/withdrawals per account (EUR). Enables the money-weighted
+  // headline (profit = value - deposits) and, later, XIRR.
+  await run(`
+    CREATE TABLE IF NOT EXISTS cash_flows (
+      id SERIAL PRIMARY KEY,
+      account_id INTEGER NOT NULL REFERENCES accounts(id),
+      amount_eur DOUBLE PRECISION NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'deposit',
+      flow_date DATE NOT NULL,
+      note TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -217,6 +244,15 @@ async function initPostgres() {
   }
   if (!accountColNames.includes('contributed_amount')) {
     await run(`ALTER TABLE accounts ADD COLUMN contributed_amount DOUBLE PRECISION`);
+  }
+
+  const holdColsRes = await run(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'holdings'
+  `);
+  const holdingColNames = (holdColsRes.rows || []).map((r) => r.column_name);
+  if (!holdingColNames.includes('cost_basis_eur')) {
+    await run(`ALTER TABLE holdings ADD COLUMN cost_basis_eur DOUBLE PRECISION`);
   }
 
   console.log('✅ PostgreSQL database initialized successfully');
@@ -305,9 +341,41 @@ export function initDatabase() {
           quantity REAL NOT NULL,
           purchase_price REAL,
           current_price REAL,
+          cost_basis_eur REAL,
           currency TEXT DEFAULT 'EUR',
           asset_type TEXT,
           last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (account_id) REFERENCES accounts(id)
+        )
+      `);
+
+      db.all(`PRAGMA table_info(holdings)`, (err, cols) => {
+        if (!err && cols && !cols.some((c) => c.name === 'cost_basis_eur')) {
+          db.run(`ALTER TABLE holdings ADD COLUMN cost_basis_eur REAL`);
+        }
+      });
+
+      // Instrument registry: per-listing currency + price divisor (100 = pence quotes)
+      db.run(`
+        CREATE TABLE IF NOT EXISTS instruments (
+          symbol TEXT PRIMARY KEY,
+          currency TEXT NOT NULL DEFAULT 'EUR',
+          price_divisor REAL NOT NULL DEFAULT 1,
+          yahoo_symbol TEXT,
+          notes TEXT
+        )
+      `);
+
+      // Dated deposits/withdrawals per account (EUR) for money-weighted stats
+      db.run(`
+        CREATE TABLE IF NOT EXISTS cash_flows (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          account_id INTEGER NOT NULL,
+          amount_eur REAL NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'deposit',
+          flow_date DATE NOT NULL,
+          note TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (account_id) REFERENCES accounts(id)
         )
       `);

@@ -14,43 +14,87 @@ export function isEurNativeSymbol(sym, assetTypeLower) {
   return /^[0-9][A-Z0-9]{3}$/.test(s);
 }
 
-/** Compute holding value in EUR from raw DB data; applies pence→GBP for LSE European ETFs */
-export function holdingValueInEur(h, usdToEur, gbpToEur, hkdToEur) {
-  const q = Number(h.quantity) || 0;
-  let p = Number(h.current_price) ?? Number(h.purchase_price) ?? 0;
-  const sym = String(h.symbol || '').trim().toUpperCase();
-  const assetT = (h.asset_type || h.assetType || 'stock').toLowerCase();
-  let currency = isEurNativeSymbol(sym, assetT) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
-  if (sym.endsWith('.HK')) currency = 'HKD';
-  const isPence = LSE_GBP_ETF_SYMBOLS.includes(sym) && p >= 1000 && p < 50000;
-  const isUsdLseEtf = LSE_USD_ETF_SYMBOLS.includes(sym);
-  if (isPence) p = p / 100;
-  let value = q * p;
+/**
+ * Classify a holding's listing: which currency its stored price is in, and whether the
+ * magnitude suggests a pence (GBX) quote. A registry row (from the instruments table)
+ * overrides the hardcoded symbol lists; heuristics remain the fallback for unknown symbols.
+ * The pence check keeps the magnitude guard because stored prices may already be
+ * EUR-converted by an earlier refresh.
+ */
+function classifyListing(sym, assetT, storedCurrency, price, registry) {
+  const reg = registry ? registry[sym] : null;
+  const regCurrency = reg ? String(reg.currency || 'EUR').toUpperCase() : null;
+  const regDivisor = reg ? Number(reg.price_divisor) || 1 : 1;
+  const isPence = (reg ? regDivisor === 100 : LSE_GBP_ETF_SYMBOLS.includes(sym))
+    && price != null && price >= 1000 && price < 50000;
+  const isUsdListed = reg ? regCurrency === 'USD' : LSE_USD_ETF_SYMBOLS.includes(sym);
+  const eurNative = reg ? regCurrency === 'EUR' : isEurNativeSymbol(sym, assetT);
+  let currency = eurNative ? 'EUR' : (storedCurrency || 'EUR').toUpperCase();
+  if (sym.endsWith('.HK') || regCurrency === 'HKD') currency = 'HKD';
+  return { currency, isPence, isUsdListed };
+}
+
+/** Convert a holding's q×p into EUR given its listing classification. */
+function listingValueToEur(q, p, cls, usdToEur, gbpToEur, hkdToEur) {
+  let price = p;
+  if (cls.isPence) price = price / 100;
+  let value = q * price;
   const hk = hkdToEur != null && hkdToEur > 0 ? hkdToEur : 0.11;
-  if (currency === 'USD' || isUsdLseEtf) value *= usdToEur;
-  else if (currency === 'GBP' || isPence) value *= gbpToEur;
-  else if (currency === 'HKD') value *= hk;
+  if (cls.currency === 'USD' || cls.isUsdListed) value *= usdToEur;
+  else if (cls.currency === 'GBP' || cls.isPence) value *= gbpToEur;
+  else if (cls.currency === 'HKD') value *= hk;
   return value;
 }
 
-/** Compute cost basis in EUR from purchase_price. Returns null when cost basis is unknown. */
-export function holdingPurchaseCostInEur(h, usdToEur, gbpToEur, hkdToEur) {
+/** Compute holding value in EUR from raw DB data; applies pence→GBP for LSE European ETFs */
+export function holdingValueInEur(h, usdToEur, gbpToEur, hkdToEur, registry) {
   const q = Number(h.quantity) || 0;
-  let p = h.purchase_price != null ? Number(h.purchase_price) : null;
+  const p = Number(h.current_price) ?? Number(h.purchase_price) ?? 0;
+  const sym = String(h.symbol || '').trim().toUpperCase();
+  const assetT = (h.asset_type || h.assetType || 'stock').toLowerCase();
+  const cls = classifyListing(sym, assetT, h.currency, p, registry);
+  return listingValueToEur(q, p, cls, usdToEur, gbpToEur, hkdToEur);
+}
+
+/** Compute cost basis in EUR from purchase_price. Returns null when cost basis is unknown. */
+export function holdingPurchaseCostInEur(h, usdToEur, gbpToEur, hkdToEur, registry) {
+  const q = Number(h.quantity) || 0;
+  const p = h.purchase_price != null ? Number(h.purchase_price) : null;
   if (!q || p == null || Number.isNaN(p) || p <= 0) return null;
   const sym = String(h.symbol || '').trim().toUpperCase();
   const assetT = (h.asset_type || h.assetType || 'stock').toLowerCase();
-  let currency = isEurNativeSymbol(sym, assetT) ? 'EUR' : (h.currency || 'EUR').toUpperCase();
-  if (sym.endsWith('.HK')) currency = 'HKD';
-  const isPence = LSE_GBP_ETF_SYMBOLS.includes(sym) && p >= 1000 && p < 50000;
-  const isUsdLseEtf = LSE_USD_ETF_SYMBOLS.includes(sym);
-  if (isPence) p = p / 100;
-  let value = q * p;
-  const hk = hkdToEur != null && hkdToEur > 0 ? hkdToEur : 0.11;
-  if (currency === 'USD' || isUsdLseEtf) value *= usdToEur;
-  else if (currency === 'GBP' || isPence) value *= gbpToEur;
-  else if (currency === 'HKD') value *= hk;
-  return value;
+  const cls = classifyListing(sym, assetT, h.currency, p, registry);
+  return listingValueToEur(q, p, cls, usdToEur, gbpToEur, hkdToEur);
+}
+
+/**
+ * Cost basis for P&L must be pinned in EUR at capture time — recomputing it from live FX
+ * on every refresh silently distorts P&L when exchange rates move.
+ * Prefers the stored cost_basis_eur; falls back to computing from purchase_price at
+ * today's FX (the caller should persist that value so it only ever happens once).
+ * @returns {{ costEur: number|null, needsPin: boolean }}
+ */
+export function resolveHoldingCostBasisEur(h, usdToEur, gbpToEur, hkdToEur, registry) {
+  const stored = h.cost_basis_eur != null ? Number(h.cost_basis_eur) : null;
+  if (stored != null && Number.isFinite(stored) && stored > 0) {
+    return { costEur: stored, needsPin: false };
+  }
+  const computed = holdingPurchaseCostInEur(h, usdToEur, gbpToEur, hkdToEur, registry);
+  return { costEur: computed, needsPin: computed != null && computed > 0 };
+}
+
+/**
+ * Data tier of an account, mirroring how its value stays current:
+ *  - accruing: value is a formula over time (P2P/savings interest compounding)
+ *  - priced:   quantities held, values move with market prices
+ *  - manual:   value only changes when the user updates it
+ */
+export function accountTier(account) {
+  const t = (account?.accountType || account?.account_type || '').toLowerCase();
+  if (isP2pOrSavingsType(t) && (account?.interestRate ?? account?.interest_rate) != null) return 'accruing';
+  const holdingsCount = Number(account?.holdingsCount ?? account?.holdings_count) || 0;
+  if ((t === 'stocks' || t === 'crypto' || t === 'precious') && holdingsCount > 0) return 'priced';
+  return 'manual';
 }
 
 /** P2P/savings: parse balanceAsOfDate / investmentDate to YYYY-MM-DD */

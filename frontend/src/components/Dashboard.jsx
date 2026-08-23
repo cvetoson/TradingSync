@@ -1,6 +1,7 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import AssetIcon from './AssetIcons';
+import { getConsolidatedInstruments } from '../services/api';
 
 const COLORS = ['#4a7fb8', '#4ade80', '#e8a33d', '#8b6dab', '#c1614a', '#06b6d4', '#84cc16', '#f97316', '#64748b', '#a78bfa'];
 
@@ -44,7 +45,17 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
   const [activeSegment, setActiveSegment] = useState(null);
   /** Sort order for the right-hand allocation list only (pie chart order unchanged). */
   const [allocationSort, setAllocationSort] = useState('value');
+  /** Consolidated positions across accounts — the concentration view no broker shows */
+  const [instruments, setInstruments] = useState([]);
   const listRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getConsolidatedInstruments()
+      .then((d) => { if (!cancelled) setInstruments(d.instruments || []); })
+      .catch(() => { if (!cancelled) setInstruments([]); });
+    return () => { cancelled = true; };
+  }, [portfolioData?.lastUpdated]);
   const platforms = portfolioData?.platforms || [];
   const accounts = portfolioData?.accounts || [];
   const platformPieData = portfolioData?.pieData || [];
@@ -94,6 +105,27 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
     : Number(portfolioGrowthPercent) >= 0
       ? '#10b981'
       : '#ef4444';
+
+  // Money view headline: profit = value − money put in, over accounts with known deposits.
+  // "What did my money do" — the number a private investor actually wants first.
+  const moneyProfit = portfolioData.moneyProfitEur;
+  const depositsKnown = portfolioData.depositsKnownEur;
+  const hasMoneyView = moneyProfit != null && Number.isFinite(Number(moneyProfit)) && depositsKnown > 0;
+  const moneyProfitPct = hasMoneyView ? (moneyProfit / depositsKnown) * 100 : null;
+  const moneyColor = hasMoneyView ? (moneyProfit >= 0 ? '#10b981' : '#ef4444') : 'var(--text-3)';
+  const depositsCoverage = Number(portfolioData.depositsCoveragePercent) || 0;
+
+  // Concentration stats from the consolidated instrument view
+  const topPosition = instruments[0] || null;
+  const holdingsValueTotal = instruments.reduce((s, i) => s + (i.valueEur || 0), 0);
+  const top3Pct = totalValue > 0
+    ? (instruments.slice(0, 3).reduce((s, i) => s + (i.valueEur || 0), 0) / totalValue) * 100
+    : 0;
+  const p2pValue = accounts
+    .filter(a => ['p2p', 'savings'].includes((a.accountType || '').toLowerCase()))
+    .reduce((s, a) => s + (a.currentValue ?? a.balance ?? 0), 0);
+  const p2pPct = totalValue > 0 ? (p2pValue / totalValue) * 100 : 0;
+  const multiAccountInstruments = instruments.filter(i => i.accountCount > 1);
   const listItems =
     viewMode === 'platform' ? platforms : viewMode === 'instrument' ? instrumentPieData : tagPieData;
 
@@ -108,10 +140,6 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
     }
     return arr;
   }, [listItems, allocationSort]);
-
-  const topPlatform = useMemo(() =>
-    [...platforms].sort((a, b) => (b.value || 0) - (a.value || 0))[0] || null
-  , [platforms]);
 
   const pieColorIndex = (item) => {
     const i = pieData.findIndex((e) => e.name === item.name);
@@ -136,17 +164,43 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
           <div>
             <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-2" style={{ color: 'var(--text-3)' }}>Total Portfolio Value</p>
             <div className="text-4xl font-bold tracking-tight tabular-nums" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
+            {/* Money view leads: profit = value − money put in ("what did my money do") */}
+            {hasMoneyView && (
+              <div className="flex items-baseline gap-2 mt-3 flex-wrap">
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold tabular-nums"
+                  style={{
+                    color: moneyColor,
+                    background: moneyProfit >= 0 ? 'rgba(74,222,128,0.09)' : 'rgba(248,113,113,0.09)',
+                    border: `1px solid ${moneyProfit >= 0 ? 'rgba(74,222,128,0.18)' : 'rgba(248,113,113,0.18)'}`,
+                  }}
+                >
+                  {moneyProfit >= 0 ? '+' : '−'}{fmt(Math.abs(moneyProfit), currency)} · {moneyProfitPct >= 0 ? '+' : '−'}{Math.abs(moneyProfitPct).toFixed(2)}%
+                </span>
+                <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                  on {fmt(depositsKnown, currency)} in
+                  {depositsCoverage > 0 && depositsCoverage < 99.5 && ` · covers ${depositsCoverage.toFixed(0)}% of portfolio`}
+                </span>
+              </div>
+            )}
             {hasPortfolioGrowth && (
-              <span
-                className="inline-flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded-full text-xs font-semibold"
-                style={{
-                  color: portfolioGrowthColor,
-                  background: Number(portfolioGrowthPercent) >= 0 ? 'rgba(74,222,128,0.09)' : 'rgba(248,113,113,0.09)',
-                  border: `1px solid ${Number(portfolioGrowthPercent) >= 0 ? 'rgba(74,222,128,0.18)' : 'rgba(248,113,113,0.18)'}`,
-                }}
-              >
-                {portfolioGrowthLabel} cost-basis growth
-              </span>
+              hasMoneyView ? (
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-xs font-medium tabular-nums" style={{ color: portfolioGrowthColor }}>{portfolioGrowthLabel}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-3)' }}>vs cost basis (holdings with known cost)</span>
+                </div>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded-full text-xs font-semibold"
+                  style={{
+                    color: portfolioGrowthColor,
+                    background: Number(portfolioGrowthPercent) >= 0 ? 'rgba(74,222,128,0.09)' : 'rgba(248,113,113,0.09)',
+                    border: `1px solid ${Number(portfolioGrowthPercent) >= 0 ? 'rgba(74,222,128,0.18)' : 'rgba(248,113,113,0.18)'}`,
+                  }}
+                >
+                  {portfolioGrowthLabel} vs cost basis
+                </span>
+              )
             )}
             <div className="flex items-center gap-1.5 mt-3">
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: freshnessColor, boxShadow: `0 0 8px ${freshnessColor}` }} />
@@ -167,32 +221,39 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
         </div>
       </div>
 
-      {/* Quick stats — stacked beside the hero */}
+      {/* Concentration risk — stacked beside the hero; the numbers no single broker shows */}
       <div className="glass-card p-5 col-span-12 lg:col-span-4 flex flex-col justify-between gap-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Accounts</p>
-            <div className="text-2xl font-bold" style={{ color: 'var(--text-1)' }}>{accounts.length}</div>
-          </div>
-          <p className="text-xs text-right" style={{ color: 'var(--text-3)' }}>{platforms.length} platforms</p>
-        </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Largest Platform</p>
-            <div className="text-base font-bold truncate" style={{ color: 'var(--text-1)' }}>{topPlatform?.name || '—'}</div>
+            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Top Position</p>
+            <div className="text-base font-bold truncate" style={{ color: 'var(--text-1)' }}>{topPosition?.symbol || '—'}</div>
           </div>
-          <p className="text-xs text-right tabular-nums shrink-0" style={{ color: 'var(--text-3)' }}>{topPlatform ? fmt(topPlatform.value, currency) : '—'}</p>
+          <p className="text-xs text-right tabular-nums shrink-0" style={{ color: 'var(--text-3)' }}>
+            {topPosition && totalValue > 0
+              ? `${((topPosition.valueEur / totalValue) * 100).toFixed(1)}%${topPosition.accountCount > 1 ? ` · ${topPosition.accountCount} accts` : ''}`
+              : '—'}
+          </p>
         </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            {instrumentPieData[0]?.type && <AssetIcon type={instrumentPieData[0].type} size={24} />}
-            <div className="min-w-0">
-              <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-0.5" style={{ color: 'var(--text-3)' }}>Top Asset Type</p>
-              <div className="text-sm font-bold truncate leading-tight" style={{ color: 'var(--text-1)' }}>{instrumentPieData[0]?.name || '—'}</div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Top 3 Concentration</p>
+            <div className="text-xs truncate" style={{ color: 'var(--text-3)' }}>
+              {instruments.length > 0 ? instruments.slice(0, 3).map(i => i.symbol).join(' · ') : `${accounts.length} accounts · ${platforms.length} platforms`}
             </div>
           </div>
-          <p className="text-xs text-right shrink-0" style={{ color: 'var(--text-3)' }}>
-            {instrumentPieData[0] ? `${((instrumentPieData[0].value / totalValue) * 100).toFixed(1)}%` : '—'}
+          <p className="text-base font-bold tabular-nums shrink-0" style={{ color: top3Pct > 30 ? 'var(--accent)' : 'var(--text-1)' }}>
+            {instruments.length > 0 ? `${top3Pct.toFixed(1)}%` : '—'}
+          </p>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>P2P &amp; Savings Share</p>
+            <div className="text-xs truncate tabular-nums" style={{ color: 'var(--text-3)' }}>
+              {p2pPct > 0 ? `${fmt(p2pValue, currency)} accruing off-market` : 'no P2P or savings accounts'}
+            </div>
+          </div>
+          <p className="text-base font-bold tabular-nums shrink-0" style={{ color: p2pPct > 40 ? 'var(--accent)' : 'var(--text-1)' }}>
+            {p2pPct > 0 ? `${p2pPct.toFixed(1)}%` : '—'}
           </p>
         </div>
       </div>
@@ -279,9 +340,28 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="text-center">
-                <div className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Total</div>
-                <div className="text-lg font-bold mt-0.5" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
+              {/* Center shows the hovered slice; falls back to slice count (the header already shows the total) */}
+              <div className="text-center px-6">
+                {hoverIndex != null && pieData[hoverIndex] ? (
+                  <>
+                    <div className="text-xs font-medium uppercase tracking-wider truncate max-w-[120px]" style={{ color: 'var(--text-3)' }}>
+                      {pieData[hoverIndex].name}
+                    </div>
+                    <div className="text-lg font-bold mt-0.5" style={{ color: 'var(--text-1)' }}>
+                      {fmt(pieData[hoverIndex].value, currency)}
+                    </div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+                      {totalValue > 0 ? `${((pieData[hoverIndex].value / totalValue) * 100).toFixed(1)}%` : ''}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                      {viewMode === 'platform' ? 'Platforms' : viewMode === 'instrument' ? 'Types' : 'Tags'}
+                    </div>
+                    <div className="text-lg font-bold mt-0.5" style={{ color: 'var(--text-1)' }}>{pieData.length}</div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -400,6 +480,54 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
           </div>
         </div>
       </div>
+
+      {/* Consolidated positions across every account — true exposure per instrument */}
+      {instruments.length > 0 && (
+        <div className="glass-card p-6 col-span-12">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Top Holdings — All Accounts</h3>
+            {multiAccountInstruments.length > 0 && (
+              <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                {multiAccountInstruments.length} held on multiple platforms
+              </span>
+            )}
+          </div>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
+            Same instrument summed across platforms — the exposure no single broker shows
+          </p>
+          <div className="space-y-1.5">
+            {instruments.slice(0, 10).map((inst) => {
+              const pctOfPortfolio = totalValue > 0 ? (inst.valueEur / totalValue) * 100 : 0;
+              const barPct = holdingsValueTotal > 0 ? (inst.valueEur / instruments[0].valueEur) * 100 : 0;
+              const gainColor = inst.gainLossEur == null ? 'var(--text-3)' : inst.gainLossEur >= 0 ? '#10b981' : '#ef4444';
+              return (
+                <div key={inst.symbol} className="flex items-center gap-3 py-1.5 border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                  <div className="w-24 sm:w-32 shrink-0">
+                    <div className="text-sm font-medium truncate" style={{ color: 'var(--text-1)' }}>{inst.symbol}</div>
+                    <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+                      {inst.accountCount > 1
+                        ? `${inst.accountCount} accounts`
+                        : (inst.accounts[0]?.platform || inst.assetType)}
+                    </div>
+                  </div>
+                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                    <div className="h-full rounded-full" style={{ width: `${barPct}%`, background: inst.accountCount > 1 ? 'var(--accent)' : '#4a7fb8' }} />
+                  </div>
+                  <div className="w-32 sm:w-40 text-right shrink-0">
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>{fmt(inst.valueEur, currency)}</span>
+                    <span className="text-xs ml-2" style={{ color: 'var(--text-3)' }}>{pctOfPortfolio.toFixed(1)}%</span>
+                    {inst.gainLossEur != null && (
+                      <div className="text-[10px]" style={{ color: gainColor }}>
+                        {inst.gainLossEur >= 0 ? '+' : '−'}{fmt(Math.abs(inst.gainLossEur), currency)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

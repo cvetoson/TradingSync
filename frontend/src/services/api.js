@@ -269,3 +269,28 @@ export async function deleteHolding(holdingId) {
   const response = await api.delete(`/holdings/${holdingId}`);
   return response.data;
 }
+
+/** Consolidated positions across all accounts, grouped by symbol (true exposure view) */
+export async function getConsolidatedInstruments() {
+  const response = await api.get('/portfolio/instruments', {
+    params: { _t: Date.now() }
+  });
+  return response.data;
+}
+
+export async function getAccountCashFlows(accountId) {
+  const response = await api.get(`/accounts/${accountId}/cashflows`);
+  return response.data;
+}
+
+export async function createAccountCashFlow(accountId, amountEur, kind = 'deposit', flowDate = null, note = null) {
+  const response = await api.post(`/accounts/${accountId}/cashflows`, {
+    amountEur, kind, flowDate: flowDate || undefined, note: note || undefined
+  });
+  return response.data;
+}
+
+export async function deleteCashFlow(cashFlowId) {
+  const response = await api.delete(`/cashflows/${cashFlowId}`);
+  return response.data;
+}
