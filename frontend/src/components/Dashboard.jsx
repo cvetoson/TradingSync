@@ -110,10 +110,12 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
   // "What did my money do" — the number a private investor actually wants first.
   const moneyProfit = portfolioData.moneyProfitEur;
   const depositsKnown = portfolioData.depositsKnownEur;
-  const hasMoneyView = moneyProfit != null && Number.isFinite(Number(moneyProfit)) && depositsKnown > 0;
-  const moneyProfitPct = hasMoneyView ? (moneyProfit / depositsKnown) * 100 : null;
+  // Whole-portfolio basis: deposits where known + today's value (break-even) where not.
+  const missingDeposits = portfolioData.missingDepositAccounts || [];
+  const moneyBasis = portfolioData.moneyBasisEur ?? depositsKnown;
+  const hasMoneyView = moneyProfit != null && Number.isFinite(Number(moneyProfit)) && moneyBasis > 0;
+  const moneyProfitPct = hasMoneyView ? (moneyProfit / moneyBasis) * 100 : null;
   const moneyColor = hasMoneyView ? (moneyProfit >= 0 ? '#10b981' : '#ef4444') : 'var(--text-3)';
-  const depositsCoverage = Number(portfolioData.depositsCoveragePercent) || 0;
 
   // Concentration stats from the consolidated instrument view
   const topPosition = instruments[0] || null;
@@ -178,9 +180,20 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                   {moneyProfit >= 0 ? '+' : '−'}{fmt(Math.abs(moneyProfit), currency)} · {moneyProfitPct >= 0 ? '+' : '−'}{Math.abs(moneyProfitPct).toFixed(2)}%
                 </span>
                 <span className="text-xs" style={{ color: 'var(--text-3)' }}>
-                  on {fmt(depositsKnown, currency)} in
-                  {depositsCoverage > 0 && depositsCoverage < 99.5 && ` · covers ${depositsCoverage.toFixed(0)}% of portfolio`}
+                  on {missingDeposits.length > 0 ? '\u2265\u00a0' : ''}{fmt(moneyBasis, currency)} in
                 </span>
+                {missingDeposits.length > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1 text-xs cursor-help"
+                    style={{ color: '#f59e0b' }}
+                    title={`No deposit data \u2014 counted as unchanged (0% profit):\n${missingDeposits
+                      .map((a) => `\u2022 ${a.platform} ${a.accountName || ''} (${fmt(a.valueEur, currency)})`)
+                      .join('\n')}\nSet \u201cOriginal amount added\u201d in each account\u2019s settings to include it.`}
+                  >
+                    <span aria-hidden="true">{'\u26a0'}</span>
+                    {missingDeposits.length} account{missingDeposits.length !== 1 ? 's' : ''} not counted
+                  </span>
+                )}
               </div>
             )}
             {hasPortfolioGrowth && (
