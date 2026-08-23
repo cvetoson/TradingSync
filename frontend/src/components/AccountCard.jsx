@@ -99,6 +99,16 @@ export default function AccountCard({ account, currency, onUpdate, onViewDetails
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: fresh.color }} />
             <span>{fresh.label}</span>
             <span style={{ color: 'var(--text-4)' }}>· {tier.label}</span>
+            {!(account.depositsEur > 0) && (
+              <span
+                className="cursor-help"
+                style={{ color: '#f59e0b' }}
+                title={'No deposit data \u2014 this account counts as unchanged in the portfolio profit %. Set \u201cOriginal amount added\u201d in settings.'}
+                aria-label="Missing deposit data"
+              >
+                {'\u26a0'}
+              </span>
+            )}
           </div>
         </div>
 

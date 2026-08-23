@@ -758,6 +758,18 @@ export function getPortfolioSummary(req, res) {
         const valueForDepositsKnownEur = accountsWithDeposits.reduce((sum, acc) => sum + coerceFiniteNumber(acc.currentValue), 0);
         const moneyProfitEur = depositsKnownEur > 0 ? valueForDepositsKnownEur - depositsKnownEur : null;
         const depositsCoveragePercent = totalValue > 0 ? (valueForDepositsKnownEur / totalValue) * 100 : 0;
+        // Whole-portfolio money basis: accounts with no deposit data count at today's value,
+        // i.e. as break-even (profit 0). The headline % is then over the WHOLE portfolio —
+        // biased toward zero rather than invented — and the UI flags the unknown accounts.
+        const accountsMissingDeposits = portfolioData.filter((acc) => !(acc.depositsEur != null && acc.depositsEur > 0));
+        const flatAssumedValueEur = accountsMissingDeposits.reduce((sum, acc) => sum + coerceFiniteNumber(acc.currentValue), 0);
+        const moneyBasisEur = depositsKnownEur > 0 ? depositsKnownEur + flatAssumedValueEur : null;
+        const missingDepositAccounts = accountsMissingDeposits.map((acc) => ({
+          id: acc.id,
+          platform: acc.platform,
+          accountName: acc.accountName,
+          valueEur: Math.round(coerceFiniteNumber(acc.currentValue) * 100) / 100,
+        }));
 
         // Group by platform (parent) -> categories (accountType) -> accounts
         const platformMap = new Map();
@@ -811,6 +823,8 @@ export function getPortfolioSummary(req, res) {
           valueForDepositsKnownEur,
           moneyProfitEur,
           depositsCoveragePercent,
+          moneyBasisEur,
+          missingDepositAccounts,
           lastUpdated: new Date().toISOString()
         });
       } catch (summaryErr) {
