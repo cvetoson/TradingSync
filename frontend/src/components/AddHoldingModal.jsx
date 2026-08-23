@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createHolding } from '../services/api';
+import useModalBehavior from '../hooks/useModalBehavior';
 
 const ASSET_TYPES = [
   { value: 'stock', label: 'Stock / ETF' },
@@ -8,6 +9,7 @@ const ASSET_TYPES = [
 ];
 
 export default function AddHoldingModal({ accountId, accountType, onClose, onSuccess }) {
+  useModalBehavior(onClose);
   const [symbol, setSymbol] = useState('');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
@@ -44,7 +46,7 @@ export default function AddHoldingModal({ accountId, accountType, onClose, onSuc
       <div className="bg-white rounded-md shadow-xl max-w-md w-full p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold text-gray-800">Add Holding</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} className="p-2 -m-1 rounded-md text-gray-400 hover:text-gray-600" title="Close">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -74,7 +76,7 @@ export default function AddHoldingModal({ accountId, accountType, onClose, onSuc
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Price (optional — leave empty for live price)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Price in EUR (optional — leave empty for live price)</label>
             <input
               type="number"
               step="any"

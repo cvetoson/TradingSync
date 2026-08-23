@@ -38,6 +38,16 @@ function dbAll(db, sql, params) {
   });
 }
 
+/**
+ * Timestamp for last_updated/recorded_at writes. Always ISO-8601 UTC: SQLite's
+ * CURRENT_TIMESTAMP writes 'YYYY-MM-DD HH:MM:SS' (space, no zone), which breaks
+ * string comparison against ISO cutoffs (space < 'T'), parses as local time in
+ * JS, and mis-orders same-day history against ISO-format rows.
+ */
+export function nowIso() {
+  return new Date().toISOString();
+}
+
 
 
 /**
@@ -169,6 +179,9 @@ export async function saveHoldingsUpsert(accountId, holdings, currency) {
     const costBasisEur = isEur && h.costBasis != null && h.costBasis > 0 ? h.costBasis : null;
     const pnlKnown = h.profitLoss != null || h.profitLossPercent != null;
 
+    // Screenshot uploads set the price from the broker's own numbers.
+    const priceSource = h.currentPrice != null ? 'screenshot' : null;
+
     if (existing) {
       await dbRun(
         db,
@@ -176,20 +189,21 @@ export async function saveHoldingsUpsert(accountId, holdings, currency) {
          SET quantity = ?,
              quantity_source = COALESCE(?, quantity_source),
              current_price = COALESCE(?, current_price),
+             price_source = COALESCE(?, price_source),
              purchase_price = COALESCE(purchase_price, ?),
              cost_basis_eur = CASE WHEN ? THEN ? ELSE cost_basis_eur END,
              currency = ?,
-             last_updated = CURRENT_TIMESTAMP
+             last_updated = ?
          WHERE id = ?`,
-        [h.quantity, h.quantitySource, h.currentPrice, h.purchasePrice,
-          pnlKnown && costBasisEur != null, costBasisEur, h.holdingCurrency, existing.id]
+        [h.quantity, h.quantitySource, h.currentPrice, priceSource, h.purchasePrice,
+          pnlKnown && costBasisEur != null, costBasisEur, h.holdingCurrency, nowIso(), existing.id]
       );
     } else {
       await dbRun(
         db,
-        `INSERT INTO holdings (account_id, symbol, quantity, quantity_source, purchase_price, current_price, cost_basis_eur, currency, asset_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [accountId, h.symbol, h.quantity, h.quantitySource, h.purchasePrice, h.currentPrice, costBasisEur, h.holdingCurrency, h.assetType]
+        `INSERT INTO holdings (account_id, symbol, quantity, quantity_source, purchase_price, current_price, price_source, cost_basis_eur, currency, asset_type, last_updated)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [accountId, h.symbol, h.quantity, h.quantitySource, h.purchasePrice, h.currentPrice, priceSource, costBasisEur, h.holdingCurrency, h.assetType, nowIso()]
       );
     }
   }
@@ -323,9 +337,9 @@ export async function uploadScreenshot(req, res) {
                 `UPDATE accounts 
                  SET balance = ?, interest_rate = ?, account_type = ?, user_id = COALESCE(user_id, ?),
                      contributed_amount = COALESCE(contributed_amount, ?),
-                     last_updated = CURRENT_TIMESTAMP, screenshot_path = ?, raw_data = ?
+                     last_updated = ?, screenshot_path = ?, raw_data = ?
                  WHERE id = ?`,
-                [snap.accountBalance, interestRate, finalAccountType, userId, defaultContributedAmount, filePath, JSON.stringify(extractedData), existingAccount.id],
+                [snap.accountBalance, interestRate, finalAccountType, userId, defaultContributedAmount, nowIso(), filePath, JSON.stringify(extractedData), existingAccount.id],
                 function(updateErr) {
                   if (updateErr) {
                     reject(updateErr);
@@ -533,7 +547,7 @@ async function createHoldingHandler(req, res, accountId) {
     return res.status(400).json({ error: 'Symbol is required' });
   }
   const qty = parseFloat(quantity);
-  if (isNaN(qty) || qty <= 0) {
+  if (!Number.isFinite(qty) || qty <= 0 || qty > MAX_SANE_HISTORY_BALANCE) {
     return res.status(400).json({ error: 'Quantity must be a positive number' });
   }
 
@@ -546,13 +560,17 @@ async function createHoldingHandler(req, res, accountId) {
     }
 
     let currentPrice = price != null && price !== '' ? parseFloat(price) : null;
-    if (currentPrice != null && (isNaN(currentPrice) || currentPrice < 0)) currentPrice = null;
+    if (currentPrice != null && (!Number.isFinite(currentPrice) || currentPrice < 0 || currentPrice > MAX_SANE_HISTORY_BALANCE)) currentPrice = null;
+    let priceSource = currentPrice != null ? 'manual' : null;
 
     // If no price provided, try to fetch live price
     if (currentPrice == null) {
       try {
         const fetched = await fetchCurrentPrice(sym, asset);
-        if (fetched) currentPrice = fetched;
+        if (fetched) {
+          currentPrice = fetched;
+          priceSource = 'live';
+        }
       } catch (e) {
         console.warn('Could not fetch price for', sym, e?.message);
       }
@@ -563,8 +581,8 @@ async function createHoldingHandler(req, res, accountId) {
     }
 
     db.run(
-      'INSERT INTO holdings (account_id, symbol, quantity, purchase_price, current_price, currency, asset_type) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [accountId, sym, qty, currentPrice, currentPrice, curr, asset],
+      'INSERT INTO holdings (account_id, symbol, quantity, purchase_price, current_price, price_source, currency, asset_type, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [accountId, sym, qty, currentPrice, currentPrice, priceSource, curr, asset, nowIso()],
       function(insertErr) {
         if (insertErr) {
           return res.status(500).json({ error: insertErr.message });
@@ -1003,14 +1021,16 @@ export function updateAccountBalance(req, res) {
     return res.status(400).json({ error: 'accountId and balance are required' });
   }
 
+  // Number.isFinite rejects Infinity from inputs like 1e999 (parseFloat passes isNaN);
+  // stored Infinity serialises to null in JSON and corrupts the whole dashboard.
   const balanceValue = parseFloat(balance);
-  if (isNaN(balanceValue)) {
-    return res.status(400).json({ error: 'balance must be a valid number' });
+  if (!Number.isFinite(balanceValue) || balanceValue < 0 || balanceValue > MAX_SANE_HISTORY_BALANCE) {
+    return res.status(400).json({ error: 'balance must be a non-negative number within a sane range' });
   }
 
   db.run(
-    'UPDATE accounts SET balance = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
-    [balanceValue, accountId],
+    'UPDATE accounts SET balance = ?, last_updated = ? WHERE id = ?',
+    [balanceValue, nowIso(), accountId],
     function(err) {
       if (err) {
         return res.status(500).json({ error: err.message });
@@ -1022,8 +1042,8 @@ export function updateAccountBalance(req, res) {
 
       // Create a history entry for this manual update
       db.run(
-        'INSERT INTO account_history (account_id, balance, interest_rate, currency) VALUES (?, ?, (SELECT interest_rate FROM accounts WHERE id = ?), (SELECT currency FROM accounts WHERE id = ?))',
-        [accountId, balanceValue, accountId, accountId],
+        'INSERT INTO account_history (account_id, balance, interest_rate, currency, recorded_at) VALUES (?, ?, (SELECT interest_rate FROM accounts WHERE id = ?), (SELECT currency FROM accounts WHERE id = ?), ?)',
+        [accountId, balanceValue, accountId, accountId, nowIso()],
         (historyErr) => {
           if (historyErr) {
             console.error('Error creating history entry:', historyErr);
@@ -1062,8 +1082,8 @@ export function updateAccountInterestRate(req, res) {
   }
 
   db.run(
-    'UPDATE accounts SET interest_rate = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
-    [interestRateValue, accountId],
+    'UPDATE accounts SET interest_rate = ?, last_updated = ? WHERE id = ?',
+    [interestRateValue, nowIso(), accountId],
     function(err) {
       if (err) {
         return res.status(500).json({ error: err.message });
@@ -1100,8 +1120,8 @@ export function updateAccountContributedAmount(req, res) {
   }
 
   db.run(
-    'UPDATE accounts SET contributed_amount = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
-    [value, accountId],
+    'UPDATE accounts SET contributed_amount = ?, last_updated = ? WHERE id = ?',
+    [value, nowIso(), accountId],
     function(err) {
       if (err) {
         return res.status(500).json({ error: err.message });
@@ -1226,22 +1246,23 @@ export function getAccountHoldings(req, res) {
                   LSE_USD_ETF_SYMBOLS.includes(symInner) || (!isGbpPrice && !isChfPrice && !isEurNative && !isHkdHolding); // Default: non-GBP/CHF/EUR/HKD = USD
                 if (isChfPrice || isEurNative) {
                   priceCurrency = 'EUR';
-                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
+                  holding._updatePromise = dbRun(db, "UPDATE holdings SET current_price = ?, price_source = 'live', currency = ?, last_updated = ? WHERE id = ?", [currentPrice, 'EUR', nowIso(), holding.id]);
                 } else if (isGbpPrice && holdingCurrency === 'EUR') {
                   currentPrice = currentPrice * GBP_TO_EUR;
                   priceCurrency = 'EUR';
-                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
+                  holding._updatePromise = dbRun(db, "UPDATE holdings SET current_price = ?, price_source = 'live', currency = ?, last_updated = ? WHERE id = ?", [currentPrice, 'EUR', nowIso(), holding.id]);
                 } else if (isHkdHolding) {
                   priceCurrency = 'HKD';
-                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'HKD', holding.id]);
+                  holding._updatePromise = dbRun(db, "UPDATE holdings SET current_price = ?, price_source = 'live', currency = ?, last_updated = ? WHERE id = ?", [currentPrice, 'HKD', nowIso(), holding.id]);
                 } else if (isUsdPrice) {
                   currentPrice = currentPrice * USD_TO_EUR;
                   priceCurrency = 'EUR';
-                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, 'EUR', holding.id]);
+                  holding._updatePromise = dbRun(db, "UPDATE holdings SET current_price = ?, price_source = 'live', currency = ?, last_updated = ? WHERE id = ?", [currentPrice, 'EUR', nowIso(), holding.id]);
                 } else {
                   priceCurrency = holdingCurrency;
-                  holding._updatePromise = dbRun(db, 'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', [currentPrice, holding.id]);
+                  holding._updatePromise = dbRun(db, "UPDATE holdings SET current_price = ?, price_source = 'live', last_updated = ? WHERE id = ?", [currentPrice, nowIso(), holding.id]);
                 }
+                holding.price_source = 'live';
                 // Heal a 'placeholder' row (1 × position value, stored when no live price was
                 // available at upload): keep its value, derive the real quantity from this price.
                 if (holding.quantity_source === 'placeholder' && currentPrice > 0 && priceCurrency === holdingCurrency) {
@@ -1613,16 +1634,17 @@ export async function updateAccountWithScreenshot(req, res) {
             `UPDATE accounts 
              SET balance = ?, interest_rate = ?, 
                  contributed_amount = COALESCE(contributed_amount, ?),
-                 last_updated = CURRENT_TIMESTAMP, 
-                 screenshot_path = ?, 
+                 last_updated = ?,
+                 screenshot_path = ?,
                  raw_data = ?,
                  platform = ?
              WHERE id = ?`,
             [
-              snap.accountBalance, 
-              interestRate, 
+              snap.accountBalance,
+              interestRate,
               defaultContributedAmount,
-              filePath, 
+              nowIso(),
+              filePath,
               JSON.stringify(extractedData),
               detectedPlatform,
               accountId
@@ -1851,8 +1873,8 @@ export function updateHoldingSymbol(req, res) {
             const currentPrice = await fetchCurrentPrice(symbol.trim(), holding.asset_type || 'stock');
             if (currentPrice) {
               db.run(
-                'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
-                [currentPrice, holdingId]
+                "UPDATE holdings SET current_price = ?, price_source = 'live', last_updated = ? WHERE id = ?",
+                [currentPrice, nowIso(), holdingId]
               );
             }
           } catch (priceErr) {
@@ -1935,7 +1957,7 @@ export function updateHoldingQuantity(req, res) {
   }
 
   const quantityValue = parseFloat(quantity);
-  if (isNaN(quantityValue) || quantityValue < 0) {
+  if (!Number.isFinite(quantityValue) || quantityValue < 0 || quantityValue > MAX_SANE_HISTORY_BALANCE) {
     return res.status(400).json({ error: 'quantity must be a valid positive number' });
   }
 
@@ -1974,7 +1996,7 @@ export function updateHoldingPrice(req, res) {
   }
 
   const priceValue = parseFloat(price);
-  if (isNaN(priceValue) || priceValue < 0) {
+  if (!Number.isFinite(priceValue) || priceValue < 0 || priceValue > MAX_SANE_HISTORY_BALANCE) {
     return res.status(400).json({ error: 'price must be a valid positive number' });
   }
 
@@ -1983,9 +2005,9 @@ export function updateHoldingPrice(req, res) {
     : null;
 
   const sql = currency
-    ? 'UPDATE holdings SET current_price = ?, currency = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?'
-    : 'UPDATE holdings SET current_price = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?';
-  const params = currency ? [priceValue, currency, holdingId] : [priceValue, holdingId];
+    ? "UPDATE holdings SET current_price = ?, price_source = 'manual', currency = ?, last_updated = ? WHERE id = ?"
+    : "UPDATE holdings SET current_price = ?, price_source = 'manual', last_updated = ? WHERE id = ?";
+  const params = currency ? [priceValue, currency, nowIso(), holdingId] : [priceValue, nowIso(), holdingId];
 
   db.run(sql, params,
     function(err) {
@@ -2175,6 +2197,16 @@ export function deleteAccount(req, res) {
               console.log('[DELETE] Transactions deleted');
             }
 
+            // Delete cash flows — Postgres enforces the accounts FK (NO ACTION), so
+            // leaving these rows would make the final account delete fail with a 500.
+            db.run('DELETE FROM cash_flows WHERE account_id = ?', [accountId], (cashFlowErr) => {
+              if (cashFlowErr) {
+                console.error('[DELETE] Error deleting cash flows:', cashFlowErr);
+                // Continue even if cash flow deletion fails
+              } else {
+                console.log('[DELETE] Cash flows deleted');
+              }
+
             // Finally, delete the account itself
             console.log('[DELETE] Deleting account record...');
             db.run('DELETE FROM accounts WHERE id = ?', [accountId], function(deleteErr) {
@@ -2194,6 +2226,7 @@ export function deleteAccount(req, res) {
                 message: 'Account deleted successfully',
                 accountId: accountId
               });
+            });
             });
           });
         });
@@ -2216,7 +2249,7 @@ export function getConsolidatedInstruments(req, res) {
     `SELECT h.*, a.platform, a.account_name, a.account_type
      FROM holdings h
      JOIN accounts a ON a.id = h.account_id
-     WHERE a.user_id = ? OR a.user_id IS NULL`,
+     WHERE a.user_id = ?`,
     [userId],
     async (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -2339,7 +2372,7 @@ export function deleteCashFlow(req, res) {
   db.get(
     `SELECT cf.id FROM cash_flows cf
      JOIN accounts a ON a.id = cf.account_id
-     WHERE cf.id = ? AND (a.user_id = ? OR a.user_id IS NULL)`,
+     WHERE cf.id = ? AND a.user_id = ?`,
     [flowId, userId],
     (err, row) => {
       if (err) return res.status(500).json({ error: err.message });

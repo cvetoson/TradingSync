@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { uploadScreenshot, getAccounts, createAccount, createHolding, updateAccountInterestRate } from '../services/api';
+import { uploadScreenshot, getAccounts, createAccount, createHolding, updateAccountBalance, updateAccountInterestRate } from '../services/api';
+import useModalBehavior from '../hooks/useModalBehavior';
 
 const INVESTMENT_CATEGORIES = [
   { value: 'auto', label: 'Auto Detect', description: 'Let AI automatically detect the investment type from the screenshot', accountType: 'unknown' },
@@ -21,6 +22,7 @@ const MANUAL_ACCOUNT_TYPES = INVESTMENT_CATEGORIES.filter(c => c.value !== 'auto
 }));
 
 export default function UploadModal({ onClose, onSuccess, prefill = null }) {
+  useModalBehavior(onClose);
   const [mode, setMode] = useState('upload'); // 'upload' | 'manual'
   const [file, setFile] = useState(null);
   const [investmentCategory, setInvestmentCategory] = useState('');
@@ -115,16 +117,14 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
     const accountTypeForAccount = selectedType?.accountType || 'stocks';
     const assetTypeForHolding = selectedType?.assetType || 'stock';
 
-    let symbol, qty, price;
+    let symbol, qty, price, amountOnlyBalance;
     if (isAmountOnlyCategory) {
       const amount = parseFloat(manualAmount);
       if (isNaN(amount) || amount < 0) {
         setError('Please enter a valid amount');
         return;
       }
-      symbol = 'CASH_BALANCE';
-      qty = 1;
-      price = amount;
+      amountOnlyBalance = amount;
     } else {
       if (manualAccountType === 'precious') {
         symbol = manualPreciousPreset === 'other' ? manualSymbol.trim().toUpperCase() : manualPreciousPreset;
@@ -167,7 +167,13 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
           if (!isNaN(ir) && ir >= 0) await updateAccountInterestRate(accountId, ir);
         }
       }
-      await createHolding(accountId, symbol, qty, price, undefined, assetTypeForHolding);
+      if (isAmountOnlyCategory) {
+        // P2P/savings are valued from accounts.balance (balance-managed types), so a
+        // CASH_BALANCE holding would be ignored and the account would show 0,00 €.
+        await updateAccountBalance(accountId, amountOnlyBalance);
+      } else {
+        await createHolding(accountId, symbol, qty, price, undefined, assetTypeForHolding);
+      }
       onSuccess();
     } catch (err) {
       setError(err.message || 'Failed to add holding. Please try again.');
@@ -186,7 +192,7 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
       >
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-gray-800">Add New</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} className="p-2 -m-1 rounded-md text-gray-400 hover:text-gray-600" title="Close">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -396,7 +402,8 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
                 </div>
                 <div>
                   <label className={labelClass}>
-                    {manualAccountType === 'fixed-income' ? 'Price per bond (optional)' : manualAccountType === 'alternative' ? 'Price (required)' : 'Price (optional — leave empty for live price)'}
+                    {/* The backend stores manual prices as EUR — say so, or a USD price entered for a US ticker is silently wrong by the FX rate */}
+                    {manualAccountType === 'fixed-income' ? 'Price per bond in EUR (optional)' : manualAccountType === 'alternative' ? 'Price in EUR (required)' : 'Price in EUR (optional — leave empty for live price)'}
                   </label>
                   <input
                     type="number"

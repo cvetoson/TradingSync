@@ -1,10 +1,11 @@
 import { getDatabase } from '../database.js';
 import { fetchCurrentPrice } from './marketData.js';
+import { isP2pOrSavingsType } from '../lib/portfolioUtils.js';
 
 /**
  * Calculates the current portfolio value for an account
  * Handles different account types:
- * - P2P: Uses balance + interest calculations
+ * - P2P/savings: Uses balance + interest calculations
  * - Stocks: Uses current market prices
  * - Crypto: Uses current market prices
  */
@@ -15,8 +16,10 @@ export async function calculatePortfolioValue(account) {
     try {
       const balanceNum = Number(account.balance);
       const balance = Number.isFinite(balanceNum) ? balanceNum : 0;
-      if (account.account_type === 'p2p') {
-        // For P2P, calculate based on balance and interest rate
+      // Savings accrues exactly like P2P: the account tier, UI badge, and daily
+      // history backfill all already treat 'savings' as compounding.
+      if (isP2pOrSavingsType(account.account_type)) {
+        // For P2P/savings, calculate based on balance and interest rate
         // Future value = balance * (1 + interest_rate/100) ^ (days/365)
         const interestRate = account.interest_rate || 0;
         
@@ -43,20 +46,4 @@ export async function calculatePortfolioValue(account) {
       reject(error);
     }
   });
-}
-
-/**
- * Calculates future value for P2P accounts
- * @param {number} balance - Current balance
- * @param {number} interestRate - Annual interest rate
- * @param {number} months - Number of months
- * @param {number} days - Additional days
- * @returns {number} Future value
- */
-export function calculateFutureValue(balance, interestRate, months = 0, days = 0) {
-  const totalDays = months * 30 + days;
-  const years = totalDays / 365;
-  
-  // Compound interest: FV = PV * (1 + r)^t
-  return balance * Math.pow(1 + (interestRate / 100), years);
 }

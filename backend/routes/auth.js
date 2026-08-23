@@ -56,18 +56,21 @@ export function logout(req, res) {
   res.json({ success: true });
 }
 
+// Canonical production host, used only when APP_URL is not configured. Reset links
+// must NEVER be derived from request headers (X-Forwarded-Host / Host): the reset
+// token is a bearer credential, so a client-supplied host would let an attacker
+// poison a victim's reset email and capture the token.
+const PROD_FALLBACK_APP_URL = 'https://tradingsync-production.up.railway.app';
+
 /**
  * Resolve the public app base URL for links in emails.
- * Priority: explicit APP_URL → in production, the actual request origin (Railway
- * sets X-Forwarded-*) so links point to wherever the app is served → dev frontend port.
- * This prevents reset links from hardcoding localhost when APP_URL is unset in production.
+ * Priority: explicit APP_URL → hardcoded canonical production host → dev frontend port.
  */
-function resolveAppUrl(req) {
+function resolveAppUrl() {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, '');
   if (process.env.NODE_ENV === 'production') {
-    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-    const host = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
-    if (host) return `${proto}://${host}`;
+    console.warn('⚠️  APP_URL not set — email links use the canonical production host. Set APP_URL explicitly.');
+    return PROD_FALLBACK_APP_URL;
   }
   const devPort = process.env.VITE_DEV_PORT || 5173;
   return `http://localhost:${devPort}`;
@@ -90,11 +93,23 @@ export async function register(req, res) {
     return res.status(400).json({ error: 'Invalid email format' });
   }
 
-  if (String(password).length < 8) {
+  // Non-string passwords (e.g. JSON numbers) make bcryptjs throw; the async rejection
+  // would otherwise escape Express 4 and crash the process (unauthenticated DoS).
+  if (typeof password !== 'string') {
+    return res.status(400).json({ error: 'Password must be a string' });
+  }
+
+  if (password.length < 8) {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
-  const hash = await bcrypt.hash(password, 10);
+  let hash;
+  try {
+    hash = await bcrypt.hash(password, 10);
+  } catch (e) {
+    logError('POST /auth/register', e?.message || 'hash failed', 500);
+    return res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
   const displayNameVal = (displayName || '').trim() || null;
 
   // TODO: Add email verification – require verify before login, send verification email on register
@@ -106,6 +121,9 @@ export async function register(req, res) {
       if (err) {
         const msg = (err.message || '').toLowerCase();
         if (msg.includes('unique') || msg.includes('duplicate key')) {
+          // Known tradeoff: the distinct 409 lets an attacker probe which emails are
+          // registered, but the clear error is deliberately kept for signup UX.
+          // Login and forgot-password stay generic, and this route is rate-limited.
           logError('POST /auth/register', 'duplicate_email', 409);
           return res.status(409).json({
             error: 'This email is already registered. Sign in or use Forgot password to reset.',
@@ -246,7 +264,7 @@ export async function forgotPassword(req, res) {
           return res.status(500).json({ error: 'Could not process request. Please try again.' });
         }
 
-        const emailResult = await sendPasswordResetEmail(emailNorm, resetToken, resolveAppUrl(req));
+        const emailResult = await sendPasswordResetEmail(emailNorm, resetToken, resolveAppUrl());
         if (!emailResult.sent) {
           console.error('📧 Password reset email failed:', emailResult.error);
         }
@@ -278,11 +296,21 @@ export async function resetPassword(req, res) {
     return res.status(400).json({ error: 'Passwords do not match' });
   }
 
-  if (String(password).length < 8) {
+  if (typeof password !== 'string') {
+    return res.status(400).json({ error: 'Password must be a string' });
+  }
+
+  if (password.length < 8) {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
-  const hash = await bcrypt.hash(password, 10);
+  let hash;
+  try {
+    hash = await bcrypt.hash(password, 10);
+  } catch (e) {
+    logError('POST /auth/reset-password', e?.message || 'hash failed', 500);
+    return res.status(500).json({ error: 'Could not reset password. Please try again.' });
+  }
 
   db.get(
     'SELECT id, email FROM users WHERE password_reset_token = ? AND password_reset_expires > ?',
@@ -351,7 +379,10 @@ export async function changePassword(req, res) {
   if (newPassword !== confirmPassword) {
     return res.status(400).json({ error: 'New passwords do not match' });
   }
-  if (String(newPassword).length < 8) {
+  if (typeof newPassword !== 'string') {
+    return res.status(400).json({ error: 'New password must be a string' });
+  }
+  if (newPassword.length < 8) {
     return res.status(400).json({ error: 'New password must be at least 8 characters' });
   }
 
@@ -359,14 +390,19 @@ export async function changePassword(req, res) {
     if (err) return res.status(500).json({ error: err.message });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const ok = await bcrypt.compare(oldPassword, user.password_hash);
-    if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+    try {
+      const ok = await bcrypt.compare(oldPassword, user.password_hash);
+      if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
 
-    const hash = await bcrypt.hash(newPassword, 10);
-    db.run('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [hash, userId], function (updateErr) {
-      if (updateErr) return res.status(500).json({ error: updateErr.message });
-      res.json({ success: true, message: 'Password updated' });
-    });
+      const hash = await bcrypt.hash(newPassword, 10);
+      db.run('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [hash, userId], function (updateErr) {
+        if (updateErr) return res.status(500).json({ error: updateErr.message });
+        res.json({ success: true, message: 'Password updated' });
+      });
+    } catch (e) {
+      logError('PUT /auth/change-password', e?.message || 'hash failed', 500);
+      res.status(500).json({ error: 'Could not update password. Please try again.' });
+    }
   });
 }
 

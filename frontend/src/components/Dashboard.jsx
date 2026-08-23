@@ -162,7 +162,8 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
           aria-hidden="true"
           style={{ right: -60, top: -60, width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle, rgba(200,146,62,0.14), transparent 70%)' }}
         />
-        <div className="flex items-start justify-between gap-4">
+        {/* flex-wrap: at narrow widths the CTA drops to its own row instead of overflowing the card */}
+        <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
           <div>
             <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-2" style={{ color: 'var(--text-3)' }}>Total Portfolio Value</p>
             <div className="text-4xl font-bold tracking-tight tabular-nums" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
