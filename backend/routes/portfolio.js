@@ -10,6 +10,8 @@ import {
   isEurNativeSymbol,
   holdingValueInEur,
   holdingPurchaseCostInEur,
+  resolveHoldingCostBasisEur,
+  accountTier,
   parseBalanceAsOfIso,
   isPastCalendarDate,
   compoundP2PToNow,
@@ -21,6 +23,7 @@ import {
   sanitizeHistoryBalance,
   resolveP2pSnapshotFromUpload,
 } from '../lib/portfolioUtils.js';
+import { loadInstrumentRegistry } from '../services/priceService.js';
 
 /** Promise wrapper for db.run so we can await DB writes before returning */
 function dbRun(db, sql, params) {
@@ -605,6 +608,21 @@ export function getPortfolioSummary(req, res) {
       try {
         // Live USD→EUR for portfolio totals (same as holdings detail)
         const usdToEur = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || (await fetchUsdToEurRate()) || 0.846;
+        const instrumentRegistry = await loadInstrumentRegistry().catch(() => ({}));
+        // Deposits per account: dated cash_flows win, contributed_amount is the fallback
+        const depositsByAccount = await new Promise((resolve) => {
+          db.all(
+            `SELECT account_id,
+                    SUM(CASE WHEN kind = 'withdrawal' THEN -amount_eur ELSE amount_eur END) AS net_eur
+             FROM cash_flows GROUP BY account_id`,
+            [],
+            (cfErr, rows) => {
+              const map = {};
+              if (!cfErr && rows) for (const r of rows) map[r.account_id] = coerceFiniteNumber(r.net_eur);
+              resolve(map);
+            }
+          );
+        });
         // Calculate current values for each account
         const portfolioData = await Promise.all(
           accounts.map(async (account) => {
@@ -623,7 +641,7 @@ export function getPortfolioSummary(req, res) {
               const hkdRate = hkdToEur || 0.11;
               const holdingsResult = await new Promise((resolve) => {
                 db.all(
-                  'SELECT symbol, quantity, current_price, purchase_price, currency, asset_type FROM holdings WHERE account_id = ?',
+                  'SELECT id, symbol, quantity, current_price, purchase_price, cost_basis_eur, currency, asset_type FROM holdings WHERE account_id = ?',
                   [account.id],
                   (err, holdings) => {
                     if (err) {
@@ -631,14 +649,19 @@ export function getPortfolioSummary(req, res) {
                       return;
                     }
                     const list = holdings || [];
-                    const totalValueEur = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpRate, hkdRate), 0);
+                    const totalValueEur = list.reduce((sum, h) => sum + holdingValueInEur(h, usdToEur, gbpRate, hkdRate, instrumentRegistry), 0);
                     let costBasisEur = 0;
                     let currentValueForCostKnownEur = 0;
                     for (const h of list) {
-                      const cost = holdingPurchaseCostInEur(h, usdToEur, gbpRate, hkdRate);
-                      if (cost != null && cost > 0) {
-                        costBasisEur += cost;
-                        currentValueForCostKnownEur += holdingValueInEur(h, usdToEur, gbpRate, hkdRate);
+                      // Pinned EUR cost basis: stored value wins; computed values are persisted
+                      // once so later FX moves never distort P&L.
+                      const { costEur, needsPin } = resolveHoldingCostBasisEur(h, usdToEur, gbpRate, hkdRate, instrumentRegistry);
+                      if (costEur != null && costEur > 0) {
+                        if (needsPin && h.id != null) {
+                          db.run('UPDATE holdings SET cost_basis_eur = ? WHERE id = ?', [costEur, h.id], () => {});
+                        }
+                        costBasisEur += costEur;
+                        currentValueForCostKnownEur += holdingValueInEur(h, usdToEur, gbpRate, hkdRate, instrumentRegistry);
                       }
                     }
                     resolve({ totalValueEur, costBasisEur, currentValueForCostKnownEur });
@@ -678,19 +701,27 @@ export function getPortfolioSummary(req, res) {
 
             currentValue = coerceFiniteNumber(currentValue);
 
+            // Money-in per account: dated cash flows first, contributed_amount fallback
+            const cashFlowNet = depositsByAccount[account.id];
+            const contributed = account.contributed_amount != null ? coerceFiniteNumber(account.contributed_amount) : null;
+            const depositsEur = cashFlowNet != null && cashFlowNet > 0 ? cashFlowNet
+              : (contributed != null && contributed > 0 ? contributed : null);
+
             return {
               id: account.id,
               platform: account.platform,
               accountName: account.account_name,
               accountType: account.account_type,
               balance: coerceFiniteNumber(account.balance),
-              contributedAmount: account.contributed_amount != null ? coerceFiniteNumber(account.contributed_amount) : null,
+              contributedAmount: contributed,
+              depositsEur,
               currentValue,
               currency: account.currency,
               interestRate: account.interest_rate,
               lastUpdated: account.last_updated,
               holdingsCount: account.holdings_count,
               tag: account.tag || null,
+              tier: accountTier(account),
               costBasisEur: account._costBasisEur || 0,
               currentValueForCostKnownEur: account._currentValueForCostKnownEur || 0
             };
@@ -703,12 +734,14 @@ export function getPortfolioSummary(req, res) {
               accountType: account.account_type,
               balance: coerceFiniteNumber(account.balance),
               contributedAmount: account.contributed_amount != null ? coerceFiniteNumber(account.contributed_amount) : null,
+              depositsEur: null,
               currentValue: coerceFiniteNumber(account.balance),
               currency: account.currency,
               interestRate: account.interest_rate,
               lastUpdated: account.last_updated,
               holdingsCount: account.holdings_count,
               tag: account.tag || null,
+              tier: accountTier(account),
               costBasisEur: 0,
               currentValueForCostKnownEur: 0
             };
@@ -723,6 +756,14 @@ export function getPortfolioSummary(req, res) {
         const portfolioGrowthPercent = portfolioCostBasisEur > 0
           ? ((portfolioCurrentValueForCostKnownEur - portfolioCostBasisEur) / portfolioCostBasisEur) * 100
           : null;
+
+        // Money view (headline): profit = value − money put in, over accounts where
+        // deposits are known. Computed once here so header and rows can never disagree.
+        const accountsWithDeposits = portfolioData.filter((acc) => acc.depositsEur != null && acc.depositsEur > 0);
+        const depositsKnownEur = accountsWithDeposits.reduce((sum, acc) => sum + acc.depositsEur, 0);
+        const valueForDepositsKnownEur = accountsWithDeposits.reduce((sum, acc) => sum + coerceFiniteNumber(acc.currentValue), 0);
+        const moneyProfitEur = depositsKnownEur > 0 ? valueForDepositsKnownEur - depositsKnownEur : null;
+        const depositsCoveragePercent = totalValue > 0 ? (valueForDepositsKnownEur / totalValue) * 100 : 0;
 
         // Group by platform (parent) -> categories (accountType) -> accounts
         const platformMap = new Map();
@@ -772,6 +813,10 @@ export function getPortfolioSummary(req, res) {
           portfolioCostBasisEur,
           portfolioCurrentValueForCostKnownEur,
           portfolioGrowthPercent,
+          depositsKnownEur,
+          valueForDepositsKnownEur,
+          moneyProfitEur,
+          depositsCoveragePercent,
           lastUpdated: new Date().toISOString()
         });
       } catch (summaryErr) {
@@ -1847,7 +1892,8 @@ export function updateHoldingQuantity(req, res) {
   }
 
   db.run(
-    'UPDATE holdings SET quantity = ? WHERE id = ?',
+    // Quantity changes the position's cost basis; clear the pin so it re-pins on next load
+    'UPDATE holdings SET quantity = ?, cost_basis_eur = NULL WHERE id = ?',
     [quantityValue, holdingId],
     function(err) {
       if (err) {
@@ -1933,7 +1979,9 @@ export function updateHoldingPurchasePrice(req, res) {
   }
 
   db.run(
-    'UPDATE holdings SET purchase_price = ? WHERE id = ?',
+    // Clearing cost_basis_eur re-pins the EUR cost at today's FX on the next
+    // summary load — the edit is the new capture time.
+    'UPDATE holdings SET purchase_price = ?, cost_basis_eur = NULL WHERE id = ?',
     [purchasePriceValue, holdingId],
     function(err) {
       if (err) {
@@ -2104,4 +2152,154 @@ export function deleteAccount(req, res) {
       });
     });
   });
+}
+
+/**
+ * Consolidated positions across every account, grouped by symbol.
+ * Surfaces true exposure no single platform view can show — the same instrument
+ * held in two brokers, or two names quietly becoming 20% of everything.
+ */
+export function getConsolidatedInstruments(req, res) {
+  const db = getDatabase();
+  const userId = req.userId;
+  if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+  db.all(
+    `SELECT h.*, a.platform, a.account_name, a.account_type
+     FROM holdings h
+     JOIN accounts a ON a.id = h.account_id
+     WHERE a.user_id = ? OR a.user_id IS NULL`,
+    [userId],
+    async (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      try {
+        const [fetchedUsd, gbpToEur, hkdToEur] = await Promise.all([
+          fetchUsdToEurRate(), fetchGbpToEurRate(), fetchHkdToEurRate()
+        ]);
+        const usd = Number(process.env.EXCHANGE_RATE_USD_TO_EUR) || fetchedUsd || 0.846;
+        const gbp = gbpToEur || 1.17;
+        const hkd = hkdToEur || 0.11;
+        const registry = await loadInstrumentRegistry().catch(() => ({}));
+
+        const bySymbol = new Map();
+        for (const h of rows || []) {
+          const sym = String(h.symbol || '').trim().toUpperCase();
+          if (!sym || sym.includes('CASH')) continue;
+          const valueEur = holdingValueInEur(h, usd, gbp, hkd, registry);
+          const { costEur } = resolveHoldingCostBasisEur(h, usd, gbp, hkd, registry);
+          if (!bySymbol.has(sym)) {
+            bySymbol.set(sym, {
+              symbol: sym,
+              assetType: (h.asset_type || 'stock').toLowerCase(),
+              totalQuantity: 0,
+              valueEur: 0,
+              costBasisEur: 0,
+              costBasisKnown: true,
+              accounts: []
+            });
+          }
+          const entry = bySymbol.get(sym);
+          entry.totalQuantity += coerceFiniteNumber(h.quantity);
+          entry.valueEur += coerceFiniteNumber(valueEur);
+          if (costEur != null && costEur > 0) entry.costBasisEur += costEur;
+          else entry.costBasisKnown = false;
+          entry.accounts.push({
+            accountId: h.account_id,
+            platform: h.platform,
+            accountName: h.account_name,
+            quantity: coerceFiniteNumber(h.quantity),
+            valueEur: coerceFiniteNumber(valueEur)
+          });
+        }
+
+        const instruments = Array.from(bySymbol.values())
+          .filter((e) => e.valueEur > 0)
+          .sort((a, b) => b.valueEur - a.valueEur);
+        const totalValueEur = instruments.reduce((s, e) => s + e.valueEur, 0);
+        for (const e of instruments) {
+          e.percentOfHoldings = totalValueEur > 0 ? (e.valueEur / totalValueEur) * 100 : 0;
+          e.accountCount = e.accounts.length;
+          e.gainLossEur = e.costBasisKnown && e.costBasisEur > 0 ? e.valueEur - e.costBasisEur : null;
+        }
+
+        res.json({ instruments, totalValueEur, currency: 'EUR' });
+      } catch (e) {
+        console.error('getConsolidatedInstruments error:', e);
+        res.status(500).json({ error: e.message || 'Failed to consolidate instruments' });
+      }
+    }
+  );
+}
+
+// List dated deposits/withdrawals for an account
+export function getAccountCashFlows(req, res) {
+  const db = getDatabase();
+  const accountId = req.params.id;
+  db.all(
+    'SELECT * FROM cash_flows WHERE account_id = ? ORDER BY flow_date DESC, id DESC',
+    [accountId],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const flows = (rows || []).map((r) => ({
+        id: r.id,
+        accountId: r.account_id,
+        amountEur: coerceFiniteNumber(r.amount_eur),
+        kind: r.kind,
+        flowDate: r.flow_date,
+        note: r.note || null
+      }));
+      const netDepositsEur = flows.reduce(
+        (s, f) => s + (f.kind === 'withdrawal' ? -f.amountEur : f.amountEur), 0);
+      res.json({ cashFlows: flows, netDepositsEur });
+    }
+  );
+}
+
+// Record a deposit or withdrawal (EUR) for an account
+export function createAccountCashFlow(req, res) {
+  const db = getDatabase();
+  const accountId = req.params.id;
+  const { amountEur, kind, flowDate, note } = req.body || {};
+
+  const amount = parseFlexibleNumberInput(amountEur);
+  if (amount == null || !Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'amountEur must be a positive number' });
+  }
+  const kindNorm = kind === 'withdrawal' ? 'withdrawal' : 'deposit';
+  const date = flowDate && /^\d{4}-\d{2}-\d{2}$/.test(String(flowDate))
+    ? String(flowDate)
+    : new Date().toISOString().split('T')[0];
+
+  db.run(
+    'INSERT INTO cash_flows (account_id, amount_eur, kind, flow_date, note) VALUES (?, ?, ?, ?, ?)',
+    [accountId, amount, kindNorm, date, note || null],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({
+        success: true,
+        cashFlow: { id: this.lastID, accountId: Number(accountId), amountEur: amount, kind: kindNorm, flowDate: date, note: note || null }
+      });
+    }
+  );
+}
+
+// Delete a cash flow (ownership verified through the account's user)
+export function deleteCashFlow(req, res) {
+  const db = getDatabase();
+  const flowId = req.params.id;
+  const userId = req.userId;
+  db.get(
+    `SELECT cf.id FROM cash_flows cf
+     JOIN accounts a ON a.id = cf.account_id
+     WHERE cf.id = ? AND (a.user_id = ? OR a.user_id IS NULL)`,
+    [flowId, userId],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!row) return res.status(404).json({ error: 'Cash flow not found' });
+      db.run('DELETE FROM cash_flows WHERE id = ?', [flowId], function (delErr) {
+        if (delErr) return res.status(500).json({ error: delErr.message });
+        res.json({ success: true, deletedId: Number(flowId) });
+      });
+    }
+  );
 }

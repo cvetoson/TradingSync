@@ -133,3 +133,37 @@
 3. Created `backend/tests/portfolioUtils.test.js` — 71 unit tests for utility functions
 4. Created `backend/tests/calculations.test.js` — 13 unit tests for calculation functions
 5. Added `"test"` script to `backend/package.json`
+
+---
+
+## Round 2 — Prototype-review improvements (Aug 2026)
+
+New suite `backend/tests/costBasisAndTiers.test.js` (19 tests) covering the
+changes adopted from the consolidated-portfolio prototype review:
+
+### resolveHoldingCostBasisEur (pinned EUR cost basis)
+- [x] prefers the stored pinned value over recomputation
+- [x] pinned value is immune to FX changes
+- [x] computes from purchase_price and flags needsPin when no stored value
+- [x] unpinned computation DOES move with FX (the bug pinning fixes)
+- [x] returns null cost and no pin when purchase price unknown
+- [x] ignores a stored zero/negative pin and recomputes
+
+### Instrument registry overrides
+- [x] registry marks an unknown symbol as GBP pence listing
+- [x] without registry the unknown symbol is not treated as pence
+- [x] registry EUR-native prevents USD conversion
+- [x] registry applies to cost basis the same way as value
+- [x] hardcoded LSE GBP list still works with no registry (back-compat)
+
+### accountTier (live / priced / accruing data-tier model)
+- [x] P2P with interest rate is accruing
+- [x] savings with interest rate is accruing
+- [x] P2P without interest rate is manual
+- [x] stocks with holdings is priced
+- [x] crypto with holdings is priced (camelCase fields)
+- [x] stocks without holdings is manual
+- [x] bank account is manual
+- [x] handles null account
+
+Results: **103 tests, 103 pass, 0 fail**

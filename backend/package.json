@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "test": "node --test tests/portfolioUtils.test.js tests/calculations.test.js"
+    "test": "node --test tests/portfolioUtils.test.js tests/calculations.test.js tests/costBasisAndTiers.test.js"
   },
   "dependencies": {
     "axios": "^1.6.2",

@@ -11,6 +11,24 @@ const ACCOUNT_TYPES = [
   { value: 'unknown', label: 'Alternative Investments', color: 'bg-slate-500/10 text-slate-500 border border-slate-500/20' }
 ];
 
+/** How this account's value stays current — accounts age at different rates */
+function tierInfo(account) {
+  const tier = account.tier;
+  if (tier === 'accruing') return { label: `auto-accrual @ ${account.interestRate}%`, alwaysFresh: true };
+  if (tier === 'priced') return { label: 'screenshot + live prices', alwaysFresh: false };
+  return { label: 'manual updates', alwaysFresh: false };
+}
+
+/** Freshness of the stored positions: green ≤ 1d, amber ≤ 14d, red beyond */
+function freshness(lastUpdated, alwaysFresh) {
+  if (alwaysFresh) return { color: '#10b981', label: 'accruing daily' };
+  if (!lastUpdated) return { color: 'var(--text-4)', label: 'never updated' };
+  const days = Math.floor((Date.now() - new Date(lastUpdated).getTime()) / 86400000);
+  const color = days <= 1 ? '#10b981' : days <= 14 ? '#f59e0b' : '#ef4444';
+  const label = days <= 0 ? 'updated today' : days === 1 ? 'updated yesterday' : days < 30 ? `updated ${days}d ago` : `updated ${Math.floor(days / 30)}mo ago`;
+  return { color, label };
+}
+
 export default function AccountCard({ account, currency, onUpdate, onViewDetails }) {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
@@ -19,6 +37,8 @@ export default function AccountCard({ account, currency, onUpdate, onViewDetails
   }).format(account.currentValue);
 
   const typeConfig = ACCOUNT_TYPES.find(t => t.value === account.accountType) || ACCOUNT_TYPES[ACCOUNT_TYPES.length - 1];
+  const tier = tierInfo(account);
+  const fresh = freshness(account.lastUpdated, tier.alwaysFresh);
 
   return (
     <>
@@ -75,8 +95,10 @@ export default function AccountCard({ account, currency, onUpdate, onViewDetails
               {account.holdingsCount} holding{account.holdingsCount !== 1 ? 's' : ''}
             </div>
           )}
-          <div className="text-xs mt-2" style={{ color: 'var(--text-4)' }}>
-            {new Date(account.lastUpdated).toLocaleDateString()}
+          <div className="flex items-center gap-1.5 mt-2 text-xs" style={{ color: 'var(--text-4)' }} title={tier.label}>
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: fresh.color }} />
+            <span>{fresh.label}</span>
+            <span style={{ color: 'var(--text-4)' }}>· {tier.label}</span>
           </div>
         </div>
 
