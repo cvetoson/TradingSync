@@ -91,7 +91,11 @@ export async function analyzeScreenshot(filePath, platform, accountType = null) 
       "symbol": <stock/crypto symbol (e.g., "TSLA", "ASML", "AMD", "META", "NFLX")>,
       "quantity": <number of shares/coins (e.g., 0.42, 0.06, 0.41)>,
       "currentPrice": <current price per unit at time of screenshot, or null if not visible>,
-      "purchasePrice": <purchase price if visible, or null>,
+      "purchasePrice": <purchase price per unit if visible, or null>,
+      "currentValue": <TOTAL current value of this position as shown (e.g. 1052.01 for "€1,052.01"), or null>,
+      "profitLoss": <unrealised profit/loss of this position in money as shown, signed (e.g. 322.77 for "+€322.77", -119.65 for "−€119.65"), or null if not shown>,
+      "profitLossPercent": <unrealised profit/loss in percent as shown, signed (e.g. 44.26 for "(44.26%)", -78.81 for "(78.81%)" in red / with a minus), or null>,
+      "portfolioPercent": <this position's share of the portfolio in percent if shown (e.g. 13.93 for "13.93%"), or null>,
       "assetType": <"stock", "crypto", "etf", "bond", or "precious" for gold/silver/XAG/XAU>,
       "name": <full name of the asset (e.g., "Tesla", "ASML Holding", "Advanced Micro Devices")>,
       "currency": <currency of the price/value - DETECT from symbols: € or EUR → "EUR", $ or USD → "USD", £ or GBP → "GBP", Fr or CHF → "CHF", HK$ or HKD → "HKD">
@@ -145,17 +149,28 @@ CRITICAL INSTRUCTIONS:
   - For bonds, extract the currentValue shown (e.g., "543,42 €" = 543.42) and use a simple name like "ROMANIA" as the symbol
   - The "balance" field for the account should be the TOTAL account value (sum of all holdings + cash)
   - Example: If you see "Brokerage account" with total "1210,14 €" and individual holdings like "Tesla: 149,20 € (0.42 TSLA)", "Romania 5.25% 05/32: 543,42 €", "Cash balance: 44,21 €", extract each holding separately with their currentValue and use "ROMANIA" (not ISIN) as the symbol for the bond
+- **POSITION LISTS (Trading 212, Revolut, eToro, IBKR "Portfolio" tab, etc.)**: Each row is one position. Typical layout: logo, full name, then "TICKER · 13.93%" (ticker and portfolio share) on the left; the position's TOTAL VALUE on the right (e.g. "€1,052.01"); and below it the unrealised P&L in money and percent (e.g. "+€322.77 (44.26%)" in green, or "−€119.65 (78.81%)" in red = negative).
+  - Extract EVERY row — do not stop early, do not summarise, do not merge rows. If there are 18 rows, return 18 holdings.
+  - "currentValue" = the big number on the right. "profitLoss" and "profitLossPercent" = the line under it, negative when red or prefixed with −/-.
+  - "portfolioPercent" = the percentage next to the ticker.
+  - The number of shares is usually NOT shown in such lists: set "quantity" to null rather than inventing one.
+  - If the screenshot does not show an account total, set the account "balance" and "totalBalance" to the SUM of all holdings' currentValue.
 - Return ONLY valid JSON, no additional text or explanation
 - If a field cannot be determined, use null for that field
 - Numbers should be actual numbers, not strings`;
 
     // Call OpenAI Vision API
-    // Try gpt-4o first, fallback to gpt-4o-mini or gpt-4-turbo if needed
-    const model = process.env.OPENAI_MODEL || "gpt-4o";
+    // Benchmarked on an 18-row Trading 212 position list (values, P&L €, P&L %):
+    // gpt-4o ≈ 11/18 P&L correct, gpt-4.1 11/18, gpt-5.4-nano 13/18,
+    // gpt-5.4-mini 18/18 in ~9s (3/3 runs), gpt-5-mini 18/18 but ~31s.
+    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
     const client = getOpenAIClient();
     
-    const response = await client.chat.completions.create({
-      model: model,
+    const FALLBACK_MODEL = 'gpt-4o';
+    // gpt-5* / o-series take max_completion_tokens and only the default temperature.
+    const requestFor = (modelId) => ({
+      model: modelId,
+      ...(/^(gpt-5|o\d)/i.test(modelId) ? { max_completion_tokens: 8000 } : { max_tokens: 4000, temperature: 0.1 }),
       messages: [
         {
           role: "user",
@@ -167,18 +182,39 @@ CRITICAL INSTRUCTIONS:
             {
               type: "image_url",
               image_url: {
-                url: `data:${mimeType};base64,${base64Image}`
+                url: `data:${mimeType};base64,${base64Image}`,
+                // Position lists are dense small print (tickers, P&L); the default 'auto'
+                // detail downscales a tall screenshot and misreads digits and symbols.
+                detail: 'high'
               }
             }
           ]
         }
       ],
-      max_tokens: 1000,
-      temperature: 0.1 // Low temperature for more consistent extraction
+      // max_tokens used to be 1000: enough for a single balance, but an 18-position list
+      // is ~3k tokens of JSON — the reply was cut mid-object and every such upload
+      // "succeeded" with nothing extracted.
+      response_format: { type: 'json_object' }
     });
 
+    let response;
+    try {
+      response = await client.chat.completions.create(requestFor(model));
+    } catch (e) {
+      // The key on this deployment may not have the preferred model; fall back once.
+      const noModel = e?.status === 404 || /does not exist|do not have access/i.test(e?.message || '');
+      if (!noModel || model === FALLBACK_MODEL) throw e;
+      console.warn(`[AI] model ${model} unavailable (${e.message}); falling back to ${FALLBACK_MODEL}`);
+      response = await client.chat.completions.create(requestFor(FALLBACK_MODEL));
+    }
+
+    const choice = response.choices[0];
+    if (choice.finish_reason === 'length') {
+      throw new Error('AI response was truncated (screenshot has too many rows for one pass) — try a screenshot with fewer positions');
+    }
+
     // Extract the JSON response
-    const content = response.choices[0].message.content.trim();
+    const content = (choice.message.content || '').trim();
     
     // Try to parse JSON (might be wrapped in markdown code blocks)
     let jsonData;
@@ -304,14 +340,7 @@ CRITICAL INSTRUCTIONS:
       }];
     }
     
-    const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
-    
-    const extractedData = {
-      accounts: accounts,
-      totalBalance: totalBalance,
-      currency: jsonData.currency || 'EUR',
-      platform: jsonData.platform || platform,
-      holdings: jsonData.holdings && Array.isArray(jsonData.holdings) 
+    const holdingsOut = jsonData.holdings && Array.isArray(jsonData.holdings)
         ? jsonData.holdings.map(h => {
             const currentValue = h.currentValue != null ? parseFloat(h.currentValue) : (h.current_value != null ? parseFloat(h.current_value) : (h.value != null ? parseFloat(h.value) : (h.amount != null ? parseFloat(h.amount) : null)));
             return {
@@ -320,11 +349,60 @@ CRITICAL INSTRUCTIONS:
               purchasePrice: h.purchasePrice ? parseFloat(h.purchasePrice) : (h.purchase_price != null ? parseFloat(h.purchase_price) : null),
               currentPrice: h.currentPrice ? parseFloat(h.currentPrice) : (h.current_price != null ? parseFloat(h.current_price) : null),
               currentValue,
+              profitLoss: h.profitLoss != null && Number.isFinite(parseFloat(h.profitLoss)) ? parseFloat(h.profitLoss) : null,
+              profitLossPercent: h.profitLossPercent != null && Number.isFinite(parseFloat(h.profitLossPercent)) ? parseFloat(h.profitLossPercent) : null,
+              portfolioPercent: h.portfolioPercent != null && Number.isFinite(parseFloat(h.portfolioPercent)) ? parseFloat(h.portfolioPercent) : null,
+              name: h.name || null,
               assetType: h.assetType || h.asset_type || 'stock',
               currency: h.currency || jsonData.currency || 'EUR'
             };
           })
-        : null,
+        : null;
+
+    // --- Sanity passes over what the model read -------------------------------------
+    for (const h of holdingsOut || []) {
+      // A red row's percent is often returned unsigned ("(78.81%)"): the money sign wins.
+      if (h.profitLoss != null && h.profitLossPercent != null &&
+          Math.sign(h.profitLoss) !== 0 && Math.sign(h.profitLoss) !== Math.sign(h.profitLossPercent)) {
+        h.profitLossPercent = -h.profitLossPercent;
+      }
+      // Money P&L and % P&L describe the same cost basis; if they disagree, at least one
+      // digit was misread and storing either would pin a wrong cost forever.
+      if (h.currentValue != null && h.profitLoss != null && h.profitLossPercent != null) {
+        const cost = h.currentValue - h.profitLoss;
+        if (cost > 0) {
+          const impliedPct = (h.profitLoss / cost) * 100;
+          const tolerance = Math.max(1, Math.abs(h.profitLossPercent) * 0.03);
+          if (Math.abs(impliedPct - h.profitLossPercent) > tolerance) {
+            console.warn(`[AI] ${h.symbol}: P&L ${h.profitLoss} vs ${h.profitLossPercent}% inconsistent (implied ${impliedPct.toFixed(2)}%) — dropping both`);
+            h.profitLoss = null;
+            h.profitLossPercent = null;
+            h.pnlUnreliable = true;
+          }
+        }
+      }
+    }
+    // Position lists rarely show a total; every model tried invents one (±30%). When the
+    // rows sum to something and the reported balance is far from it, the rows win.
+    const valued = (holdingsOut || []).filter((h) => h.currentValue != null && h.currentValue > 0);
+    const holdingsSum = valued.reduce((sum, h) => sum + h.currentValue, 0);
+    if (valued.length >= 2 && holdingsSum > 0 && accounts.length === 1) {
+      const reported = accounts[0].balance;
+      if (!(reported > 0) || Math.abs(reported - holdingsSum) > holdingsSum * 0.1) {
+        if (reported > 0) console.warn(`[AI] reported balance ${reported} ≠ holdings sum ${holdingsSum.toFixed(2)} — using the sum`);
+        accounts[0].balance = holdingsSum;
+        accounts[0].balanceFromHoldings = true;
+      }
+    }
+
+    const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+
+    const extractedData = {
+      accounts: accounts,
+      totalBalance: totalBalance,
+      currency: jsonData.currency || 'EUR',
+      platform: jsonData.platform || platform,
+      holdings: holdingsOut,
       extractedAt: new Date().toISOString()
     };
 
