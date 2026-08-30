@@ -41,6 +41,7 @@ const VIEW_MODES = [
 
 export default function Dashboard({ portfolioData, onUploadClick, onViewAccountDetails, onViewPlatformDetails }) {
   const [viewMode, setViewMode] = useState('platform');
+  const [showMoneyDetail, setShowMoneyDetail] = useState(false); // hero stays minimal by default
   const [hoverIndex, setHoverIndex] = useState(null);
   const [activeSegment, setActiveSegment] = useState(null);
   /** Sort order for the right-hand allocation list only (pie chart order unchanged). */
@@ -180,29 +181,47 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                 >
                   {moneyProfit >= 0 ? '+' : '−'}{fmt(Math.abs(moneyProfit), currency)} · {moneyProfitPct >= 0 ? '+' : '−'}{Math.abs(moneyProfitPct).toFixed(2)}%
                 </span>
-                <span className="text-xs" style={{ color: 'var(--text-3)' }}>
-                  on {missingDeposits.length > 0 ? '\u2265\u00a0' : ''}{fmt(moneyBasis, currency)} in
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowMoneyDetail((v) => !v)}
+                  className="inline-flex items-center gap-0.5 text-xs px-1.5 py-1 rounded-md cursor-pointer"
+                  style={{ color: 'var(--text-4)' }}
+                  aria-expanded={showMoneyDetail}
+                  aria-label="How this number is calculated"
+                >
+                  {missingDeposits.length > 0 && <span aria-hidden="true" style={{ color: '#f59e0b' }}>{'\u26a0'}</span>}
+                  <svg className={`w-3.5 h-3.5 transition-transform ${showMoneyDetail ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+            )}
+            {hasMoneyView && showMoneyDetail && (
+              <div className="mt-2 space-y-1">
+                <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+                  on {missingDeposits.length > 0 ? '\u2265\u00a0' : ''}{fmt(moneyBasis, currency)} put in
+                </p>
                 {missingDeposits.length > 0 && (
-                  <span
-                    className="inline-flex items-center gap-1 text-xs cursor-help"
+                  <p
+                    className="text-xs cursor-help"
                     style={{ color: '#f59e0b' }}
                     title={`No deposit data \u2014 counted as unchanged (0% profit):\n${missingDeposits
                       .map((a) => `\u2022 ${a.platform} ${a.accountName || ''} (${fmt(a.valueEur, currency)})`)
                       .join('\n')}\nSet \u201cOriginal amount added\u201d in each account\u2019s settings to include it.`}
                   >
-                    <span aria-hidden="true">{'\u26a0'}</span>
-                    {missingDeposits.length} account{missingDeposits.length !== 1 ? 's' : ''} not counted
-                  </span>
+                    <span aria-hidden="true">{'\u26a0'}</span> {missingDeposits.length} account{missingDeposits.length !== 1 ? 's' : ''} not counted
+                  </p>
                 )}
               </div>
             )}
             {hasPortfolioGrowth && (
               hasMoneyView ? (
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-xs font-medium tabular-nums" style={{ color: portfolioGrowthColor }}>{portfolioGrowthLabel}</span>
-                  <span className="text-xs" style={{ color: 'var(--text-3)' }}>vs cost basis (holdings with known cost)</span>
-                </div>
+                showMoneyDetail && (
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-xs font-medium tabular-nums" style={{ color: portfolioGrowthColor }}>{portfolioGrowthLabel}</span>
+                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>vs cost basis (holdings with known cost)</span>
+                  </div>
+                )
               ) : (
                 <span
                   className="inline-flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded-full text-xs font-semibold"
