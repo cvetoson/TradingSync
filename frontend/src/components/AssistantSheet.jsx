@@ -55,7 +55,7 @@ export default function AssistantSheet({ onClose }) {
           background: 'var(--bg-card)',
           borderColor: 'var(--border)',
           paddingTop: 'env(safe-area-inset-top)',
-          paddingBottom: 'env(safe-area-inset-bottom)',
+          paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
         }}>
 
         <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
