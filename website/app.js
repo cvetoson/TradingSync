@@ -1,6 +1,6 @@
 // Consent-gated, cookieless analytics (Cloudflare Web Analytics).
 // The token is filled in after the Cloudflare setup; empty token = no analytics at all.
-var CF_ANALYTICS_TOKEN = '';
+var CF_ANALYTICS_TOKEN = '4c8c7ab0b7ce465e9316f2dd62602b27';
 
 (function () {
   var KEY = '8sync_consent';
