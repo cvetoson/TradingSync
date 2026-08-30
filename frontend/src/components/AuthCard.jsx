@@ -78,7 +78,7 @@ export default function AuthCard({ subtitle, children }) {
             <span className="auth-headline-accent">in one ring.</span>
           </h2>
           <p className="auth-tagline">
-            Brokers, banks, crypto wallets and P2P platforms — synced into a single live allocation with AI screenshot import.
+            Brokers, banks, crypto wallets and P2P platforms. All synced into a single live allocation with AI screenshot import.
           </p>
 
           <DonutHero />
@@ -111,7 +111,7 @@ export default function AuthCard({ subtitle, children }) {
           </div>
 
           <p className="auth-footnote">
-          Private by design — your data stays in your account.{' '}
+          Private by design. Your data stays in your account.{' '}
           <a href="/privacy" style={{ color: 'var(--accent)' }}>Privacy policy</a>
         </p>
         </div>

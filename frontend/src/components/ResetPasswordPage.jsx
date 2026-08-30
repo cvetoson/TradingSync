@@ -37,7 +37,7 @@ export default function ResetPasswordPage() {
       setSuccess(true);
       setTimeout(() => navigate('/'), 2000);
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not reset password. The link may have expired — request a new one.');
+      setError(err.response?.data?.error || 'Could not reset password. The link may have expired. Request a new one.');
     } finally {
       setLoading(false);
     }
