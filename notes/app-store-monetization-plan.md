@@ -83,8 +83,8 @@ Each item ≈ one 20–30 min session. Order matters; check them off as we go.
 - [x] **S10:** Privacy policy page (static, served by the app) + data-safety answers drafted. (/privacy live on prod + in-app; notes/app-store-data-safety.md drafts the App Privacy questionnaire)
 
 ### Week 3 — Freemium model in the backend
-- [ ] **S11:** `premium` entitlement on users table + middleware (`requirePremium`), free-tier limits (2 accounts, 3 AI imports/month) enforced server-side.
-- [ ] **S12:** Usage counters + friendly limit responses (`"upgrade to add more"`), tests.
+- [x] **S11:** `premium` entitlement on users table + middleware (`requirePremium`), free-tier limits (2 accounts, 3 AI imports/month) enforced server-side.
+- [x] **S12:** Usage counters + friendly limit responses (`"upgrade to add more"`), tests.
 - [ ] **S13:** Paywall screen UI (dark/gold, lists premium benefits) shown on limit hits.
 - [ ] **S14:** RevenueCat account + App Store Connect products (monthly €3.99, yearly €29.99, intro offer) — (you, with step-by-step guidance).
 - [ ] **S15:** RevenueCat SDK in the app; purchase + restore flows wired to the paywall.
