@@ -66,7 +66,7 @@ export default function AssistantSheet({ onClose }) {
               </svg>
             </div>
             <div>
-              <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Portfolio assistant</p>
+              <p className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Portfolio AI assistant</p>
               <p className="text-[10px]" style={{ color: 'var(--text-4)' }}>Premium</p>
             </div>
           </div>
