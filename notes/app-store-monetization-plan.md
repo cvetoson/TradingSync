@@ -78,8 +78,8 @@ Each item ≈ one 20–30 min session. Order matters; check them off as we go.
 ### Week 2 — Feel native + Apple-required features
 - [x] **S6:** Native photo picker / camera for screenshot upload (Capacitor Camera plugin) — replaces the file input on iOS.
 - [x] **S7:** Face ID / Touch ID app lock (Capacitor plugin) — optional toggle in Settings.
-- [ ] **S8:** **Account deletion** (Apple requirement): backend endpoint (delete user + accounts + history + holdings) — we pair on this carefully.
-- [ ] **S9:** Account deletion UI in Settings with confirmation; verify end-to-end.
+- [x] **S8:** **Account deletion** (Apple requirement): backend endpoint (delete user + accounts + history + holdings) — we pair on this carefully.
+- [x] **S9:** Account deletion UI in Settings with confirmation; verify end-to-end.
 - [ ] **S10:** Privacy policy page (static, served by the app) + data-safety answers drafted.
 
 ### Week 3 — Freemium model in the backend
