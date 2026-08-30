@@ -2,12 +2,32 @@ import { useState, useEffect } from 'react';
 import * as api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { deleteMyAccount } from '../services/api';
 import useModalBehavior from '../hooks/useModalBehavior';
 
 export default function SettingsModal({ onClose }) {
   useModalBehavior(onClose);
   const { user, updateUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const [showDelete, setShowDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword) { setDeleteError('Enter your password to confirm'); return; }
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await deleteMyAccount(deletePassword);
+      // Session is gone server-side; drop the cached user and let the app land on login.
+      localStorage.removeItem('tradingsync_user');
+      window.dispatchEvent(new Event('auth:logout'));
+    } catch (err) {
+      setDeleteError(err.response?.data?.error || 'Could not delete the account');
+      setDeleting(false);
+    }
+  };
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
@@ -221,6 +241,61 @@ export default function SettingsModal({ onClose }) {
                 {passwordLoading ? 'Updating...' : 'Change password'}
               </button>
             </form>
+          </section>
+
+          {/* Divider */}
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: '2rem', marginBottom: '2rem' }} />
+
+          {/* Danger zone — account deletion (required by App Store guideline 5.1.1(v)) */}
+          <section className="mb-2">
+            <h3 className="text-xs font-medium mb-3 uppercase tracking-wider" style={{ color: '#ef4444' }}>Danger Zone</h3>
+            {!showDelete ? (
+              <button
+                type="button"
+                onClick={() => setShowDelete(true)}
+                className="text-sm px-3 py-2 rounded-md border transition"
+                style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.06)' }}
+              >
+                Delete account…
+              </button>
+            ) : (
+              <div className="rounded-lg border p-4 space-y-3" style={{ borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.05)' }}>
+                <p className="text-sm" style={{ color: 'var(--text-1)' }}>
+                  This permanently deletes your login, every account, all holdings, history and
+                  uploaded screenshots. There is no undo and no recovery.
+                </p>
+                <input
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  placeholder="Your password"
+                  autoComplete="current-password"
+                  className="w-full px-3 py-2 rounded-md border text-sm"
+                  style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)', color: 'var(--text-1)' }}
+                />
+                {deleteError && <p className="text-xs" style={{ color: '#ef4444' }}>{deleteError}</p>}
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={handleDeleteAccount}
+                    className="text-sm px-3.5 py-2 rounded-md font-semibold text-white disabled:opacity-50"
+                    style={{ background: '#dc2626' }}
+                  >
+                    {deleting ? 'Deleting…' : 'Delete my account permanently'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => { setShowDelete(false); setDeletePassword(''); setDeleteError(''); }}
+                    className="text-sm px-3.5 py-2 rounded-md border"
+                    style={{ color: 'var(--text-3)', borderColor: 'var(--border)' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
         </div>
       </div>

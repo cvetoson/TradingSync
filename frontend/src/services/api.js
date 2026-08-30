@@ -22,6 +22,12 @@ api.interceptors.response.use(
   }
 );
 
+export async function deleteMyAccount(password) {
+  // axios DELETE carries the body via config.data
+  const { data } = await api.delete('/auth/account', { data: { password } });
+  return data;
+}
+
 export async function login(email, password) {
   const { data } = await api.post('/auth/login', { email, password });
   return data;
