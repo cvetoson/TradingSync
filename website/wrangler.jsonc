@@ -1,0 +1,9 @@
+{
+  "name": "8sync-site",
+  "compatibility_date": "2026-08-01",
+  "assets": { "directory": "./" },
+  "routes": [
+    { "pattern": "8-sync.com", "custom_domain": true },
+    { "pattern": "www.8-sync.com", "custom_domain": true }
+  ]
+}
