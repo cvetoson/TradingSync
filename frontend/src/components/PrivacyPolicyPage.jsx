@@ -67,6 +67,18 @@ export default function PrivacyPolicyPage() {
           <p><strong style={{ color: 'var(--text-1)' }}>Market data providers</strong> (Stooq, CoinGecko, exchange-rate services) — receive only ticker symbols to fetch prices, never anything about you.</p>
         </Section>
 
+        <Section title="AI portfolio assistant (Premium)">
+          <p>
+            If you use the assistant, your questions and a compact summary of your portfolio
+            (account names, balances, largest holdings) are sent to OpenAI’s API to generate
+            the answer, under the same API terms as screenshot processing (not used to train
+            models). The assistant provides <strong style={{ color: 'var(--text-1)' }}>educational
+            information only</strong>: it is not investment advice, not a personal recommendation
+            within the meaning of MiFID II, and no output should be relied upon as a basis for
+            investment decisions. Trading Sync is not a licensed investment adviser.
+          </p>
+        </Section>
+
         <Section title="Retention and deletion">
           <p>
             Your data is kept for as long as your account exists. You can delete your account

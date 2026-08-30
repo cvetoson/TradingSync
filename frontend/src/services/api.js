@@ -32,6 +32,11 @@ export async function deleteMyAccount(password) {
   return data;
 }
 
+export async function assistantChat(messages) {
+  const { data } = await api.post('/assistant/chat', { messages });
+  return data;
+}
+
 export async function getEntitlement() {
   const { data } = await api.get('/entitlement');
   return data;

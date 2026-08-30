@@ -7,6 +7,7 @@ import { isNative, isAppLockEnabled, biometricAuthenticate, onAppStateChange } f
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import PaywallModal from './components/PaywallModal';
+import AssistantSheet from './components/AssistantSheet';
 import AccountDetailView from './components/AccountDetailView';
 import PlatformDetailView from './components/PlatformDetailView';
 import AnalyticsPage from './components/AnalyticsPage';
@@ -117,6 +118,7 @@ function DashboardContent() {
   const [loading, setLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [paywall, setPaywall] = useState(null); // { reason } | null
+  const [showAssistant, setShowAssistant] = useState(false);
 
   useEffect(() => {
     const onPaywall = (e) => setPaywall({ reason: e.detail?.reason });
@@ -284,6 +286,20 @@ function DashboardContent() {
 
       {/* Modals */}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showAssistant && <AssistantSheet onClose={() => setShowAssistant(false)} />}
+      {!showAssistant && (
+        <button
+          type="button"
+          onClick={() => setShowAssistant(true)}
+          className="btn-gold fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full flex items-center justify-center cursor-pointer"
+          title="Portfolio assistant"
+          aria-label="Open the portfolio assistant"
+        >
+          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+          </svg>
+        </button>
+      )}
       {paywall && <PaywallModal reason={paywall.reason} onClose={() => setPaywall(null)} />}
       {showUploadModal && (
         <UploadModal

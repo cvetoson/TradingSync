@@ -290,6 +290,13 @@ async function initPostgres() {
       PRIMARY KEY (user_id, period)
     )
   `);
+  const ucColsRes = await run(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'usage_counters'
+  `);
+  if (!(ucColsRes.rows || []).some((r) => r.column_name === 'assistant_msgs')) {
+    await run(`ALTER TABLE usage_counters ADD COLUMN assistant_msgs INTEGER NOT NULL DEFAULT 0`);
+  }
   // Where current_price came from: 'live' (market API), 'screenshot', 'manual'.
   // Drives the price-source badge, so users can trust what they see.
   if (!holdingColNames.includes('price_source')) {
@@ -417,6 +424,11 @@ export function initDatabase() {
           PRIMARY KEY (user_id, period)
         )
       `, (e) => { if (e) console.error('usage_counters create failed:', e.message); });
+      db.all(`PRAGMA table_info(usage_counters)`, (err, cols) => {
+        if (!err && cols && cols.length > 0 && !cols.some((c) => c.name === 'assistant_msgs')) {
+          db.run(`ALTER TABLE usage_counters ADD COLUMN assistant_msgs INTEGER NOT NULL DEFAULT 0`);
+        }
+      });
 
       // Instrument registry: per-listing currency + price divisor (100 = pence quotes)
       db.run(`
