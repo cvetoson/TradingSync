@@ -5,6 +5,9 @@ import { getDatabase } from '../database.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
 import { logError } from '../lib/errorLog.js';
 
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 const JWT_SECRET = (() => {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
   if (process.env.NODE_ENV === 'production') {
@@ -404,6 +407,67 @@ export async function changePassword(req, res) {
       res.status(500).json({ error: 'Could not update password. Please try again.' });
     }
   });
+}
+
+
+// ---------------------------------------------------------------------------
+// Account deletion (Apple App Store requirement 5.1.1(v)): removes the user and
+// every row derived from their data, then clears the session. Password-gated so
+// a borrowed unlocked phone cannot destroy the account.
+const UPLOADS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'uploads');
+
+export async function deleteUserAccount(req, res) {
+  const db = getDatabase();
+  const userId = req.userId;
+  const { password } = req.body || {};
+  if (typeof password !== 'string' || !password) {
+    return res.status(400).json({ error: 'Password is required to delete the account' });
+  }
+
+  const get = (sql, params) => new Promise((resolve, reject) => db.get(sql, params, (e, row) => (e ? reject(e) : resolve(row))));
+  const all = (sql, params) => new Promise((resolve, reject) => db.all(sql, params, (e, rows) => (e ? reject(e) : resolve(rows || []))));
+  const run = (sql, params) => new Promise((resolve, reject) => db.run(sql, params, (e) => (e ? reject(e) : resolve())));
+
+  try {
+    const user = await get('SELECT id, password_hash FROM users WHERE id = ?', [userId]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    let ok = false;
+    try { ok = await bcrypt.compare(password, user.password_hash); } catch { ok = false; }
+    if (!ok) return res.status(401).json({ error: 'Incorrect password' });
+
+    const accounts = await all('SELECT id, screenshot_path FROM accounts WHERE user_id = ?', [userId]);
+    const accountIds = accounts.map((a) => a.id);
+
+    // Collect uploaded screenshot files before their rows disappear.
+    const filePaths = new Set(accounts.map((a) => a.screenshot_path).filter(Boolean));
+    if (accountIds.length > 0) {
+      const ph = accountIds.map(() => '?').join(',');
+      for (const row of await all(`SELECT file_path FROM screenshots WHERE account_id IN (${ph})`, accountIds)) {
+        if (row.file_path) filePaths.add(row.file_path);
+      }
+      // Children first: FKs on production PostgreSQL reject orphaning deletes.
+      for (const table of ['account_history', 'screenshots', 'holdings', 'transactions', 'cash_flows']) {
+        await run(`DELETE FROM ${table} WHERE account_id IN (${ph})`, accountIds);
+      }
+      await run('DELETE FROM accounts WHERE user_id = ?', [userId]);
+    }
+    await run('DELETE FROM users WHERE id = ?', [userId]);
+
+    // Best-effort file cleanup, strictly inside the uploads directory.
+    for (const fp of filePaths) {
+      try {
+        const resolved = path.resolve(fp);
+        if (resolved.startsWith(UPLOADS_DIR + path.sep)) fs.unlinkSync(resolved);
+      } catch { /* already gone or unreadable — the DB rows are what matters */ }
+    }
+
+    clearAuthCookie(res);
+    console.log(`Account deleted: user ${userId}, ${accountIds.length} accounts, ${filePaths.size} files`);
+    return res.json({ success: true, message: 'Account and all data deleted' });
+  } catch (err) {
+    console.error('deleteUserAccount error:', err);
+    return res.status(500).json({ error: 'Failed to delete the account' });
+  }
 }
 
 export function requireAuth(req, res, next) {
