@@ -90,7 +90,11 @@ body {
 .focus\:ring-blue-500:focus { border-color: var(--accent) !important; }
 
 /* ── App-wide ambient background (aurora glows + fading grid) ── */
-.app-ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+.app-ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+/* Blurred glows overhang the viewport edges; without clipping, iOS Safari/WKWebView widens
+   the layout viewport to fit them — the whole page then renders zoomed with fixed overlays
+   clipped at the left. Desktop Chrome clips silently, which is why it only showed on phones. */
+html, body { overflow-x: clip; }
 .app-ambient-glow { position: absolute; border-radius: 50%; filter: blur(90px); opacity: var(--ambient-opacity); }
 .app-ambient-glow-a { width: 480px; height: 480px; top: -12%; left: 5%; background: radial-gradient(circle, rgba(200,146,62,0.3), transparent 70%); }
 .app-ambient-glow-b { width: 420px; height: 420px; bottom: -15%; right: -5%; background: radial-gradient(circle, rgba(74,127,184,0.22), transparent 70%); }

@@ -156,7 +156,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
   return (
     <div className="grid grid-cols-12 gap-4">
       {/* Hero — total portfolio value */}
-      <div className="glass-card p-6 col-span-12 lg:col-span-8 relative overflow-hidden">
+      <div className="glass-card p-4 sm:p-6 col-span-12 lg:col-span-8 relative overflow-hidden">
         <div
           className="absolute pointer-events-none"
           aria-hidden="true"
@@ -274,18 +274,20 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
 
       <div className="col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Donut chart */}
-        <div className="glass-card p-6 lg:col-span-5">
-          <div className="flex items-center justify-between mb-5">
+        <div className="glass-card p-4 sm:p-6 lg:col-span-5">
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
               {viewMode === 'platform' ? 'By Platform' : viewMode === 'instrument' ? 'By Instrument' : 'By Tag'}
             </h3>
-            <div className="flex rounded-full p-1 border flex-wrap gap-0.5 justify-end" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--glass-border)' }}>
+            {/* flex-nowrap: on narrow screens the whole pill moves below the title as one row;
+                buttons wrapping INSIDE the rounded pill rendered as a tall blob on phones */}
+            <div className="flex flex-nowrap rounded-full p-1 border gap-0.5" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'var(--glass-border)' }}>
               {VIEW_MODES.map(({ id, label }) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => { setViewMode(id); setActiveSegment(null); }}
-                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-full transition cursor-pointer ${
+                  className={`px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold rounded-full transition cursor-pointer whitespace-nowrap ${
                     viewMode === id ? 'btn-gold text-white' : ''
                   }`}
                   style={viewMode !== id ? { color: 'var(--text-3)' } : {}}

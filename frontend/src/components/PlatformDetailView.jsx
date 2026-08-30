@@ -40,8 +40,8 @@ export default function PlatformDetailView({ platform, currency, onClose, onView
     new Intl.NumberFormat('de-DE', { style: 'currency', currency: currency || 'EUR', minimumFractionDigits: 2 }).format(value);
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.6)' }}>
-      <div className="rounded-xl border shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto"
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.6)' }}>
+      <div className="rounded-xl border shadow-2xl max-w-4xl w-full p-4 sm:p-6 max-h-[92vh] overflow-y-auto"
         style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         <div className="flex justify-between items-start mb-6">
           <div>
