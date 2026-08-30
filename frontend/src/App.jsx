@@ -151,10 +151,8 @@ function DashboardContent() {
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--bg-page)' }}>
-      {/* Ambient background: aurora glows + fading grid, shared with the auth pages */}
+      {/* Ambient background: faint grid only (aurora blobs removed — AI-slop tell) */}
       <div className="app-ambient" aria-hidden="true">
-        <div className="app-ambient-glow app-ambient-glow-a" />
-        <div className="app-ambient-glow app-ambient-glow-b" />
         <div className="app-ambient-grid" />
       </div>
 

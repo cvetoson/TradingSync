@@ -158,11 +158,6 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
     <div className="grid grid-cols-12 gap-4">
       {/* Hero — total portfolio value */}
       <div className="glass-card p-4 sm:p-6 col-span-12 lg:col-span-8 relative overflow-hidden">
-        <div
-          className="absolute pointer-events-none"
-          aria-hidden="true"
-          style={{ right: -60, top: -60, width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle, rgba(200,146,62,0.14), transparent 70%)' }}
-        />
         {/* flex-wrap: at narrow widths the CTA drops to its own row instead of overflowing the card */}
         <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
           <div>
