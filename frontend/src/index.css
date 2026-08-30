@@ -162,3 +162,19 @@ html, body { overflow-x: clip; }
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1, 'zero' 1;
 }
+
+
+/* --- Dark modal utilities (Add New / Update / Add Holdings family) ------------ */
+.surface-card { background: var(--bg-card); color: var(--text-1); }
+.text-strong { color: var(--text-1); }
+.text-mid    { color: var(--text-2); }
+.text-dim    { color: var(--text-3); }
+.border-app  { border-color: var(--border); }
+.hover-dim:hover { background: var(--bg-inner); }
+.dropzone { border-color: var(--border); }
+.dropzone:hover { border-color: var(--accent); }
+.tip-box { background: rgba(200,146,62,0.08); border: 1px solid rgba(200,146,62,0.18); }
+.tip-box p, .tip-box strong { color: var(--text-2); }
+input.field-dark, select.field-dark, textarea.field-dark {
+  background: var(--bg-inner); border-color: var(--border); color: var(--text-1);
+}
