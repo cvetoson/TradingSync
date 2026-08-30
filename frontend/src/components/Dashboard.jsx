@@ -162,7 +162,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
         <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
           <div>
             <p className="section-label mb-2">Total Portfolio Value</p>
-            <div className="text-4xl figure-hero" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
+            <div className="text-4xl font-bold tracking-tight tabular-nums" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
             {/* Money view leads: profit = value − money put in ("what did my money do") */}
             {hasMoneyView && (
               <div className="flex items-baseline gap-2 mt-3 flex-wrap">
@@ -170,8 +170,8 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold tabular-nums"
                   style={{
                     color: moneyColor,
-                    background: moneyProfit >= 0 ? 'rgba(74,222,128,0.09)' : 'rgba(248,113,113,0.09)',
-                    border: `1px solid ${moneyProfit >= 0 ? 'rgba(74,222,128,0.18)' : 'rgba(248,113,113,0.18)'}`,
+                    background: moneyProfit >= 0 ? 'rgba(74,222,128,0.06)' : 'rgba(248,113,113,0.06)',
+                    border: `1px solid ${moneyProfit >= 0 ? 'rgba(74,222,128,0.12)' : 'rgba(248,113,113,0.12)'}`,
                   }}
                 >
                   {moneyProfit >= 0 ? '+' : '−'}{fmt(Math.abs(moneyProfit), currency)} · {moneyProfitPct >= 0 ? '+' : '−'}{Math.abs(moneyProfitPct).toFixed(2)}%

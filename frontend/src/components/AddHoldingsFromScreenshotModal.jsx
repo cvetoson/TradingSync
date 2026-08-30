@@ -58,12 +58,12 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-md shadow-xl max-w-md w-full p-6">
+      <div className="surface-card border rounded-xl border-app shadow-xl max-w-md w-full p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-800">Add Holdings from Screenshot</h2>
+          <h2 className="text-2xl font-bold text-strong">Add Holdings from Screenshot</h2>
           <button
             onClick={onClose}
-            className="p-2 -m-1 rounded-md text-gray-400 hover:text-gray-600"
+            className="p-2 -m-1 rounded-md text-dim hover:text-dim"
             disabled={uploading}
             title="Close"
           >
@@ -84,10 +84,10 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-mid mb-2">
               Screenshot
             </label>
-            <div className="border-2 border-dashed border-gray-300 rounded-md p-6 text-center hover:border-green-400 transition-colors">
+            <div className="border-2 border-dashed dropzone rounded-md p-6 text-center hover:border-green-400 transition-colors">
               <input
                 type="file"
                 accept="image/*"
@@ -103,17 +103,17 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
                     <svg className="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <p className="mt-2 text-sm text-gray-600">{file.name}</p>
+                    <p className="mt-2 text-sm text-dim">{file.name}</p>
                   </div>
                 ) : (
                   <div>
-                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="mx-auto h-12 w-12 text-dim" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    <p className="mt-2 text-sm text-gray-600">
+                    <p className="mt-2 text-sm text-dim">
                       <span className="font-semibold">Click to upload</span> or drag and drop
                     </p>
-                    <p className="text-xs text-gray-500">PNG, JPG, GIF up to 10MB</p>
+                    <p className="text-xs text-dim">PNG, JPG, GIF up to 10MB</p>
                   </div>
                 )}
               </label>
@@ -130,7 +130,7 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex-1 px-4 py-2 border border-app rounded-md text-mid hover-dim transition-colors"
               disabled={uploading}
             >
               Cancel

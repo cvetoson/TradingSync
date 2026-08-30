@@ -343,7 +343,7 @@ export default function AnalyticsPage({ portfolioData, currency }) {
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="text-center">
-                    <div className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Total</div>
+                    <div className="section-label">Total</div>
                     <div className="text-lg font-bold mt-0.5" style={{ color: 'var(--text-1)' }}>{fmt(totalValue, cur)}</div>
                   </div>
                 </div>
