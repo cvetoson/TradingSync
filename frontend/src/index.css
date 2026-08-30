@@ -73,6 +73,8 @@ body {
   /* Tabular numerals: columns of money align and scan like a statement */
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.011em; /* Inter's recommended tracking at UI sizes */
+  font-feature-settings: 'calt' 1, 'liga' 1;
   -moz-osx-font-smoothing: grayscale;
   background: var(--bg-page);
   min-height: 100vh;
@@ -136,4 +138,27 @@ html, body { overflow-x: clip; }
 
 @media (prefers-reduced-motion: reduce) {
   .btn-gold, .glass-hover { transition: none; }
+}
+
+
+/* --- Type roles (Inter tuning) ------------------------------------------------ */
+/* Big money figures: tighter tracking + heavier weight reads engineered, not inflated */
+.figure-hero {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'cv05' 1; /* cv05: lowercase l with tail — clearer in mixed strings */
+}
+/* Section labels: quieter than the data they describe */
+.section-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-4);
+}
+/* Every numeric cell aligns; slashed zero disambiguates 0/O in tickers */
+.money {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
 }

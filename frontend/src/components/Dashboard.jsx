@@ -161,8 +161,8 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
         {/* flex-wrap: at narrow widths the CTA drops to its own row instead of overflowing the card */}
         <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
           <div>
-            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-2" style={{ color: 'var(--text-3)' }}>Total Portfolio Value</p>
-            <div className="text-4xl font-bold tracking-tight tabular-nums" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
+            <p className="section-label mb-2">Total Portfolio Value</p>
+            <div className="text-4xl figure-hero" style={{ color: 'var(--text-1)' }}>{formattedTotal}</div>
             {/* Money view leads: profit = value − money put in ("what did my money do") */}
             {hasMoneyView && (
               <div className="flex items-baseline gap-2 mt-3 flex-wrap">
@@ -239,7 +239,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
           </div>
           <button
             onClick={onUploadClick}
-            className="btn-gold flex items-center gap-2 text-white font-semibold py-2.5 px-5 rounded-xl text-sm shrink-0 cursor-pointer min-h-[44px]"
+            className="btn-gold flex items-center gap-2 text-white font-semibold py-2.5 px-4 rounded-lg text-sm shrink-0 cursor-pointer min-h-[44px]"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -253,7 +253,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
       <div className="glass-card p-5 col-span-12 lg:col-span-4 flex flex-col justify-between gap-4">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Top Position</p>
+            <p className="section-label mb-1">Top Position</p>
             <div className="text-base font-bold truncate" style={{ color: 'var(--text-1)' }}>{topPosition?.symbol || '—'}</div>
           </div>
           <p className="text-xs text-right tabular-nums shrink-0" style={{ color: 'var(--text-3)' }}>
@@ -264,7 +264,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
         </div>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>Top 3 Concentration</p>
+            <p className="section-label mb-1">Top 3 Concentration</p>
             <div className="text-xs truncate" style={{ color: 'var(--text-3)' }}>
               {instruments.length > 0 ? instruments.slice(0, 3).map(i => i.symbol).join(' · ') : `${accounts.length} accounts · ${platforms.length} platforms`}
             </div>
@@ -275,7 +275,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
         </div>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold mb-1" style={{ color: 'var(--text-3)' }}>P2P &amp; Savings Share</p>
+            <p className="section-label mb-1">P2P &amp; Savings Share</p>
             <div className="text-xs truncate tabular-nums" style={{ color: 'var(--text-3)' }}>
               {p2pPct > 0 ? `${fmt(p2pValue, currency)} accruing off-market` : 'no P2P or savings accounts'}
             </div>
