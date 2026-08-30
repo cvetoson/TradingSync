@@ -46,9 +46,17 @@ export default function AssistantSheet({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[55] flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
-      <div className="w-full sm:max-w-md flex flex-col rounded-t-2xl sm:rounded-xl border shadow-2xl"
-        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', height: 'min(640px, 92dvh)' }}>
+    <div className="fixed inset-0 z-[55] flex items-stretch sm:items-center justify-center p-0 sm:p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+      {/* Phones: a true full-screen panel inside the safe areas (the floating 640px
+          sheet overflowed the viewport and slid under the home indicator).
+          sm+: the centered card. */}
+      <div className="w-full h-full sm:h-[min(640px,90vh)] sm:max-w-md flex flex-col sm:rounded-xl sm:border shadow-2xl"
+        style={{
+          background: 'var(--bg-card)',
+          borderColor: 'var(--border)',
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}>
 
         <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-2.5">
@@ -73,7 +81,7 @@ export default function AssistantSheet({ onClose }) {
           {messages.length === 0 && (
             <div className="pt-4">
               <p className="text-sm mb-3" style={{ color: 'var(--text-2)' }}>
-                Ask anything about your own portfolio — it can see your accounts and holdings.
+                Ask anything about your own portfolio. It can see your accounts and holdings.
               </p>
               <div className="flex flex-wrap gap-2">
                 {QUICK_PROMPTS.map((q) => (
@@ -115,7 +123,7 @@ export default function AssistantSheet({ onClose }) {
             </button>
           </form>
           <p className="text-[10px] mt-2 leading-snug" style={{ color: 'var(--text-4)' }}>
-            Educational information only — not investment advice or a personal recommendation (MiFID II).
+            Educational information only. Not investment advice or a personal recommendation (MiFID II).
             Not a substitute for a licensed financial advisor.
           </p>
         </div>

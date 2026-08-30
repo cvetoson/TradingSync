@@ -261,7 +261,7 @@ export default function AccountDetailsModal({ account, currency, onClose, onUpda
                 />
               </div>
               <p className="mt-1 text-xs" style={{ color: 'var(--text-4)' }}>
-                Total you originally deposited or invested in {currency || 'EUR'}—not a percentage. The app compares this to current value to show growth % on the account view.
+                Total you originally deposited or invested in {currency || 'EUR'}. Not a percentage. The app compares this to current value to show growth % on the account view.
               </p>
             </div>
             <div className="flex justify-between text-xs">

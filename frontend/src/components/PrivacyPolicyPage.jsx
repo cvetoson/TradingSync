@@ -43,8 +43,8 @@ export default function PrivacyPolicyPage() {
         </Section>
 
         <Section title="What we collect">
-          <p><strong style={{ color: 'var(--text-1)' }}>Account data.</strong> Your email address, a hashed password (bcrypt — we never store or see the plain password), and an optional display name.</p>
-          <p><strong style={{ color: 'var(--text-1)' }}>Portfolio data you enter.</strong> The platforms, balances, holdings, interest rates, deposits and notes you add. This can reveal your financial situation — it exists in the app only because you put it there, and it is visible only to your account.</p>
+          <p><strong style={{ color: 'var(--text-1)' }}>Account data.</strong> Your email address, a hashed password (bcrypt). We never store or see the plain password, and an optional display name.</p>
+          <p><strong style={{ color: 'var(--text-1)' }}>Portfolio data you enter.</strong> The platforms, balances, holdings, interest rates, deposits and notes you add. This can reveal your financial situation. It exists in the app only because you put it there, and it is visible only to your account.</p>
           <p><strong style={{ color: 'var(--text-1)' }}>Screenshots you upload.</strong> Images you choose to import are stored on our server and processed once by an AI model to extract balances and holdings (see “Processors” below).</p>
           <p><strong style={{ color: 'var(--text-1)' }}>A session cookie.</strong> One httpOnly authentication cookie keeps you signed in. We use no analytics, no advertising trackers, and no fingerprinting.</p>
         </Section>
@@ -52,19 +52,19 @@ export default function PrivacyPolicyPage() {
         <Section title="What we do NOT collect">
           <p>
             No broker credentials, no bank logins, no API keys, no open-banking permissions.
-            Trading Sync never connects to your broker — a screenshot reveals only what is on
+            Trading Sync never connects to your broker. A screenshot reveals only what is on
             the screen, which is the point. We do not sell or share your data with advertisers,
             and there is no tracking across other apps or websites. Face ID / Touch ID, if you
-            enable the app lock, is handled entirely by your device — biometric data never
+            enable the app lock, is handled entirely by your device. Biometric data never
             reaches our servers.
           </p>
         </Section>
 
         <Section title="Processors we rely on">
-          <p><strong style={{ color: 'var(--text-1)' }}>OpenAI</strong> — uploaded screenshots are sent to OpenAI’s API once, to extract the numbers on them. They are not used to train models under OpenAI’s API terms.</p>
-          <p><strong style={{ color: 'var(--text-1)' }}>Railway</strong> — hosts the application and its database (data encrypted in transit via HTTPS).</p>
-          <p><strong style={{ color: 'var(--text-1)' }}>Resend</strong> — delivers transactional emails only (verification, password reset). No marketing email.</p>
-          <p><strong style={{ color: 'var(--text-1)' }}>Market data providers</strong> (Stooq, CoinGecko, exchange-rate services) — receive only ticker symbols to fetch prices, never anything about you.</p>
+          <p><strong style={{ color: 'var(--text-1)' }}>OpenAI</strong>: uploaded screenshots are sent to OpenAI’s API once, to extract the numbers on them. They are not used to train models under OpenAI’s API terms.</p>
+          <p><strong style={{ color: 'var(--text-1)' }}>Railway</strong>: hosts the application and its database (data encrypted in transit via HTTPS).</p>
+          <p><strong style={{ color: 'var(--text-1)' }}>Resend</strong>: delivers transactional emails only (verification, password reset). No marketing email.</p>
+          <p><strong style={{ color: 'var(--text-1)' }}>Market data providers</strong> (Stooq, CoinGecko, exchange-rate services): receive only ticker symbols to fetch prices, never anything about you.</p>
         </Section>
 
         <Section title="AI portfolio assistant (Premium)">
@@ -93,7 +93,7 @@ export default function PrivacyPolicyPage() {
           <p>
             You may access, correct, export or erase your data. Everything you have entered is
             visible and editable in the app itself, and erasure is self-service (above). For
-            anything else — including a portability export or a complaint — email{' '}
+            anything else, including a portability export or a complaint, email{' '}
             <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: 'var(--accent)' }}>{CONTACT_EMAIL}</a>.
             You also have the right to lodge a complaint with your supervisory authority
             (in Spain, the AEPD).

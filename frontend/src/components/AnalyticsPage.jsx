@@ -251,7 +251,7 @@ export default function AnalyticsPage({ portfolioData, currency }) {
           <div>
             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Recorded portfolio value over time</h3>
             <p className="text-xs mt-1 max-w-md" style={{ color: 'var(--text-3)' }}>
-              From your uploads and account updates—when data was saved—not a live measure of how holdings moved in the market.
+              From your uploads and account updates. It reflects when data was saved, not a live measure of how holdings moved in the market.
             </p>
           </div>
           <div className="flex rounded-md p-0.5 border" style={{ background: 'var(--bg-inner)', borderColor: 'var(--border)' }}>

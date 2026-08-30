@@ -76,7 +76,7 @@ export default function AddHoldingModal({ accountId, accountType, onClose, onSuc
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Price in EUR (optional — leave empty for live price)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Price in EUR (optional; leave empty for live price)</label>
             <input
               type="number"
               step="any"

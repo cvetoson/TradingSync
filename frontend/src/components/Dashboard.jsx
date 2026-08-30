@@ -515,7 +515,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
       {instruments.length > 0 && (
         <div className="glass-card p-6 col-span-12">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Top Holdings — All Accounts</h3>
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Top Holdings Across All Accounts</h3>
             {multiAccountInstruments.length > 0 && (
               <span className="text-xs" style={{ color: 'var(--text-3)' }}>
                 {multiAccountInstruments.length} held on multiple platforms
@@ -523,7 +523,7 @@ export default function Dashboard({ portfolioData, onUploadClick, onViewAccountD
             )}
           </div>
           <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
-            Same instrument summed across platforms — the exposure no single broker shows
+            Same instrument summed across platforms. This is the exposure no single broker shows.
           </p>
           <div className="space-y-1.5">
             {instruments.slice(0, 10).map((inst) => {
