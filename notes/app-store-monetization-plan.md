@@ -80,7 +80,7 @@ Each item ≈ one 20–30 min session. Order matters; check them off as we go.
 - [x] **S7:** Face ID / Touch ID app lock (Capacitor plugin) — optional toggle in Settings.
 - [x] **S8:** **Account deletion** (Apple requirement): backend endpoint (delete user + accounts + history + holdings) — we pair on this carefully.
 - [x] **S9:** Account deletion UI in Settings with confirmation; verify end-to-end.
-- [ ] **S10:** Privacy policy page (static, served by the app) + data-safety answers drafted.
+- [x] **S10:** Privacy policy page (static, served by the app) + data-safety answers drafted. (/privacy live on prod + in-app; notes/app-store-data-safety.md drafts the App Privacy questionnaire)
 
 ### Week 3 — Freemium model in the backend
 - [ ] **S11:** `premium` entitlement on users table + middleware (`requirePremium`), free-tier limits (2 accounts, 3 AI imports/month) enforced server-side.
