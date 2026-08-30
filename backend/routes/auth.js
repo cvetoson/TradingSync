@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getDatabase } from '../database.js';
+import { sendEmail } from '../services/emailService.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
 import { logError } from '../lib/errorLog.js';
 
@@ -468,6 +469,31 @@ export async function deleteUserAccount(req, res) {
     console.error('deleteUserAccount error:', err);
     return res.status(500).json({ error: 'Failed to delete the account' });
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Support form: public (App Store requires a working support URL), rate-limited
+// in server.js, honeypot-protected. Submissions are emailed to SUPPORT_EMAIL.
+export async function submitSupportRequest(req, res) {
+  const { name, email, subject, message, website } = req.body || {};
+  if (website) return res.json({ success: true }); // honeypot: bots fill every field
+  const msg = typeof message === 'string' ? message.trim() : '';
+  const fromEmail = typeof email === 'string' ? email.trim().slice(0, 200) : '';
+  if (!msg || msg.length < 5) return res.status(400).json({ error: 'Please describe the problem or question' });
+  if (!fromEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fromEmail)) {
+    return res.status(400).json({ error: 'A valid email is needed so we can reply' });
+  }
+  const to = process.env.SUPPORT_EMAIL || process.env.ADMIN_FALLBACK_EMAIL || 'info@zetoson.com';
+  const safe = (t, n) => String(t || '').slice(0, n).replace(/</g, '&lt;');
+  const sent = await sendEmail({
+    to,
+    subject: `[Trading Sync support] ${safe(subject, 120) || 'New request'}`,
+    text: `From: ${safe(name, 100) || 'not given'} <${fromEmail}>\nUser-Agent: ${safe(req.headers['user-agent'], 200)}\n\n${msg.slice(0, 5000)}`,
+    html: `<p><strong>From:</strong> ${safe(name, 100) || 'not given'} &lt;${safe(fromEmail, 200)}&gt;</p><p style="white-space:pre-wrap">${safe(msg, 5000)}</p>`,
+  });
+  if (!sent) return res.status(502).json({ error: 'Could not send your message. Email us directly instead.' });
+  return res.json({ success: true });
 }
 
 export function requireAuth(req, res, next) {
