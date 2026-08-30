@@ -12,7 +12,7 @@ import { initDatabase, isPostgreSQL } from './database.js';
 import { getRecentErrors } from './lib/errorLog.js';
 import { getLastEmailError, sendEmail } from './services/emailService.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
-import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, logout, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword } from './routes/auth.js';
+import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, logout, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword, deleteUserAccount } from './routes/auth.js';
 import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountTag, updateAccountBalance, updateAccountInterestRate, updateAccountContributedAmount, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, updateHoldingPurchasePrice, deleteHolding, verifyHoldingSymbol, getConsolidatedInstruments, getAccountCashFlows, createAccountCashFlow, deleteCashFlow } from './routes/portfolio.js';
 import { startPriceScheduler } from './services/priceService.js';
 
@@ -142,6 +142,7 @@ async function start() {
   app.post('/api/auth/forgot-password', authLimiter, forgotPassword);
   app.post('/api/auth/reset-password', authLimiter, resetPassword);
   app.post('/api/auth/logout', logout);
+  app.delete('/api/auth/account', requireAuth, deleteUserAccount);
 
   // Protected routes (require authentication)
   app.get('/api/auth/me', requireAuth, getProfile);
