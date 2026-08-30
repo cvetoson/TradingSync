@@ -12,7 +12,7 @@ const REASON_COPY = {
 };
 
 const BENEFITS = [
-  ['AI portfolio assistant', 'Ask questions about your own portfolio — explained with your real numbers'],
+  ['AI portfolio assistant', 'Ask questions about your own portfolio. Answers use your real numbers.'],
   ['Unlimited accounts', 'Track every broker, bank, P2P platform and wallet you have'],
   ['Unlimited AI screenshot imports', 'Add and refresh accounts from a screenshot, any time'],
   ['Live prices every 20 minutes', 'Stocks, ETFs and crypto stay current in the background'],
@@ -50,7 +50,7 @@ export default function PaywallModal({ reason, onClose }) {
 
   const handleContinue = () => {
     // Replaced by the RevenueCat purchase flow in S15.
-    setNotice('Subscriptions arrive with the App Store launch — everything you have stays free until then.');
+    setNotice('Subscriptions arrive with the App Store launch. Everything you have stays free until then.');
   };
 
   return (

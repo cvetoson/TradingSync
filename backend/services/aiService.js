@@ -210,7 +210,7 @@ CRITICAL INSTRUCTIONS:
 
     const choice = response.choices[0];
     if (choice.finish_reason === 'length') {
-      throw new Error('AI response was truncated (screenshot has too many rows for one pass) — try a screenshot with fewer positions');
+      throw new Error('AI response was truncated (the screenshot has too many rows for one pass). Try a screenshot with fewer positions');
     }
 
     // Extract the JSON response

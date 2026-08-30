@@ -274,7 +274,7 @@ export async function uploadScreenshot(req, res) {
     const ent = await getEntitlementState(req.userId);
     if (!ent.canAiImport) {
       return res.status(402).json(upgradeRequired('ai_import_limit',
-        `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month — upgrade for unlimited imports`));
+        `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month. Upgrade for unlimited imports`));
     }
 
     const extractedData = await analyzeScreenshot(filePath, platform, aiAccountType);
@@ -417,7 +417,7 @@ export async function uploadScreenshot(req, res) {
               processedCount++;
               if (processedCount === totalAccounts && createdAccounts.length === 0) {
                 resolve(res.status(402).json(upgradeRequired('account_limit',
-                  `Free accounts can track up to ${FREE_MAX_ACCOUNTS} accounts — upgrade to add more`)));
+                  `Free accounts can track up to ${FREE_MAX_ACCOUNTS} accounts. Upgrade to add more`)));
               }
             } else {
               // Create new account
@@ -534,7 +534,7 @@ export async function createAccount(req, res) {
     const ent = await getEntitlementState(userId);
     if (!ent.canCreateAccount) {
       return res.status(402).json(upgradeRequired('account_limit',
-        `Free accounts can track up to ${FREE_MAX_ACCOUNTS} accounts — upgrade to add more`));
+        `Free accounts can track up to ${FREE_MAX_ACCOUNTS} accounts. Upgrade to add more`));
     }
   } catch (entErr) {
     return res.status(500).json({ error: entErr.message });
@@ -1583,7 +1583,7 @@ export async function updateAccountWithScreenshot(req, res) {
           const ent = await getEntitlementState(req.userId);
           if (!ent.canAiImport) {
             return res.status(402).json(upgradeRequired('ai_import_limit',
-              `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month — upgrade for unlimited imports`));
+              `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month. Upgrade for unlimited imports`));
           }
           // Analyze screenshot with AI, using existing account type as context
           const extractedData = await analyzeScreenshot(
@@ -1797,7 +1797,7 @@ export async function addHoldingsFromScreenshot(req, res) {
         const ent = await getEntitlementState(req.userId);
         if (!ent.canAiImport) {
           return res.status(402).json(upgradeRequired('ai_import_limit',
-            `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month — upgrade for unlimited imports`));
+            `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month. Upgrade for unlimited imports`));
         }
         const extractedData = await analyzeScreenshot(filePath, account.platform, account.account_type);
         if (!extractedData) {

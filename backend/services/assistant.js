@@ -49,6 +49,7 @@ Hard rules (regulatory - MiFID II):
 Style:
 - Ground answers in the portfolio snapshot provided. Reference their actual numbers.
 - Be concise (usually under 150 words), plain language, EUR amounts, no emoji.
+- Never use em dashes. Write short separate sentences instead.
 - If asked something unrelated to investing or their portfolio, politely steer back.`;
 
 export async function assistantChat(userId, messages) {
@@ -56,7 +57,7 @@ export async function assistantChat(userId, messages) {
   const period = currentPeriod();
   const usage = await get(db, 'SELECT assistant_msgs FROM usage_counters WHERE user_id = ? AND period = ?', [userId, period]);
   if ((Number(usage?.assistant_msgs) || 0) >= ASSISTANT_MAX_MSGS_PER_MONTH) {
-    const err = new Error('Monthly assistant limit reached — resets next month');
+    const err = new Error('Monthly assistant limit reached. It resets next month');
     err.status = 429;
     throw err;
   }
@@ -86,7 +87,7 @@ export async function assistantChat(userId, messages) {
   });
   const reply = response.choices?.[0]?.message?.content?.trim();
   if (!reply) {
-    const err = new Error('The assistant did not return a reply — try again');
+    const err = new Error('The assistant did not return a reply. Try again');
     err.status = 502;
     throw err;
   }

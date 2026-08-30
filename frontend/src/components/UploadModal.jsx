@@ -305,7 +305,7 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
                       {acc.account_name || acc.platform} ({acc.account_type || 'stocks'})
                     </option>
                   ))}
-                  {holdingsAccounts.length === 0 && <option value="" disabled>No accounts yet — create one below</option>}
+                  {holdingsAccounts.length === 0 && <option value="" disabled>No accounts yet. Create one below</option>}
                 </select>
               ) : (
                 <div className="space-y-2">
@@ -343,7 +343,7 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
                 </div>
                 {manualAccountType === 'p2p' && (
                   <div>
-                    <label className={labelClass}>Interest rate (%) — optional</label>
+                    <label className={labelClass}>Interest rate in % (optional)</label>
                     <input
                       type="number"
                       step="any"
@@ -403,7 +403,7 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
                 <div>
                   <label className={labelClass}>
                     {/* The backend stores manual prices as EUR — say so, or a USD price entered for a US ticker is silently wrong by the FX rate */}
-                    {manualAccountType === 'fixed-income' ? 'Price per bond in EUR (optional)' : manualAccountType === 'alternative' ? 'Price in EUR (required)' : 'Price in EUR (optional — leave empty for live price)'}
+                    {manualAccountType === 'fixed-income' ? 'Price per bond in EUR (optional)' : manualAccountType === 'alternative' ? 'Price in EUR (required)' : 'Price in EUR (optional; leave empty for live price)'}
                   </label>
                   <input
                     type="number"

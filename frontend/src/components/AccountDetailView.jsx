@@ -1152,7 +1152,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         {/* History Table */}
         <div className="bg-white border border-gray-200 rounded-md p-6">
           <h3 className="text-xl font-semibold text-gray-800 mb-1">Value History</h3>
-          <p className="text-xs text-gray-500 mb-4">Each row is the account total when you saved an update (e.g. screenshot upload)—not the same timing as live prices above.</p>
+          <p className="text-xs text-gray-500 mb-4">Each row is the account total when you saved an update (e.g. screenshot upload). The timing differs from the live prices above.</p>
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading history...</div>
           ) : history.length === 0 ? (
