@@ -1,0 +1,8 @@
+{
+  "appId": "com.zetoson.tradingsync",
+  "appName": "Trading Sync",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "always"
+  }
+}
