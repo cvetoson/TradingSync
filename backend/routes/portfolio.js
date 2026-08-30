@@ -25,6 +25,8 @@ import {
   normalizeIncomingHolding,
 } from '../lib/portfolioUtils.js';
 import { loadInstrumentRegistry, fetchPriceForHolding, currentRates } from '../services/priceService.js';
+import { getEntitlementState, recordAiImport } from '../services/usage.js';
+import { entitlementPayload, upgradeRequired, FREE_MAX_ACCOUNTS, FREE_MAX_AI_IMPORTS_PER_MONTH } from '../lib/entitlement.js';
 
 /** Promise wrapper for db.run so we can await DB writes before returning */
 function dbRun(db, sql, params) {
@@ -267,6 +269,13 @@ export async function uploadScreenshot(req, res) {
 
     // Analyze screenshot with AI
     console.log('[UPLOAD] Analyzing screenshot with AI...');
+    // Free tier: monthly AI-import quota, checked before any OpenAI spend (S11)
+    const ent = await getEntitlementState(req.userId);
+    if (!ent.canAiImport) {
+      return res.status(402).json(upgradeRequired('ai_import_limit',
+        `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month — upgrade for unlimited imports`));
+    }
+
     const extractedData = await analyzeScreenshot(filePath, platform, aiAccountType);
     console.log('[UPLOAD] AI extraction complete. Accounts:', extractedData?.accounts?.length || 0, 'Holdings:', extractedData?.holdings?.length || 0);
 
@@ -292,6 +301,9 @@ export async function uploadScreenshot(req, res) {
         details: extractedData.error
       });
     }
+
+    // Successful extraction: count it against this month's free quota.
+    recordAiImport(req.userId).catch((e) => console.error('recordAiImport:', e.message));
 
     const db = getDatabase();
     const accounts = extractedData.accounts || [];
@@ -399,6 +411,13 @@ export async function uploadScreenshot(req, res) {
                   );
                 }
               );
+            } else if (!ent.premium && !ent.canCreateAccount) {
+              // Free tier at the account cap: do not create more accounts from uploads.
+              processedCount++;
+              if (processedCount === totalAccounts && createdAccounts.length === 0) {
+                resolve(res.status(402).json(upgradeRequired('account_limit',
+                  `Free accounts can track up to ${FREE_MAX_ACCOUNTS} accounts — upgrade to add more`)));
+              }
             } else {
               // Create new account
               db.run(
@@ -505,10 +524,20 @@ function updateHoldings(accountId, holdings) {
 }
 
 // Create a new account (for manual addition)
-export function createAccount(req, res) {
+export async function createAccount(req, res) {
   const db = getDatabase();
   const userId = req.userId;
   if (!userId) return res.status(401).json({ error: 'Authentication required' });
+  // Free tier: hard cap on accounts, enforced server-side (S11)
+  try {
+    const ent = await getEntitlementState(userId);
+    if (!ent.canCreateAccount) {
+      return res.status(402).json(upgradeRequired('account_limit',
+        `Free accounts can track up to ${FREE_MAX_ACCOUNTS} accounts — upgrade to add more`));
+    }
+  } catch (entErr) {
+    return res.status(500).json({ error: entErr.message });
+  }
   const { accountName, platform, accountType } = req.body;
 
   const name = (accountName || 'Manual').trim();
@@ -1550,6 +1579,11 @@ export async function updateAccountWithScreenshot(req, res) {
         }
 
         try {
+          const ent = await getEntitlementState(req.userId);
+          if (!ent.canAiImport) {
+            return res.status(402).json(upgradeRequired('ai_import_limit',
+              `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month — upgrade for unlimited imports`));
+          }
           // Analyze screenshot with AI, using existing account type as context
           const extractedData = await analyzeScreenshot(
             filePath, 
@@ -1577,6 +1611,8 @@ export async function updateAccountWithScreenshot(req, res) {
               details: extractedData.error
             });
           }
+
+          recordAiImport(req.userId).catch((e) => console.error('recordAiImport:', e.message));
 
           // Extract balance and interest rate from the first account found (or use existing if multiple)
           const accounts = extractedData.accounts || [];
@@ -1757,6 +1793,11 @@ export async function addHoldingsFromScreenshot(req, res) {
       }
 
       try {
+        const ent = await getEntitlementState(req.userId);
+        if (!ent.canAiImport) {
+          return res.status(402).json(upgradeRequired('ai_import_limit',
+            `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month — upgrade for unlimited imports`));
+        }
         const extractedData = await analyzeScreenshot(filePath, account.platform, account.account_type);
         if (!extractedData) {
           return res.status(500).json({ error: 'Failed to extract data from screenshot' });
@@ -1773,6 +1814,8 @@ export async function addHoldingsFromScreenshot(req, res) {
             details: extractedData.error
           });
         }
+
+        recordAiImport(req.userId).catch((e) => console.error('recordAiImport:', e.message));
 
         const holdings = extractedData.holdings || [];
         if (holdings.length === 0) {
@@ -2383,4 +2426,20 @@ export function deleteCashFlow(req, res) {
       });
     }
   );
+}
+
+
+// Entitlement + usage for the paywall/limits UI (S11)
+export async function getEntitlement(req, res) {
+  try {
+    const ent = await getEntitlementState(req.userId);
+    res.json(entitlementPayload({
+      premium: ent.premium,
+      premiumUntil: ent.premiumUntil,
+      accountsUsed: ent.accountsUsed,
+      aiImportsUsed: ent.aiImportsUsed,
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
