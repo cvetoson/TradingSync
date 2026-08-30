@@ -10,6 +10,7 @@ import AccountDetailView from './components/AccountDetailView';
 import PlatformDetailView from './components/PlatformDetailView';
 import AnalyticsPage from './components/AnalyticsPage';
 import ReportsPage from './components/ReportsPage';
+import PrivacyPolicyPage from './components/PrivacyPolicyPage';
 import Login from './components/Login';
 import Register from './components/Register';
 import CheckEmailPage from './components/CheckEmailPage';
@@ -349,6 +350,7 @@ function App() {
         <BiometricGate>
         <ToastProvider>
         <Routes>
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />

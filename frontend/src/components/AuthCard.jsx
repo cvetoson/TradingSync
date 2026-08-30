@@ -110,7 +110,10 @@ export default function AuthCard({ subtitle, children }) {
             {children}
           </div>
 
-          <p className="auth-footnote">Private by design — your data stays in your account.</p>
+          <p className="auth-footnote">
+          Private by design — your data stays in your account.{' '}
+          <a href="/privacy" style={{ color: 'var(--accent)' }}>Privacy policy</a>
+        </p>
         </div>
       </div>
     </div>
