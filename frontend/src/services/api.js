@@ -13,6 +13,10 @@ const api = axios.create({
 api.interceptors.response.use(
   (res) => res,
   (err) => {
+    if (err.response?.status === 402 && err.response.data?.code === 'upgrade_required') {
+      // Free-tier wall (S11): one global hook opens the paywall wherever it happens.
+      window.dispatchEvent(new CustomEvent('paywall:show', { detail: { reason: err.response.data.reason } }));
+    }
     if (err.response?.status === 401) {
       // Session expired/invalid — drop cached user and let the app redirect to login.
       localStorage.removeItem(USER_KEY);
@@ -25,6 +29,11 @@ api.interceptors.response.use(
 export async function deleteMyAccount(password) {
   // axios DELETE carries the body via config.data
   const { data } = await api.delete('/auth/account', { data: { password } });
+  return data;
+}
+
+export async function getEntitlement() {
+  const { data } = await api.get('/entitlement');
   return data;
 }
 

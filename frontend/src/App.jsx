@@ -6,6 +6,7 @@ import { ToastProvider, useToast } from './context/ToastContext';
 import { isNative, isAppLockEnabled, biometricAuthenticate, onAppStateChange } from './services/native';
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
+import PaywallModal from './components/PaywallModal';
 import AccountDetailView from './components/AccountDetailView';
 import PlatformDetailView from './components/PlatformDetailView';
 import AnalyticsPage from './components/AnalyticsPage';
@@ -115,6 +116,13 @@ function DashboardContent() {
   const [portfolioData, setPortfolioData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [paywall, setPaywall] = useState(null); // { reason } | null
+
+  useEffect(() => {
+    const onPaywall = (e) => setPaywall({ reason: e.detail?.reason });
+    window.addEventListener('paywall:show', onPaywall);
+    return () => window.removeEventListener('paywall:show', onPaywall);
+  }, []);
   const [uploadPrefill, setUploadPrefill] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [selectedAccount, setSelectedAccount] = useState(null);
@@ -276,6 +284,7 @@ function DashboardContent() {
 
       {/* Modals */}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {paywall && <PaywallModal reason={paywall.reason} onClose={() => setPaywall(null)} />}
       {showUploadModal && (
         <UploadModal
           prefill={uploadPrefill}
