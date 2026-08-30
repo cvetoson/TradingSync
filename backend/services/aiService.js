@@ -11,7 +11,7 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '../.env') });
 
 // Function to get or refresh OpenAI client (always reloads .env)
-function getOpenAIClient() {
+export function getOpenAIClient() {
   // Always reload .env to get latest values
   dotenv.config({ path: join(__dirname, '../.env') });
   const apiKey = process.env.OPENAI_API_KEY;
