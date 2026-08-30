@@ -22,7 +22,7 @@ export default function SupportPage() {
       await axios.post('/api/support', { name, email, subject, message, website: '' });
       setState('sent');
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not send your message. Email info@zetoson.com instead.');
+      setError(err.response?.data?.error || 'Could not send your message. Email support@8-sync.com instead.');
       setState('error');
     }
   };
@@ -35,11 +35,9 @@ export default function SupportPage() {
       <div className="max-w-xl mx-auto px-4 sm:px-6 py-10">
         <div className="flex items-center gap-3 mb-8">
           <div className="btn-gold w-9 h-9 rounded-xl flex items-center justify-center shrink-0">
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
+            <span className="text-white font-extrabold text-[17px] leading-none">8</span>
           </div>
-          <span className="font-semibold" style={{ color: 'var(--text-1)' }}>Trading Sync</span>
+          <span className="font-semibold" style={{ color: 'var(--text-1)' }}>8Sync</span>
         </div>
 
         <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-1)' }}>Support</h1>
@@ -51,7 +49,7 @@ export default function SupportPage() {
           <div className="rounded-lg border p-5" style={{ borderColor: 'rgba(74,222,128,0.3)', background: 'rgba(74,222,128,0.06)' }}>
             <p className="text-sm font-semibold" style={{ color: '#10b981' }}>Message sent.</p>
             <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>We will reply to {email} as soon as possible.</p>
-            <Link to="/" className="inline-block mt-4 text-sm" style={{ color: 'var(--accent)' }}>← Back to Trading Sync</Link>
+            <Link to="/" className="inline-block mt-4 text-sm" style={{ color: 'var(--accent)' }}>← Back to 8Sync</Link>
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
@@ -84,7 +82,7 @@ export default function SupportPage() {
         )}
 
         <p className="text-xs mt-8" style={{ color: 'var(--text-4)' }}>
-          Prefer email? Write to <a href="mailto:info@zetoson.com" style={{ color: 'var(--accent)' }}>info@zetoson.com</a>.
+          Prefer email? Write to <a href="mailto:support@8-sync.com" style={{ color: 'var(--accent)' }}>support@8-sync.com</a>.
           {' '}<Link to="/privacy" style={{ color: 'var(--text-3)' }}>Privacy policy</Link>
         </p>
       </div>

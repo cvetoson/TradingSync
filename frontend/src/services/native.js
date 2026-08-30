@@ -51,7 +51,7 @@ export async function biometricAvailable() {
 export async function biometricAuthenticate() {
   const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth');
   await BiometricAuth.authenticate({
-    reason: 'Unlock Trading Sync',
+    reason: 'Unlock 8Sync',
     allowDeviceCredential: true,
     iosFallbackTitle: 'Use passcode',
     cancelTitle: 'Cancel',

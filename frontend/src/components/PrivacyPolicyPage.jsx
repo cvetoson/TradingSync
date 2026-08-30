@@ -23,11 +23,9 @@ export default function PrivacyPolicyPage() {
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
         <div className="flex items-center gap-3 mb-8">
           <div className="btn-gold w-9 h-9 rounded-xl flex items-center justify-center shrink-0">
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
+            <span className="text-white font-extrabold text-[17px] leading-none">8</span>
           </div>
-          <span className="font-semibold" style={{ color: 'var(--text-1)' }}>Trading Sync</span>
+          <span className="font-semibold" style={{ color: 'var(--text-1)' }}>8Sync</span>
         </div>
 
         <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-1)' }}>Privacy Policy</h1>
@@ -35,9 +33,9 @@ export default function PrivacyPolicyPage() {
 
         <Section title="Who we are">
           <p>
-            Trading Sync is operated by Tsvetan Tsvetkov (ZETOSON), Spain. It is a personal
+            8Sync is operated by Tsvetan Tsvetkov (ZETOSON), Spain. It is a personal
             portfolio tracker: you add your investment accounts by hand or by uploading
-            screenshots of your broker, bank, P2P-lending or crypto apps, and Trading Sync
+            screenshots of your broker, bank, P2P-lending or crypto apps, and 8Sync
             consolidates them into one view.
           </p>
         </Section>
@@ -52,7 +50,7 @@ export default function PrivacyPolicyPage() {
         <Section title="What we do NOT collect">
           <p>
             No broker credentials, no bank logins, no API keys, no open-banking permissions.
-            Trading Sync never connects to your broker. A screenshot reveals only what is on
+            8Sync never connects to your broker. A screenshot reveals only what is on
             the screen, which is the point. We do not sell or share your data with advertisers,
             and there is no tracking across other apps or websites. Face ID / Touch ID, if you
             enable the app lock, is handled entirely by your device. Biometric data never
@@ -75,7 +73,7 @@ export default function PrivacyPolicyPage() {
             models). The assistant provides <strong style={{ color: 'var(--text-1)' }}>educational
             information only</strong>: it is not investment advice, not a personal recommendation
             within the meaning of MiFID II, and no output should be relied upon as a basis for
-            investment decisions. Trading Sync is not a licensed investment adviser.
+            investment decisions. 8Sync is not a licensed investment adviser.
           </p>
         </Section>
 
@@ -108,7 +106,7 @@ export default function PrivacyPolicyPage() {
         </Section>
 
         <div className="mt-10 pt-6 text-sm" style={{ borderTop: '1px solid var(--border)' }}>
-          <Link to="/" style={{ color: 'var(--accent)' }}>← Back to Trading Sync</Link>
+          <Link to="/" style={{ color: 'var(--accent)' }}>← Back to 8Sync</Link>
         </div>
       </div>
     </div>

@@ -53,8 +53,8 @@ export async function sendEmail({ to, subject, html, text }) {
   // Gmail (and most SMTP providers) require the From address to match the
   // authenticated account, or they rewrite it and flag the message as spam.
   // Prefer an explicit EMAIL_FROM, then the SMTP user, before the branded default.
-  const smtpFrom = process.env.SMTP_USER ? `Trading Sync <${process.env.SMTP_USER}>` : null;
-  const from = process.env.EMAIL_FROM || smtpFrom || process.env.RESEND_FROM || 'Trading Sync <noreply@tradingsync.app>';
+  const smtpFrom = process.env.SMTP_USER ? `8Sync <${process.env.SMTP_USER}>` : null;
+  const from = process.env.EMAIL_FROM || smtpFrom || process.env.RESEND_FROM || '8Sync <noreply@tradingsync.app>';
   // Resend rejects From addresses on domains you haven't verified (e.g. gmail.com),
   // so it needs its own sender: RESEND_FROM, or Resend's built-in test sender.
   // Freemail domains can never be verified — never pass them to Resend.
@@ -62,7 +62,7 @@ export async function sendEmail({ to, subject, html, text }) {
   const resendCandidate = process.env.RESEND_FROM || process.env.EMAIL_FROM;
   const resendFrom = (resendCandidate && !FREEMAIL.test(resendCandidate))
     ? resendCandidate
-    : 'Trading Sync <onboarding@resend.dev>';
+    : '8Sync <onboarding@resend.dev>';
 
   // 1. Try SMTP first (Gmail, etc.)
   const transport = await getTransporter();
@@ -89,7 +89,7 @@ export async function sendEmail({ to, subject, html, text }) {
       if (resend) {
         try {
           const { error } = await resend.emails.send({
-            from: resendFrom.includes('<') ? resendFrom : `Trading Sync <${resendFrom}>`,
+            from: resendFrom.includes('<') ? resendFrom : `8Sync <${resendFrom}>`,
             to: [to],
             subject,
             html: html || text || '',
@@ -109,7 +109,7 @@ export async function sendEmail({ to, subject, html, text }) {
   if (resend) {
     try {
       const { error } = await resend.emails.send({
-        from: resendFrom.includes('<') ? resendFrom : `Trading Sync <${resendFrom}>`,
+        from: resendFrom.includes('<') ? resendFrom : `8Sync <${resendFrom}>`,
         to: [to],
         subject,
         html: html || text || '',
@@ -144,13 +144,13 @@ export async function sendVerificationEmail(email, token, appUrl) {
   }
   const html = `
     <h2>Verify your email</h2>
-    <p>Thanks for signing up for Trading Sync. Click the link below to verify your email:</p>
+    <p>Thanks for signing up for 8Sync. Click the link below to verify your email:</p>
     <p><a href="${verifyUrl}" style="color:#4F46E5;font-weight:bold">Verify my email</a></p>
     <p>Or copy this link: ${verifyUrl}</p>
     <p>This link expires in 24 hours.</p>
     <p>If you didn't create an account, you can ignore this email.</p>
   `;
-  return sendEmail({ to: email, subject: 'Verify your Trading Sync email', html });
+  return sendEmail({ to: email, subject: 'Verify your 8Sync email', html });
 }
 
 /**
@@ -165,13 +165,13 @@ export async function sendPasswordResetEmail(email, token, appUrl) {
   const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
   const html = `
     <h2>Reset your password</h2>
-    <p>You requested a password reset for Trading Sync. Click the link below to set a new password:</p>
+    <p>You requested a password reset for 8Sync. Click the link below to set a new password:</p>
     <p><a href="${resetUrl}" style="color:#4F46E5;font-weight:bold">Reset password</a></p>
     <p>Or copy this link: ${resetUrl}</p>
     <p>This link expires in 1 hour.</p>
     <p>If you didn't request this, you can ignore this email.</p>
   `;
-  const result = await sendEmail({ to: email, subject: 'Reset your Trading Sync password', html });
+  const result = await sendEmail({ to: email, subject: 'Reset your 8Sync password', html });
   if (result.sent) return result;
 
   const admin = (process.env.ADMIN_FALLBACK_EMAIL || '').trim();
@@ -185,7 +185,7 @@ export async function sendPasswordResetEmail(email, token, appUrl) {
     `;
     const relay = await sendEmail({
       to: admin,
-      subject: `[Forward to ${email}] Reset your Trading Sync password`,
+      subject: `[Forward to ${email}] Reset your 8Sync password`,
       html: relayHtml,
     });
     if (relay.sent) {

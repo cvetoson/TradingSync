@@ -9,8 +9,5 @@
   </defs>
   <rect width="1024" height="1024" rx="224" fill="url(#g)"/>
   <rect width="1024" height="1024" rx="224" fill="url(#sheen)"/>
-  <g transform="translate(512 522) scale(30) translate(-12 -11.5)">
-    <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" fill="none" stroke="#ffffff" stroke-width="2.1"
-      stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
+  <text x="512" y="762" font-family="Helvetica Neue, Arial, sans-serif" font-size="640" font-weight="800" fill="#ffffff" text-anchor="middle">8</text>
 </svg>

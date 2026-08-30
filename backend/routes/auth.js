@@ -488,7 +488,7 @@ export async function submitSupportRequest(req, res) {
   const safe = (t, n) => String(t || '').slice(0, n).replace(/</g, '&lt;');
   const sent = await sendEmail({
     to,
-    subject: `[Trading Sync support] ${safe(subject, 120) || 'New request'}`,
+    subject: `[8Sync support] ${safe(subject, 120) || 'New request'}`,
     text: `From: ${safe(name, 100) || 'not given'} <${fromEmail}>\nUser-Agent: ${safe(req.headers['user-agent'], 200)}\n\n${msg.slice(0, 5000)}`,
     html: `<p><strong>From:</strong> ${safe(name, 100) || 'not given'} &lt;${safe(fromEmail, 200)}&gt;</p><p style="white-space:pre-wrap">${safe(msg, 5000)}</p>`,
   });

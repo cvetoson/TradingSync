@@ -2452,7 +2452,7 @@ export async function postAssistantChat(req, res) {
     const ent = await getEntitlementState(req.userId);
     if (!ent.premium) {
       return res.status(402).json(upgradeRequired('assistant',
-        'The AI portfolio assistant is part of Trading Sync Premium'));
+        'The AI portfolio assistant is part of 8Sync Premium'));
     }
     const reply = await assistantChat(req.userId, req.body?.messages);
     res.json({ reply });

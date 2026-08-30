@@ -198,7 +198,7 @@ async function start() {
 
   // Health check
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', message: 'Trading Sync API is running' });
+    res.json({ status: 'ok', message: '8Sync API is running' });
   });
 
   // Dev: root is not the SPA (Vite default 5173); avoid "broken" empty 404
@@ -206,9 +206,9 @@ async function start() {
     app.get('/', (req, res) => {
       const uiPort = process.env.VITE_DEV_PORT || 5173;
       res.type('html').send(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Trading Sync API</title></head>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>8Sync API</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:36rem;margin:2rem auto;padding:0 1.25rem;line-height:1.5;color:#111">
-  <h1 style="font-size:1.25rem;font-weight:600">Trading Sync — API only (dev)</h1>
+  <h1 style="font-size:1.25rem;font-weight:600">8Sync — API only (dev)</h1>
   <p>This port serves the <strong>API</strong>. The web app runs separately.</p>
   <p>Open the UI: <a href="http://localhost:${uiPort}">http://localhost:${uiPort}</a><br/>
   <span style="color:#555;font-size:0.9rem">From the project root run <code style="background:#f3f4f6;padding:0.1rem 0.35rem;border-radius:4px">npm run dev</code> to start API + frontend together.</span></p>
@@ -252,7 +252,7 @@ async function start() {
     }
     const result = await sendEmail({
       to,
-      subject: 'Trading Sync – test email',
+      subject: '8Sync – test email',
       html: '<p>If you received this, email is working.</p>',
     });
     res.json({ sent: result.sent, error: result.error || null, lastEmailError: getLastEmailError() });

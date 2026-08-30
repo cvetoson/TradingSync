@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Trading Sync</string>
+        <string>8Sync</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -54,7 +54,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Choose a screenshot of your broker or bank app to import the account.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Unlock Trading Sync with Face ID.</string>
+	<string>Unlock 8Sync with Face ID.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save a copy of an imported screenshot to your photo library.</string>
 </dict>

@@ -60,9 +60,7 @@ export default function PaywallModal({ reason, onClose }) {
 
         <div className="flex items-start justify-between mb-1">
           <div className="btn-gold w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
+            <span className="text-white font-extrabold text-[22px] leading-none">8</span>
           </div>
           <button onClick={onClose} className="p-2 -m-1 rounded-md text-dim hover:text-strong" title="Close">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -71,7 +69,7 @@ export default function PaywallModal({ reason, onClose }) {
           </button>
         </div>
 
-        <h2 className="text-xl font-bold mt-3" style={{ color: 'var(--text-1)' }}>Trading Sync Premium</h2>
+        <h2 className="text-xl font-bold mt-3" style={{ color: 'var(--text-1)' }}>8Sync Premium</h2>
         <p className="text-sm mt-1 mb-4" style={{ color: 'var(--text-3)' }}>
           {REASON_COPY[reason] || 'Everything your portfolio needs, without limits.'}
         </p>

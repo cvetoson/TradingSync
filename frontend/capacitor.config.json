@@ -1,6 +1,6 @@
 {
-  "appId": "com.zetoson.tradingsync",
-  "appName": "Trading Sync",
+  "appId": "com.zetoson.eightsync",
+  "appName": "8Sync",
   "webDir": "dist",
   "backgroundColor": "#0a0a0c",
   "ios": {

@@ -69,7 +69,7 @@ function BiometricGate({ children }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
       </div>
-      <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>Trading Sync is locked</p>
+      <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>8Sync is locked</p>
       {authError && <p className="text-xs" style={{ color: '#ef4444' }}>{authError}</p>}
       <button type="button" onClick={unlock} className="btn-gold px-5 py-2.5 rounded-lg text-sm font-semibold text-white">
         Unlock
@@ -172,11 +172,9 @@ function DashboardContent() {
         {/* Brand */}
         <div className="px-3 lg:px-4 mb-8 flex items-center gap-3">
           <div className="btn-gold w-9 h-9 rounded-xl flex items-center justify-center shrink-0">
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
+            <span className="text-white font-extrabold text-[17px] leading-none">8</span>
           </div>
-          <span className="hidden sm:block font-semibold text-sm tracking-tight" style={{ color: 'var(--text-1)' }}>Trading Sync</span>
+          <span className="hidden sm:block font-semibold text-sm tracking-tight" style={{ color: 'var(--text-1)' }}>8Sync</span>
         </div>
 
         {/* Nav */}

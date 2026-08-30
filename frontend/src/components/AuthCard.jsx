@@ -98,11 +98,9 @@ export default function AuthCard({ subtitle, children }) {
         <div className="auth-form-wrap">
           <div className="auth-brand">
             <div className="auth-brand-icon">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
+              <span className="text-white font-extrabold text-[20px] leading-none">8</span>
             </div>
-            <h1 className="auth-brand-title">Trading Sync</h1>
+            <h1 className="auth-brand-title">8Sync</h1>
             {subtitle && <p className="auth-brand-sub">{subtitle}</p>}
           </div>
 
