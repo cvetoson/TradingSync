@@ -12,6 +12,7 @@ const REASON_COPY = {
 };
 
 const BENEFITS = [
+  ['AI portfolio assistant', 'Ask questions about your own portfolio — explained with your real numbers'],
   ['Unlimited accounts', 'Track every broker, bank, P2P platform and wallet you have'],
   ['Unlimited AI screenshot imports', 'Add and refresh accounts from a screenshot, any time'],
   ['Live prices every 20 minutes', 'Stocks, ETFs and crypto stay current in the background'],

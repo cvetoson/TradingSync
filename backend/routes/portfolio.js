@@ -26,6 +26,7 @@ import {
 } from '../lib/portfolioUtils.js';
 import { loadInstrumentRegistry, fetchPriceForHolding, currentRates } from '../services/priceService.js';
 import { getEntitlementState, recordAiImport } from '../services/usage.js';
+import { assistantChat } from '../services/assistant.js';
 import { entitlementPayload, upgradeRequired, FREE_MAX_ACCOUNTS, FREE_MAX_AI_IMPORTS_PER_MONTH } from '../lib/entitlement.js';
 
 /** Promise wrapper for db.run so we can await DB writes before returning */
@@ -2441,5 +2442,23 @@ export async function getEntitlement(req, res) {
     }));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+}
+
+
+// Premium AI assistant: explain-my-portfolio chat (educational only, MiFID-safe)
+export async function postAssistantChat(req, res) {
+  try {
+    const ent = await getEntitlementState(req.userId);
+    if (!ent.premium) {
+      return res.status(402).json(upgradeRequired('assistant',
+        'The AI portfolio assistant is part of Trading Sync Premium'));
+    }
+    const reply = await assistantChat(req.userId, req.body?.messages);
+    res.json({ reply });
+  } catch (err) {
+    const status = err.status || 500;
+    if (status >= 500) console.error('assistant error:', err.message);
+    res.status(status).json({ error: status === 500 ? 'Assistant is unavailable right now' : err.message });
   }
 }
