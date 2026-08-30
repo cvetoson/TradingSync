@@ -268,6 +268,28 @@ async function initPostgres() {
   if (!holdingColNames.includes('quantity_source')) {
     await run(`ALTER TABLE holdings ADD COLUMN quantity_source TEXT`);
   }
+
+  const userCols2Res = await run(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users'
+  `);
+  const userColNames = (userCols2Res.rows || []).map((r) => r.column_name);
+  if (!userColNames.includes('premium')) {
+    await run(`ALTER TABLE users ADD COLUMN premium INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!userColNames.includes('premium_until')) {
+    await run(`ALTER TABLE users ADD COLUMN premium_until TIMESTAMP`);
+  }
+
+  // Free-tier metering: one row per user per calendar month.
+  await run(`
+    CREATE TABLE IF NOT EXISTS usage_counters (
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      period TEXT NOT NULL,
+      ai_imports INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, period)
+    )
+  `);
   // Where current_price came from: 'live' (market API), 'screenshot', 'manual'.
   // Drives the price-source badge, so users can trust what they see.
   if (!holdingColNames.includes('price_source')) {
@@ -379,6 +401,22 @@ export function initDatabase() {
           db.run(`ALTER TABLE holdings ADD COLUMN price_source TEXT`);
         }
       });
+      db.all(`PRAGMA table_info(users)`, (err, cols) => {
+        if (!err && cols && !cols.some((c) => c.name === 'premium')) {
+          db.run(`ALTER TABLE users ADD COLUMN premium INTEGER NOT NULL DEFAULT 0`);
+        }
+        if (!err && cols && !cols.some((c) => c.name === 'premium_until')) {
+          db.run(`ALTER TABLE users ADD COLUMN premium_until TIMESTAMP`);
+        }
+      });
+      db.run(`
+        CREATE TABLE IF NOT EXISTS usage_counters (
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          period TEXT NOT NULL,
+          ai_imports INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (user_id, period)
+        )
+      `, (e) => { if (e) console.error('usage_counters create failed:', e.message); });
 
       // Instrument registry: per-listing currency + price divisor (100 = pence quotes)
       db.run(`

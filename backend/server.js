@@ -13,7 +13,7 @@ import { getRecentErrors } from './lib/errorLog.js';
 import { getLastEmailError, sendEmail } from './services/emailService.js';
 import { backfillAccountHistory } from './routes/backfillHistory.js';
 import { requireAuth, requireAccountAuth, requireHistoryAuth, requireHoldingAuth, register, login, logout, verifyEmail, forgotPassword, resetPassword, getProfile, updateProfile, changePassword, deleteUserAccount } from './routes/auth.js';
-import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountTag, updateAccountBalance, updateAccountInterestRate, updateAccountContributedAmount, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, updateHoldingPurchasePrice, deleteHolding, verifyHoldingSymbol, getConsolidatedInstruments, getAccountCashFlows, createAccountCashFlow, deleteCashFlow } from './routes/portfolio.js';
+import { uploadScreenshot, getPortfolioSummary, getAccounts, createAccount, createHolding, updateAccountName, updateAccountType, updateAccountPlatform, updateAccountTag, updateAccountBalance, updateAccountInterestRate, updateAccountContributedAmount, getAccountHistory, getAccountHoldings, getHoldingsProjection, updateAccountWithScreenshot, addHoldingsFromScreenshot, deleteAccount, deleteHistoryEntry, updateHoldingSymbol, updateHoldingQuantity, updateHoldingPrice, updateHoldingPurchasePrice, deleteHolding, verifyHoldingSymbol, getConsolidatedInstruments, getAccountCashFlows, createAccountCashFlow, deleteCashFlow, getEntitlement } from './routes/portfolio.js';
 import { startPriceScheduler } from './services/priceService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -165,6 +165,7 @@ async function start() {
     });
   });
   app.get('/api/portfolio/summary', requireAuth, getPortfolioSummary);
+  app.get('/api/entitlement', requireAuth, getEntitlement);
   app.get('/api/portfolio/instruments', requireAuth, getConsolidatedInstruments);
   app.get('/api/accounts', requireAuth, getAccounts);
   app.get('/api/accounts/:id/cashflows', requireAuth, requireAccountAuth, getAccountCashFlows);
