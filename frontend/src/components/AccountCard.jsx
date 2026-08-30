@@ -95,7 +95,9 @@ export default function AccountCard({ account, currency, onUpdate, onViewDetails
               {account.holdingsCount} holding{account.holdingsCount !== 1 ? 's' : ''}
             </div>
           )}
-          <div className="flex items-center gap-1.5 mt-2 text-xs" style={{ color: 'var(--text-4)' }} title={tier.label}>
+          {/* pr-24 clears the absolutely-positioned type badge (bottom-right); on narrow
+              cards the long freshness text ran underneath it */}
+          <div className="flex items-center gap-1.5 mt-2 text-xs flex-wrap pr-24" style={{ color: 'var(--text-4)' }} title={tier.label}>
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: fresh.color }} />
             <span>{fresh.label}</span>
             <span style={{ color: 'var(--text-4)' }}>· {tier.label}</span>
