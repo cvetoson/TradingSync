@@ -73,11 +73,11 @@ Each item ≈ one 20–30 min session. Order matters; check them off as we go.
 - [x] **S2:** Add Capacitor to `frontend/` (`@capacitor/core`, `ios` platform), point it at the Railway API, commit.
 - [x] **S3:** (done via Claude Code iOS Simulator panel instead of XcodeBuildMCP) Set up the Xcode MCP server in Claude Code (XcodeBuildMCP) so Claude can build/run the simulator directly. First launch of Trading Sync in the iOS Simulator.
 - [x] **S4:** (CapacitorHttp native networking + dark status bar shipped; login verified against Railway. Remaining papercut: platform-detail sheet clipped on phone width) Fix WebView papercuts: safe-area insets (notch), cookie/auth check against Railway, viewport behavior.
-- [ ] **S5:** App icon + splash screen from the gold brand mark (generate all sizes).
+- [x] **S5:** App icon + splash screen from the gold brand mark (generate all sizes).
 
 ### Week 2 — Feel native + Apple-required features
-- [ ] **S6:** Native photo picker / camera for screenshot upload (Capacitor Camera plugin) — replaces the file input on iOS.
-- [ ] **S7:** Face ID / Touch ID app lock (Capacitor plugin) — optional toggle in Settings.
+- [x] **S6:** Native photo picker / camera for screenshot upload (Capacitor Camera plugin) — replaces the file input on iOS.
+- [x] **S7:** Face ID / Touch ID app lock (Capacitor plugin) — optional toggle in Settings.
 - [ ] **S8:** **Account deletion** (Apple requirement): backend endpoint (delete user + accounts + history + holdings) — we pair on this carefully.
 - [ ] **S9:** Account deletion UI in Settings with confirmation; verify end-to-end.
 - [ ] **S10:** Privacy policy page (static, served by the app) + data-safety answers drafted.

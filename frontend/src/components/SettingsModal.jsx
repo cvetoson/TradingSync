@@ -2,12 +2,30 @@ import { useState, useEffect } from 'react';
 import * as api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { isNative, isAppLockEnabled, setAppLockEnabled, biometricAvailable, biometricAuthenticate } from '../services/native';
 import useModalBehavior from '../hooks/useModalBehavior';
 
 export default function SettingsModal({ onClose }) {
   useModalBehavior(onClose);
   const { user, updateUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const [appLock, setAppLock] = useState(isAppLockEnabled());
+  const [appLockError, setAppLockError] = useState('');
+
+  const toggleAppLock = async () => {
+    setAppLockError('');
+    if (appLock) { setAppLockEnabled(false); setAppLock(false); return; }
+    try {
+      if (!(await biometricAvailable())) {
+        setAppLockError('Face ID / passcode is not set up on this device');
+        return;
+      }
+      await biometricAuthenticate(); // confirm once before arming the lock
+      setAppLockEnabled(true); setAppLock(true);
+    } catch {
+      setAppLockError('Authentication was cancelled');
+    }
+  };
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
@@ -134,6 +152,40 @@ export default function SettingsModal({ onClose }) {
 
           {/* Divider */}
           <div style={{ borderTop: '1px solid var(--border)', marginBottom: '2rem' }} />
+
+          {isNative && (
+            <>
+              <section className="mb-8">
+                <h3 className="text-xs font-medium mb-3 uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>Security</h3>
+                <button
+                  type="button"
+                  onClick={toggleAppLock}
+                  className="flex items-center justify-between w-full text-sm transition px-3 py-2.5 rounded-md border"
+                  style={{ color: 'var(--text-1)', borderColor: 'var(--border)', background: 'var(--bg-inner)' }}
+                >
+                  <span className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    Require Face ID to open the app
+                  </span>
+                  <span
+                    className="w-10 h-6 rounded-full relative transition-colors shrink-0"
+                    style={{ background: appLock ? 'var(--accent)' : 'var(--border)' }}
+                  >
+                    <span
+                      className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"
+                      style={{ left: appLock ? '18px' : '2px' }}
+                    />
+                  </span>
+                </button>
+                {appLockError && <p className="text-xs mt-2" style={{ color: '#ef4444' }}>{appLockError}</p>}
+              </section>
+
+              {/* Divider */}
+              <div style={{ borderTop: '1px solid var(--border)', marginBottom: '2rem' }} />
+            </>
+          )}
 
           {/* Theme section */}
           <section className="mb-8">

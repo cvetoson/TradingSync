@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
+import { isNative, isAppLockEnabled, biometricAuthenticate, onAppStateChange } from './services/native';
 import Dashboard from './components/Dashboard';
 import UploadModal from './components/UploadModal';
 import AccountDetailView from './components/AccountDetailView';
@@ -28,6 +29,50 @@ const PLATFORM_CATEGORY_TO_MANUAL = {
   bank: 'fixed-income',
   unknown: 'alternative'
 };
+
+// Native app lock (S7): when armed in Settings, the app blanks and requires
+// Face ID / passcode on every cold start and on return from the background.
+function BiometricGate({ children }) {
+  const [locked, setLocked] = useState(() => isNative && isAppLockEnabled());
+  const [authError, setAuthError] = useState('');
+
+  const unlock = async () => {
+    try {
+      setAuthError('');
+      await biometricAuthenticate();
+      setLocked(false);
+    } catch {
+      setAuthError('Authentication failed');
+    }
+  };
+
+  useEffect(() => { if (locked) unlock(); }, []); // prompt immediately on launch
+
+  useEffect(() => {
+    if (!isNative) return;
+    let unsub;
+    onAppStateChange((isActive) => {
+      if (!isActive && isAppLockEnabled()) setLocked(true);
+    }).then((u) => { unsub = u; });
+    return () => unsub && unsub();
+  }, []);
+
+  if (!locked) return children;
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-5" style={{ background: 'var(--bg-page)' }}>
+      <div className="btn-gold w-16 h-16 rounded-2xl flex items-center justify-center">
+        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+      </div>
+      <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>Trading Sync is locked</p>
+      {authError && <p className="text-xs" style={{ color: '#ef4444' }}>{authError}</p>}
+      <button type="button" onClick={unlock} className="btn-gold px-5 py-2.5 rounded-lg text-sm font-semibold text-white">
+        Unlock
+      </button>
+    </div>
+  );
+}
 
 function AppContent() {
   const { isAuthenticated, loading } = useAuth();
@@ -301,6 +346,7 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
+        <BiometricGate>
         <ToastProvider>
         <Routes>
           <Route path="/verify-email" element={<VerifyEmailPage />} />
@@ -310,6 +356,7 @@ function App() {
           <Route path="/*" element={<AppContent />} />
         </Routes>
         </ToastProvider>
+        </BiometricGate>
       </AuthProvider>
     </ThemeProvider>
   );

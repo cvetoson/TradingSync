@@ -49,5 +49,13 @@
 	<false/>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo of your broker or bank screen to import the account.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a screenshot of your broker or bank app to import the account.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock Trading Sync with Face ID.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save a copy of an imported screenshot to your photo library.</string>
 </dict>
 </plist>

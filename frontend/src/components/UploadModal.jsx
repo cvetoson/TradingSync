@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { isNative, pickScreenshotFile } from '../services/native';
 import { uploadScreenshot, getAccounts, createAccount, createHolding, updateAccountBalance, updateAccountInterestRate } from '../services/api';
 import useModalBehavior from '../hooks/useModalBehavior';
 
@@ -67,6 +68,19 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
       } else {
         setError('Please select an image file');
       }
+    }
+  };
+
+  // In the iOS shell the hidden <input type=file> opens the clunky web picker;
+  // intercept and use the native camera/library sheet instead.
+  const handleNativePick = async (e) => {
+    if (!isNative) return;
+    e.preventDefault();
+    try {
+      const picked = await pickScreenshotFile();
+      if (picked) { setFile(picked); setError(''); }
+    } catch {
+      setError('Could not open the photo picker');
     }
   };
 
@@ -241,8 +255,8 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Screenshot</label>
               <div className="border-2 border-dashed border-gray-300 rounded-md p-6 text-center hover:border-blue-400 transition-colors">
-                <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" id="file-upload" required />
-                <label htmlFor="file-upload" className="cursor-pointer">
+                <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" id="file-upload" required={!isNative} />
+                <label htmlFor="file-upload" className="cursor-pointer" onClick={handleNativePick}>
                   {file ? (
                     <div>
                       <svg className="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">

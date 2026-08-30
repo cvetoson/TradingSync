@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isNative, pickScreenshotFile } from '../services/native';
 import { updateAccountWithScreenshot } from '../services/api';
 import useModalBehavior from '../hooks/useModalBehavior';
 
@@ -17,6 +18,18 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
       } else {
         setError('Please select an image file');
       }
+    }
+  };
+
+  // In the iOS shell, intercept the label tap and use the native photo sheet.
+  const handleNativePick = async (e) => {
+    if (!isNative || uploading) { if (isNative) e.preventDefault(); return; }
+    e.preventDefault();
+    try {
+      const picked = await pickScreenshotFile();
+      if (picked) { setFile(picked); setError(''); }
+    } catch {
+      setError('Could not open the photo picker');
     }
   };
 
@@ -83,10 +96,10 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
                 onChange={handleFileChange}
                 className="hidden"
                 id="file-upload"
-                required
+                required={!isNative}
                 disabled={uploading}
               />
-              <label htmlFor="file-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <label htmlFor="file-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={handleNativePick}>
                 {file ? (
                   <div>
                     <svg className="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
