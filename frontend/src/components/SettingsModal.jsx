@@ -368,7 +368,7 @@ export default function SettingsModal({ onClose }) {
           </section>
 
           <p className="text-xs mt-6" style={{ color: 'var(--text-4)' }}>
-            <a href="/privacy" style={{ color: 'var(--text-3)' }}>Privacy policy</a>
+            <a href="/support" style={{ color: 'var(--text-3)' }}>Support</a>{' · '}<a href="/privacy" style={{ color: 'var(--text-3)' }}>Privacy policy</a>
           </p>
         </div>
       </div>

@@ -13,6 +13,7 @@ import PlatformDetailView from './components/PlatformDetailView';
 import AnalyticsPage from './components/AnalyticsPage';
 import ReportsPage from './components/ReportsPage';
 import PrivacyPolicyPage from './components/PrivacyPolicyPage';
+import SupportPage from './components/SupportPage';
 import Login from './components/Login';
 import Register from './components/Register';
 import CheckEmailPage from './components/CheckEmailPage';
@@ -374,6 +375,7 @@ function App() {
         <ToastProvider>
         <Routes>
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/support" element={<SupportPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
