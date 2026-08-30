@@ -2,7 +2,13 @@
   "appId": "com.zetoson.tradingsync",
   "appName": "Trading Sync",
   "webDir": "dist",
+  "backgroundColor": "#0a0a0c",
   "ios": {
-    "contentInset": "always"
+    "contentInset": "always",
+    "backgroundColor": "#0a0a0c"
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "CapacitorCookies": { "enabled": true }
   }
 }
