@@ -1,7 +1,7 @@
 export const LSE_GBP_ETF_SYMBOLS = ['EQQQ', 'IITU', 'VUSA', 'VWRL', 'EIMI', 'VFEM', 'XAIX'];
 export const LSE_USD_ETF_SYMBOLS = ['ECAR', 'NVDA', 'META', 'SMSD'];
 export const LSE_CHF_SYMBOLS = ['ABBN'];
-export const EUR_NATIVE_SYMBOLS = ['IFX', 'TEF', 'MLAA', 'DTE'];
+export const EUR_NATIVE_SYMBOLS = ['IFX', 'TEF', 'MLAA', 'DTE', 'ENR', '5ZT'];
 
 /**
  * Normalise an LSE GBP ETF quote to pounds. Stooq returns some LSE lines in pence

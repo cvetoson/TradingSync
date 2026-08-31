@@ -3,13 +3,14 @@
  * Fetches current prices for stocks, bonds (including ISIN), precious metals, and cryptocurrencies.
  *
  * Sources:
- * - Stocks/ETFs/Bonds/Precious metals → Stooq (stooq.com, keyless CSV)
+ * - Stocks/ETFs/Bonds/Precious metals → Yahoo v8 chart (keyless), Stooq CSV as fallback
  * - FX rates                          → Frankfurter (frankfurter.app, ECB-backed, no key)
  * - Crypto                            → CoinGecko (no key)
  * - ISIN → ticker fallback            → OpenFIGI (Bloomberg, optional OPENFIGI_API_KEY)
  */
 
 import { stooqLatestClose, stooqHistoricalCloses, toStooqSymbol } from './stooqPrices.js';
+import { yahooLatestClose, yahooHistoricalCloses } from './yahooQuotes.js';
 import { normalizeLseGbpQuote } from '../lib/portfolioUtils.js';
 export {
   fetchUsdToEurRate,
@@ -28,6 +29,9 @@ function looksLikeIsin(s) {
  * Stooq format internally (.DE → .de, .L → .uk, etc.).
  */
 async function fetchTickerPrice(ticker) {
+  // Yahoo is primary since Stooq's CSV endpoints died (2026-08-31); Stooq stays as fallback.
+  const viaYahoo = await yahooLatestClose(ticker);
+  if (viaYahoo != null) return viaYahoo;
   return await stooqLatestClose(ticker);
 }
 
@@ -124,7 +128,7 @@ export async function fetchCurrentPrice(symbol, assetType = 'stock') {
       const lseUsdEtfs = ['ECAR', 'NVDA', 'META', 'SMSD'];
       const lseUsdStocks = ['LASE'];
       const lseChfEtfs = ['ABBN'];
-      const xetraStocks = ['IFX', 'DTE'];
+      const xetraStocks = ['IFX', 'DTE', 'ENR'];
       const madridStocks = ['TEF'];
       const parisStocks = ['MLAA'];
       const tryUsFirst = ['META', 'NVDA'];
@@ -209,7 +213,7 @@ export async function fetchCurrentPrice(symbol, assetType = 'stock') {
       // Last-resort suffix sweep for tickers NOT in any explicit list. Skip .US — too many
       // collisions with unrelated US-listed tickers (e.g. Laser Photonics matching "LASE").
       if (!inExplicitList) {
-        const suffixes = ['.L', '.DE', '.PA', '.VI', '.BR', '.SW', '.AS'];
+        const suffixes = ['.L', '.DE', '.PA', '.VI', '.BR', '.SW', '.AS', '.F'];
         for (const suffix of suffixes) {
           price = await fetchTickerPrice(sym + suffix);
           if (price != null) return price;
@@ -277,7 +281,7 @@ function getTickersForHistorical(symbol, assetType) {
   const lseUsdEtfs = ['ECAR', 'NVDA', 'META', 'SMSD'];
   const lseUsdStocks = ['LASE'];
   const lseChfEtfs = ['ABBN'];
-  const xetraStocks = ['IFX', 'DTE'];
+  const xetraStocks = ['IFX', 'DTE', 'ENR'];
   const madridStocks = ['TEF'];
   const parisStocks = ['MLAA'];
   const tryUsFirst = ['META', 'NVDA'];
@@ -290,7 +294,7 @@ function getTickersForHistorical(symbol, assetType) {
   if (parisStocks.includes(sym)) return [sym + '.PA', sym];
   if (tryLseFirst) return [sym + '.L', sym];
   if (/^\d{3,5}$/.test(sym)) return [sym + '.HK', sym];
-  const suffixes = ['.L', '.DE', '.PA', '.VI', '.BR', '.SW', '.AS'];
+  const suffixes = ['.L', '.DE', '.PA', '.VI', '.BR', '.SW', '.AS', '.F'];
   return [sym, ...suffixes.map((s) => sym + s)];
 }
 
@@ -305,7 +309,8 @@ export async function getProjectedPrice3M(symbol, currentPrice, assetType = 'sto
   if (assetType === 'crypto') {
     // For crypto, Stooq has BTCUSD, ETHUSD, etc. (forex-style).
     const cryptoSym = `${symbol.toUpperCase()}USD`;
-    const closes = await stooqHistoricalCloses(cryptoSym, 730);
+    let closes = await yahooHistoricalCloses(cryptoSym, 730);
+    if (!closes.length) closes = await stooqHistoricalCloses(cryptoSym, 730);
     if (closes && closes.length >= 2) {
       const dailyReturns = [];
       for (let i = 1; i < closes.length; i++) {
@@ -338,7 +343,8 @@ export async function getProjectedPrice3M(symbol, currentPrice, assetType = 'sto
   }
   let closes = null;
   for (const ticker of tickersToTry) {
-    closes = await stooqHistoricalCloses(ticker, rangeToDays('6mo'));
+    closes = await yahooHistoricalCloses(ticker, rangeToDays('6mo'));
+    if (!closes.length) closes = await stooqHistoricalCloses(ticker, rangeToDays('6mo'));
     if (closes && closes.length >= 2) break;
   }
   if (closes && closes.length >= 2) {
