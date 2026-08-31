@@ -710,14 +710,17 @@ export function getPortfolioSummary(req, res) {
                   }
                 );
               });
-              // Use holdings sum; prefer synced account.balance when it's higher (getAccountHoldings just ran)
+              // Live-priced holdings are the canonical value for investment accounts:
+              // they move with the market in BOTH directions. The stored balance only
+              // fills in when holdings could not be priced at all — taking
+              // max(balance, sum) here let a stale balance hide every price drop.
               const holdingsSum = holdingsResult?.totalValueEur;
               const freshBalance = await new Promise((resolve) => {
                 db.get('SELECT balance FROM accounts WHERE id = ?', [account.id], (e, row) => resolve(row?.balance));
               });
               const sumNum = coerceFiniteNumber(holdingsSum);
               const freshNum = coerceFiniteNumber(freshBalance);
-              const useValue = freshNum > sumNum ? freshNum : sumNum;
+              const useValue = sumNum > 0 ? sumNum : freshNum;
               if (Number.isFinite(useValue)) {
                 currentValue = useValue;
               }
