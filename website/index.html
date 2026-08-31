@@ -20,7 +20,14 @@
   <script type="application/ld+json">
   {"@context":"https://schema.org","@graph":[
     {"@type":"WebSite","name":"8Sync","url":"https://8-sync.com/"},
-    {"@type":"Organization","name":"ZETOSON","url":"https://8-sync.com/","logo":"https://8-sync.com/og.png"}
+    {"@type":"Organization","name":"ZETOSON","url":"https://8-sync.com/","logo":"https://8-sync.com/og.png"},
+    {"@type":"FAQPage","mainEntity":[
+      {"@type":"Question","name":"Is 8Sync free?","acceptedAnswer":{"@type":"Answer","text":"Yes. The free tier includes two accounts and three AI screenshot imports per month. Premium removes the limits and adds the AI portfolio assistant."}},
+      {"@type":"Question","name":"Do I have to connect my broker?","acceptedAnswer":{"@type":"Answer","text":"No. 8Sync never asks for broker logins, API keys or open-banking permissions. You add accounts manually or upload a screenshot, and the AI reads the balances and holdings from it."}},
+      {"@type":"Question","name":"Which platforms and assets does it cover?","acceptedAnswer":{"@type":"Answer","text":"Anything a screenshot can show: brokers, banks and deposits, P2P-lending platforms, crypto wallets and exchanges, physical gold, and more."}},
+      {"@type":"Question","name":"Is my data safe?","acceptedAnswer":{"@type":"Answer","text":"8Sync is private by design. A screenshot reveals only what is on the screen, and you can delete your account and all data at any time."}},
+      {"@type":"Question","name":"Is the AI assistant financial advice?","acceptedAnswer":{"@type":"Answer","text":"No. It explains your own portfolio as educational information only and never gives personal investment recommendations (MiFID II)."}}
+    ]}
   ]}
   </script>
 </head>
@@ -46,7 +53,8 @@
       <p class="note">Free to start. No broker logins, no API keys. A screenshot is enough.</p>
     </section>
 
-    <section class="grid" id="how">
+    <h2 class="visually-hidden" id="how">Why 8Sync</h2>
+    <section class="grid" aria-labelledby="how">
       <div class="card"><div class="ic">∞</div><h3>Every asset class</h3><p>Stocks and ETFs, P2P lending, savings and deposits, gold, crypto: one allocation ring instead of nine apps.</p></div>
       <div class="card"><div class="ic">⌗</div><h3>AI screenshot import</h3><p>Screenshot your broker or bank app. 8Sync reads the balances and holdings, and keeps the account up to date.</p></div>
       <div class="card"><div class="ic">◎</div><h3>Private by design</h3><p>No broker credentials, no open-banking permissions. A screenshot reveals only what is on the screen.</p></div>
@@ -58,10 +66,35 @@
       <p>Most aggregators stop at brokers with APIs. Your net worth doesn't. 8Sync covers the long tail: P2P platforms, bank deposits, physical gold, cold wallets, and anything else a screenshot can show.</p>
     </section>
 
+    <section class="faq" id="faq">
+      <h2>Frequently asked questions</h2>
+      <details>
+        <summary>Is 8Sync free?</summary>
+        <p>Yes. The free tier includes two accounts and three AI screenshot imports per month. Premium removes the limits and adds the AI portfolio assistant.</p>
+      </details>
+      <details>
+        <summary>Do I have to connect my broker?</summary>
+        <p>No. 8Sync never asks for broker logins, API keys or open-banking permissions. You add accounts manually or upload a screenshot, and the AI reads the balances and holdings from it.</p>
+      </details>
+      <details>
+        <summary>Which platforms and assets does it cover?</summary>
+        <p>Anything a screenshot can show: brokers like Trading 212 or Interactive Brokers, banks and deposits, P2P-lending platforms, crypto wallets and exchanges, physical gold, and more.</p>
+      </details>
+      <details>
+        <summary>Is my data safe?</summary>
+        <p>8Sync is private by design. A screenshot reveals only what is on the screen, nothing can be traded or withdrawn with it, and you can delete your account and all data at any time from Settings.</p>
+      </details>
+      <details>
+        <summary>Is the AI assistant financial advice?</summary>
+        <p>No. It explains your own portfolio in plain language, as educational information only, and never gives personal investment recommendations (MiFID II).</p>
+      </details>
+    </section>
+
     <footer>
       <span>© 2026 ZETOSON · 8Sync</span>
       <span>
         <a href="https://app.8-sync.com/privacy">Privacy</a> ·
+        <a href="/terms">Terms</a> ·
         <a href="https://app.8-sync.com/support">Support</a>
       </span>
     </footer>
