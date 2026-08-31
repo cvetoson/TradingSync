@@ -149,13 +149,22 @@ async function start() {
   app.get('/api/auth/me', requireAuth, getProfile);
   app.put('/api/auth/profile', requireAuth, updateProfile);
   app.put('/api/auth/change-password', requireAuth, changePassword);
+
+  // Screenshots arrive as 1-5 files under the same 'screenshot' field. req.file is
+  // kept pointing at the first one so single-file code paths stay valid.
+  const screenshots = upload.array('screenshot', 5);
+  const normalizeScreens = (req, _res, next) => {
+    if (!req.file && Array.isArray(req.files) && req.files.length) req.file = req.files[0];
+    next();
+  };
   app.post('/api/upload', requireAuth, uploadLimiter, (req, res, next) => {
-    upload.single('screenshot')(req, res, (multerErr) => {
+    screenshots(req, res, (multerErr) => {
       if (multerErr) {
         console.error('[UPLOAD] Multer error:', multerErr);
         const msg = multerErr.code === 'LIMIT_FILE_SIZE' ? 'File too large (max 10MB)' : multerErr.message || 'File upload failed';
         return res.status(400).json({ error: msg });
       }
+      if (!req.file && Array.isArray(req.files) && req.files.length) req.file = req.files[0];
       uploadScreenshot(req, res).catch((err) => {
         console.error('[UPLOAD] Handler error:', err?.message, err?.stack);
         if (!res.headersSent) {
@@ -185,8 +194,8 @@ async function start() {
   app.put('/api/accounts/:id/balance', requireAuth, requireAccountAuth, updateAccountBalance);
   app.put('/api/accounts/:id/interest-rate', requireAuth, requireAccountAuth, updateAccountInterestRate);
   app.put('/api/accounts/:id/contributed-amount', requireAuth, requireAccountAuth, updateAccountContributedAmount);
-  app.put('/api/accounts/:id/update', requireAuth, uploadLimiter, requireAccountAuth, upload.single('screenshot'), updateAccountWithScreenshot);
-  app.post('/api/accounts/:id/add-holdings', requireAuth, uploadLimiter, requireAccountAuth, upload.single('screenshot'), addHoldingsFromScreenshot);
+  app.put('/api/accounts/:id/update', requireAuth, uploadLimiter, requireAccountAuth, screenshots, normalizeScreens, updateAccountWithScreenshot);
+  app.post('/api/accounts/:id/add-holdings', requireAuth, uploadLimiter, requireAccountAuth, screenshots, normalizeScreens, addHoldingsFromScreenshot);
   app.delete('/api/accounts/:id', requireAuth, requireAccountAuth, deleteAccount);
   app.delete('/api/history/:id', requireAuth, requireHistoryAuth, deleteHistoryEntry);
   app.get('/api/holdings/verify-symbol', requireAuth, verifyHoldingSymbol);

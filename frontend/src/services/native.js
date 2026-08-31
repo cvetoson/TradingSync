@@ -32,6 +32,28 @@ export async function pickScreenshotFile() {
   return new File([blob], `screenshot.${ext}`, { type: blob.type || `image/${ext}` });
 }
 
+/**
+ * Native multi-select from the photo library (long position lists need several
+ * scrolled screenshots). Returns File[] — empty when the user cancels.
+ */
+export async function pickScreenshotFiles(limit = 5) {
+  const { Camera } = await import('@capacitor/camera');
+  let result;
+  try {
+    result = await Camera.pickImages({ quality: 90, limit });
+  } catch (e) {
+    if (/cancel/i.test(e?.message || '')) return [];
+    throw e;
+  }
+  const files = [];
+  for (const [i, photo] of (result?.photos || []).entries()) {
+    const blob = await (await fetch(photo.webPath)).blob();
+    const ext = (photo.format || 'png').toLowerCase();
+    files.push(new File([blob], `screenshot-${i + 1}.${ext}`, { type: blob.type || `image/${ext}` }));
+  }
+  return files;
+}
+
 export function isAppLockEnabled() {
   try { return localStorage.getItem(APPLOCK_KEY) === '1'; } catch { return false; }
 }

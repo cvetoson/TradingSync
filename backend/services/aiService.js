@@ -27,27 +27,37 @@ export function getOpenAIClient() {
 // Client is created lazily when analyzeScreenshot is called (avoids crash on startup if key missing)
 
 /**
- * Analyzes a screenshot and extracts portfolio data using OpenAI Vision API
- * @param {string} filePath - Path to the uploaded screenshot
+ * Analyzes one or more screenshots of the SAME account and extracts portfolio data
+ * using OpenAI Vision API. Long position lists don't fit one phone screen, so users
+ * can send several scrolled views in one batch; the model merges them into one result.
+ * @param {string|string[]} filePath - Path(s) to the uploaded screenshot(s)
  * @param {string} platform - Investment category display name
  * @param {string} accountType - Account type (p2p, stocks, crypto, etc.)
  * @returns {Promise<Object>} Extracted data object
  */
 export async function analyzeScreenshot(filePath, platform, accountType = null) {
   try {
-    console.log(`Analyzing screenshot from ${platform}${accountType ? ` (${accountType})` : ' (auto-detect)'} at ${filePath}`);
-    
+    const filePaths = (Array.isArray(filePath) ? filePath : [filePath]).filter(Boolean);
+    if (!filePaths.length) throw new Error('No screenshot to analyze');
+    console.log(`Analyzing ${filePaths.length} screenshot(s) from ${platform}${accountType ? ` (${accountType})` : ' (auto-detect)'}`);
+
     if (!process.env.OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY is not set in environment variables. Please check backend/.env file and restart the server.');
     }
 
-    // Read the image file and convert to base64
-    const imageBuffer = fs.readFileSync(filePath);
-    const base64Image = imageBuffer.toString('base64');
-    
-    // Determine image MIME type
-    const ext = filePath.split('.').pop().toLowerCase();
-    const mimeType = ext === 'png' ? 'image/png' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+    const imageParts = filePaths.map((p) => {
+      const ext = p.split('.').pop().toLowerCase();
+      const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+      return {
+        type: 'image_url',
+        image_url: {
+          url: `data:${mimeType};base64,${fs.readFileSync(p).toString('base64')}`,
+          // Position lists are dense small print (tickers, P&L); the default 'auto'
+          // detail downscales a tall screenshot and misreads digits and symbols.
+          detail: 'high',
+        },
+      };
+    });
 
     // Create a detailed prompt for extracting portfolio data
     let contextDescription = '';
@@ -157,7 +167,14 @@ CRITICAL INSTRUCTIONS:
   - If the screenshot does not show an account total, set the account "balance" and "totalBalance" to the SUM of all holdings' currentValue.
 - Return ONLY valid JSON, no additional text or explanation
 - If a field cannot be determined, use null for that field
-- Numbers should be actual numbers, not strings`;
+- Numbers should be actual numbers, not strings`
+      + (imageParts.length > 1 ? `
+
+MULTIPLE SCREENSHOTS (${imageParts.length} images): They all show the SAME account - scrolled views of one long position list, or different tabs of one app. Return ONE merged result:
+- One combined "holdings" array covering every position visible in ANY screenshot.
+- Overlapping rows (the same position visible in more than one screenshot because of scrolling) must appear ONLY ONCE - use the clearest/most complete values for it.
+- Do not create one account per screenshot: merge into the same accounts array as if it were one tall screenshot.
+- The account "balance" is the account total if any screenshot shows it; otherwise the sum of the merged holdings' currentValue.` : '');
 
     // Call OpenAI Vision API
     // Benchmarked on an 18-row Trading 212 position list (values, P&L €, P&L %):
@@ -175,19 +192,8 @@ CRITICAL INSTRUCTIONS:
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: prompt
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
-                // Position lists are dense small print (tickers, P&L); the default 'auto'
-                // detail downscales a tall screenshot and misreads digits and symbols.
-                detail: 'high'
-              }
-            }
+            { type: "text", text: prompt },
+            ...imageParts
           ]
         }
       ],

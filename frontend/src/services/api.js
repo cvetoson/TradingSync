@@ -112,7 +112,8 @@ export async function getPortfolioSummary() {
 
 export async function uploadScreenshot(file, investmentCategory, accountType) {
   const formData = new FormData();
-  formData.append('screenshot', file);
+  // one or several screenshots of the same account, analyzed as one batch
+  for (const f of (Array.isArray(file) ? file : [file])) formData.append('screenshot', f);
   formData.append('investmentCategory', investmentCategory);
   formData.append('accountType', accountType || 'unknown');
 
@@ -183,7 +184,7 @@ export async function getAccountHistory(accountId) {
 
 export async function updateAccountWithScreenshot(accountId, file) {
   const formData = new FormData();
-  formData.append('screenshot', file);
+  for (const f of (Array.isArray(file) ? file : [file])) formData.append('screenshot', f);
 
   const response = await api.put(`/accounts/${accountId}/update`, formData, {
     headers: {
@@ -196,7 +197,7 @@ export async function updateAccountWithScreenshot(accountId, file) {
 
 export async function addHoldingsFromScreenshot(accountId, file) {
   const formData = new FormData();
-  formData.append('screenshot', file);
+  for (const f of (Array.isArray(file) ? file : [file])) formData.append('screenshot', f);
 
   const response = await api.post(`/accounts/${accountId}/add-holdings`, formData, {
     headers: {

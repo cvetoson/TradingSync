@@ -247,6 +247,8 @@ export async function uploadScreenshot(req, res) {
     }
 
     const filePath = req.file.path;
+    // 1-5 screenshots of the same account (scrolled views) analyzed as one batch
+    const filePaths = (Array.isArray(req.files) && req.files.length ? req.files : [req.file]).map((f) => f.path);
     const investmentCategory = req.body.investmentCategory || 'unknown';
     let accountType = req.body.accountType || null;
     console.log('[UPLOAD] File path:', filePath, 'Category:', investmentCategory, 'Type:', accountType);
@@ -277,7 +279,7 @@ export async function uploadScreenshot(req, res) {
         `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month. Upgrade for unlimited imports`));
     }
 
-    const extractedData = await analyzeScreenshot(filePath, platform, aiAccountType);
+    const extractedData = await analyzeScreenshot(filePaths, platform, aiAccountType);
     console.log('[UPLOAD] AI extraction complete. Accounts:', extractedData?.accounts?.length || 0, 'Holdings:', extractedData?.holdings?.length || 0);
 
     if (!extractedData) {
@@ -1567,6 +1569,8 @@ export async function updateAccountWithScreenshot(req, res) {
     }
 
     const filePath = req.file.path;
+    // 1-5 screenshots of the same account (scrolled views) analyzed as one batch
+    const filePaths = (Array.isArray(req.files) && req.files.length ? req.files : [req.file]).map((f) => f.path);
     const db = getDatabase();
 
     // First, get the existing account to preserve its type and other settings
@@ -1590,7 +1594,7 @@ export async function updateAccountWithScreenshot(req, res) {
           }
           // Analyze screenshot with AI, using existing account type as context
           const extractedData = await analyzeScreenshot(
-            filePath, 
+            filePaths, 
             existingAccount.platform, 
             existingAccount.account_type
           );
@@ -1785,6 +1789,8 @@ export async function addHoldingsFromScreenshot(req, res) {
     }
 
     const filePath = req.file.path;
+    // 1-5 screenshots of the same account (scrolled views) analyzed as one batch
+    const filePaths = (Array.isArray(req.files) && req.files.length ? req.files : [req.file]).map((f) => f.path);
     const db = getDatabase();
 
     db.get('SELECT * FROM accounts WHERE id = ?', [accountId], async (err, account) => {
@@ -1802,7 +1808,7 @@ export async function addHoldingsFromScreenshot(req, res) {
           return res.status(402).json(upgradeRequired('ai_import_limit',
             `Free accounts get ${FREE_MAX_AI_IMPORTS_PER_MONTH} AI imports per month. Upgrade for unlimited imports`));
         }
-        const extractedData = await analyzeScreenshot(filePath, account.platform, account.account_type);
+        const extractedData = await analyzeScreenshot(filePaths, account.platform, account.account_type);
         if (!extractedData) {
           return res.status(500).json({ error: 'Failed to extract data from screenshot' });
         }

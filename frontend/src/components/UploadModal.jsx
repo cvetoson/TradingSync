@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { isNative, pickScreenshotFile } from '../services/native';
 import { uploadScreenshot, getAccounts, createAccount, createHolding, updateAccountBalance, updateAccountInterestRate } from '../services/api';
+import ScreenshotPicker from './ScreenshotPicker';
 import useModalBehavior from '../hooks/useModalBehavior';
 
 const INVESTMENT_CATEGORIES = [
@@ -25,7 +25,7 @@ const MANUAL_ACCOUNT_TYPES = INVESTMENT_CATEGORIES.filter(c => c.value !== 'auto
 export default function UploadModal({ onClose, onSuccess, prefill = null }) {
   useModalBehavior(onClose);
   const [mode, setMode] = useState('upload'); // 'upload' | 'manual'
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [investmentCategory, setInvestmentCategory] = useState('');
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -59,35 +59,10 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
     if (prefill.manualAccountType) setManualAccountType(prefill.manualAccountType);
   }, [prefill]);
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile) {
-      if (selectedFile.type.startsWith('image/')) {
-        setFile(selectedFile);
-        setError('');
-      } else {
-        setError('Please select an image file');
-      }
-    }
-  };
-
-  // In the iOS shell the hidden <input type=file> opens the clunky web picker;
-  // intercept and use the native camera/library sheet instead.
-  const handleNativePick = async (e) => {
-    if (!isNative) return;
-    e.preventDefault();
-    try {
-      const picked = await pickScreenshotFile();
-      if (picked) { setFile(picked); setError(''); }
-    } catch {
-      setError('Could not open the photo picker');
-    }
-  };
-
   const handleUploadSubmit = async (e) => {
     e.preventDefault();
-    if (!file) {
-      setError('Please select a file');
+    if (!files.length) {
+      setError('Please select at least one screenshot');
       return;
     }
     if (!investmentCategory) {
@@ -99,7 +74,7 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
     try {
       const selectedCategory = INVESTMENT_CATEGORIES.find(cat => cat.value === investmentCategory);
       const accountType = investmentCategory === 'auto' ? null : selectedCategory?.accountType;
-      await uploadScreenshot(file, investmentCategory, accountType);
+      await uploadScreenshot(files, investmentCategory, accountType);
       onSuccess();
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'Upload failed. Please try again.';
@@ -254,27 +229,7 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-mid mb-2">Screenshot</label>
-              <div className="border-2 border-dashed dropzone rounded-md p-6 text-center transition-colors">
-                <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" id="file-upload" required={!isNative} />
-                <label htmlFor="file-upload" className="cursor-pointer" onClick={handleNativePick}>
-                  {file ? (
-                    <div>
-                      <svg className="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <p className="mt-2 text-sm text-dim">{file.name}</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <svg className="mx-auto h-12 w-12 text-dim" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      <p className="mt-2 text-sm text-dim"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                      <p className="text-xs text-dim">PNG, JPG, GIF up to 10MB</p>
-                    </div>
-                  )}
-                </label>
-              </div>
+              <ScreenshotPicker files={files} onChange={(f) => { setFiles(f); setError(''); }} disabled={uploading} inputId="upload-shots" />
             </div>
             {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">{error}</div>}
             <div className="flex gap-3 pt-4">
@@ -284,7 +239,7 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
               </button>
             </div>
             <div className="mt-4 p-3 tip-box rounded-md">
-              <p className="text-xs">💡 <strong>Tip:</strong> Upload a clear screenshot of your account balance. The AI will extract your portfolio data automatically.</p>
+              <p className="text-xs">💡 <strong>Tip:</strong> Upload clear screenshots of your account. If the position list is long, scroll and add a screenshot of each part — they are read together as one account.</p>
             </div>
           </form>
         ) : (
