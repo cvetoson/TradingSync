@@ -69,7 +69,7 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="error-box px-4 py-3 rounded">
               {error}
             </div>
           )}
@@ -99,7 +99,7 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
                   onClose();
                   onAddNewAccount();
                 }}
-                className="w-full px-4 py-2 border border-green-500 text-green-700 rounded-lg hover:bg-green-50 transition-colors flex items-center justify-center gap-2"
+                className="w-full px-4 py-2 btn-outline-green rounded-lg transition-colors flex items-center justify-center gap-2"
                 disabled={uploading}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,8 +111,8 @@ export default function UpdateAccountModal({ account, onClose, onSuccess, onAddN
           </div>
         </form>
 
-        <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
-          <p className="text-xs text-yellow-800">
+        <div className="mt-4 p-3 note-box rounded-lg">
+          <p className="text-xs">
             ⚠️ <strong>Note:</strong> This replaces the account's holdings with what the screenshots show.
             If the position list is long, scroll and add a screenshot of each part — they are read together as one account.
           </p>

@@ -49,11 +49,11 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
           </button>
         </div>
 
-        <div className="mb-4 p-3 bg-green-50 rounded-md">
-          <p className="text-sm text-green-800">
+        <div className="mb-4 p-3 note-box rounded-md">
+          <p className="text-sm">
             <strong>{account.accountName || account.platform}</strong>
           </p>
-          <p className="text-xs text-green-700 mt-1">
+          <p className="text-xs mt-1">
             Upload a screenshot of additional holdings. They will be added to your existing holdings (not replaced).
           </p>
         </div>
@@ -67,7 +67,7 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="error-box px-4 py-3 rounded">
               {error}
             </div>
           )}
@@ -91,8 +91,8 @@ export default function AddHoldingsFromScreenshotModal({ account, onClose, onSuc
           </div>
         </form>
 
-        <div className="mt-4 p-3 bg-yellow-50 rounded-md">
-          <p className="text-xs text-yellow-800">
+        <div className="mt-4 p-3 note-box rounded-md">
+          <p className="text-xs">
             💡 The AI will extract holdings from the screenshot and add them to this account. Existing holdings are kept.
           </p>
         </div>

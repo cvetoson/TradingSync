@@ -177,7 +177,6 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div
         className="surface-card border rounded-xl border-app shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
-        style={{ colorScheme: 'light' }}
       >
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-strong">Add New</h2>
@@ -231,7 +230,7 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
               <label className="block text-sm font-medium text-mid mb-2">Screenshot</label>
               <ScreenshotPicker files={files} onChange={(f) => { setFiles(f); setError(''); }} disabled={uploading} inputId="upload-shots" />
             </div>
-            {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">{error}</div>}
+            {error && <div className="error-box px-4 py-3 rounded">{error}</div>}
             <div className="flex gap-3 pt-4">
               <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-app rounded-md text-mid hover-dim transition-colors" disabled={uploading}>Cancel</button>
               <button type="submit" className="flex-1 px-4 py-2 btn-gold text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={uploading}>
@@ -387,7 +386,7 @@ export default function UploadModal({ onClose, onSuccess, prefill = null }) {
               </>
             )}
 
-            {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">{error}</div>}
+            {error && <div className="error-box px-4 py-3 rounded text-sm">{error}</div>}
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-app rounded-md text-mid hover-dim transition-colors" disabled={uploading}>Cancel</button>
               <button type="submit" className="flex-1 px-4 py-2 btn-gold text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={uploading}>

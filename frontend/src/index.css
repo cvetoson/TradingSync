@@ -9,6 +9,8 @@
 
 /* ── Light theme (Monarch-inspired) ─────────────────── */
 :root {
+  /* Dark-only app: native controls (select popups, scrollbars, pickers) must render dark */
+  color-scheme: dark;
   --accent:          #c8923e;
   --accent-2:        #8a6230;
   --bg-page:         #f0f2f5;
@@ -178,3 +180,12 @@ html, body { overflow-x: clip; }
 input.field-dark, select.field-dark, textarea.field-dark {
   background: var(--bg-inner); border-color: var(--border); color: var(--text-1);
 }
+
+/* Dark-theme feedback boxes for the upload/update modals (the old bg-yellow-50 /
+   bg-green-50 / bg-red-50 blocks rendered as glaring white cards on phones). */
+.error-box { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.35); color: #f87171; }
+.note-box { background: rgba(200,146,62,0.08); border: 1px solid rgba(200,146,62,0.18); }
+.note-box p { color: var(--text-3); }
+.note-box strong { color: var(--text-2); }
+.btn-outline-green { border: 1px solid rgba(74,222,128,0.45); color: #4ade80; }
+.btn-outline-green:hover { background: rgba(74,222,128,0.08); }

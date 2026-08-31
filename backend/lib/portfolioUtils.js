@@ -269,7 +269,12 @@ export function normalizeIncomingHolding(holding, currency, opts = {}) {
     : (holding.current_price != null ? Number(holding.current_price) : null);
   if (!Number.isFinite(currentPrice) || currentPrice <= 0) currentPrice = null;
   const assetType = inferAssetType(holding);
-  const holdingCurrency = holding.currency || currency || 'EUR';
+  let holdingCurrency = holding.currency || currency || 'EUR';
+  // Broker lists often print the VALUE in the account currency ("4.658,51 €") next to
+  // a per-share price in the listing currency ("64,05 $"). Whenever the stored price is
+  // derived from that value, the row must carry the value's currency — labeling an
+  // EUR-derived price as USD made holdingValueInEur convert it a second time.
+  const valueCurrency = String(currency || 'EUR').toUpperCase();
   const existingQuantity = Number(opts.existingQuantity) > 0 ? Number(opts.existingQuantity) : null;
   const existingIsManual = existingQuantity != null && opts.existingSource === 'manual';
   const livePrice = Number(opts.livePrice) > 0 ? Number(opts.livePrice) : null;
@@ -285,11 +290,14 @@ export function normalizeIncomingHolding(holding, currency, opts = {}) {
   if (valueNum != null) {
     if (quantity > 0) {
       currentPrice = valueNum / quantity;
+      holdingCurrency = valueCurrency;
     } else if (existingIsManual) {
       quantity = existingQuantity;
       currentPrice = valueNum / quantity;
       quantitySource = 'manual';
+      holdingCurrency = valueCurrency;
     } else if (livePrice) {
+      // livePrice was matched against the row currency upstream; keep that label
       quantity = valueNum / livePrice;
       currentPrice = livePrice;
       quantitySource = 'derived';
@@ -297,10 +305,12 @@ export function normalizeIncomingHolding(holding, currency, opts = {}) {
       quantity = existingQuantity;
       currentPrice = valueNum / quantity;
       quantitySource = 'placeholder';
+      holdingCurrency = valueCurrency;
     } else {
       quantity = 1;
       currentPrice = valueNum;
       quantitySource = 'placeholder';
+      holdingCurrency = valueCurrency;
     }
     if (profitLoss != null) costBasis = valueNum - profitLoss;
     else if (profitLossPercent != null && profitLossPercent > -100) costBasis = valueNum / (1 + profitLossPercent / 100);
