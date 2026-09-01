@@ -33,6 +33,7 @@ const PLATFORM_CATEGORY_TO_MANUAL = {
   bank: 'fixed-income',
   unknown: 'alternative'
 };
+const HOURLY_REFRESH_MS = 60 * 60 * 1000;
 
 // Native app lock (S7): when armed in Settings, the app blanks and requires
 // Face ID / passcode on every cold start and on return from the background.
@@ -134,6 +135,13 @@ function DashboardContent() {
   const [activePage, setActivePage] = useState('portfolio');
 
   useEffect(() => { loadPortfolio(); }, [refreshTrigger]);
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setRefreshTrigger(prev => prev + 1);
+    }, HOURLY_REFRESH_MS);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   const loadPortfolio = async () => {
     try {
