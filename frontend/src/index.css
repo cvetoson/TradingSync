@@ -189,3 +189,13 @@ input.field-dark, select.field-dark, textarea.field-dark {
 .note-box strong { color: var(--text-2); }
 .btn-outline-green { border: 1px solid rgba(74,222,128,0.45); color: #4ade80; }
 .btn-outline-green:hover { background: rgba(74,222,128,0.08); }
+
+/* AccountDetailView dark restyle: inner cards + price-source chips */
+.card-inner { background: var(--bg-inner); border: 1px solid var(--border); }
+.chip-live { background: rgba(74,222,128,0.12); color: #4ade80; border: 1px solid rgba(74,222,128,0.25); }
+.chip-live:hover { background: rgba(74,222,128,0.2); }
+.chip-warn { background: rgba(217,163,85,0.12); color: var(--accent); border: 1px solid rgba(217,163,85,0.3); }
+.chip-warn:hover { background: rgba(217,163,85,0.2); }
+.chip-neutral { background: var(--bg-inner); color: var(--text-2); border: 1px solid var(--border); }
+.chip-neutral:hover { background: var(--border); }
+.success-box { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.3); color: #4ade80; }
