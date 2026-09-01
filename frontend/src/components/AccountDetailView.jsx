@@ -179,15 +179,18 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
     return `${days}d ago`;
   };
 
-  const loadHoldings = async () => {
+  // silent: refresh the rows in place after an inline edit — no "Loading holdings"
+  // unmount (that flash was the whole screen appearing to refresh), no projection
+  // refetch, no parent-wide refresh from inside the loader.
+  const loadHoldings = async ({ silent = false } = {}) => {
     try {
-      setHoldingsLoading(true);
+      if (!silent) setHoldingsLoading(true);
       const data = await getAccountHoldings(account.id);
       setHoldings(data.holdings || []);
       setHoldingsTotalValue(data.totalValueEur != null ? data.totalValueEur : (data.totalValue || 0));
 
       const accountType = account.account_type || account.accountType;
-      if ((accountType === 'stocks' || accountType === 'crypto' || accountType === 'precious') && (data.holdings || []).length > 0) {
+      if (!silent && (accountType === 'stocks' || accountType === 'crypto' || accountType === 'precious') && (data.holdings || []).length > 0) {
         try {
           const proj = await getHoldingsProjection(account.id);
           if (proj && proj.monthly && proj.monthly.length > 0) {
@@ -214,9 +217,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
       setHoldings([]);
       setHoldingsTotalValue(0);
     } finally {
-      setHoldingsLoading(false);
-      // Refresh portfolio so dashboard/cards show updated total
-      if (onUpdate) onUpdate();
+      if (!silent) setHoldingsLoading(false);
     }
   };
 
@@ -228,13 +229,11 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
   const handleSymbolSave = async (holdingId) => {
     try {
       await updateHoldingSymbol(holdingId, editingSymbolValue.trim());
-      // Reload holdings - this will trigger automatic price fetch for the new symbol
-      await loadHoldings();
       setEditingSymbolId(null);
       setEditingSymbolValue('');
-      if (onUpdate) {
-        onUpdate(); // Refresh account data
-      }
+      // Reload in place - this also picks up the automatic price fetch for the new symbol
+      await loadHoldings({ silent: true });
+      if (onUpdate) onUpdate();
     } catch (error) {
       console.error('Error updating symbol:', error);
       alert('Failed to update symbol. Please try again.');
@@ -259,12 +258,10 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         return;
       }
       await updateHoldingQuantity(holdingId, quantity);
-      await loadHoldings();
       setEditingQuantityId(null);
       setEditingQuantityValue('');
-      if (onUpdate) {
-        onUpdate();
-      }
+      await loadHoldings({ silent: true });
+      if (onUpdate) onUpdate();
     } catch (error) {
       console.error('Error updating quantity:', error);
       alert('Failed to update quantity. Please try again.');
@@ -292,13 +289,11 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         return;
       }
       await updateHoldingPrice(holdingId, price, editingPriceCurrency);
-      await loadHoldings();
       setEditingPriceId(null);
       setEditingPriceValue('');
       setEditingPriceCurrency('EUR');
-      if (onUpdate) {
-        onUpdate();
-      }
+      await loadHoldings({ silent: true });
+      if (onUpdate) onUpdate();
     } catch (error) {
       console.error('Error updating price:', error);
       alert('Failed to update price. Please try again.');
@@ -325,12 +320,10 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
         return;
       }
       await updateHoldingPurchasePrice(holdingId, purchasePrice);
-      await loadHoldings();
       setEditingPurchasePriceId(null);
       setEditingPurchasePriceValue('');
-      if (onUpdate) {
-        onUpdate();
-      }
+      await loadHoldings({ silent: true });
+      if (onUpdate) onUpdate();
     } catch (error) {
       console.error('Error updating purchase price:', error);
       alert('Failed to update purchase price. Please try again.');
@@ -351,7 +344,7 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
       setRemovingHoldingId(holdingId);
       await apiDeleteHolding(holdingId);
       setConfirmRemoveHoldingId(null);
-      await loadHoldings();
+      await loadHoldings({ silent: true });
       if (onUpdate) await onUpdate();
     } catch (err) {
       console.error('Error removing holding:', err);
@@ -398,9 +391,9 @@ export default function AccountDetailView({ account, currency, onClose, onUpdate
     setVerifyUpdating(true);
     try {
       await updateHoldingSymbol(verifyHolding.id, sym);
-      await loadHoldings();
-      if (onUpdate) onUpdate();
       closeVerifyModal();
+      await loadHoldings({ silent: true });
+      if (onUpdate) onUpdate();
     } catch (err) {
       setVerifyResult(prev => ({ ...prev, found: prev?.found, error: err.response?.data?.error || err.message || 'Update failed' }));
     } finally {
