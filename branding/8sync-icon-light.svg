@@ -6,12 +6,12 @@
       <stop offset="1" stop-color="#eccb84"></stop>
     </linearGradient>
   </defs>
-  <rect width="1024" height="1024" rx="229" fill="#101016"></rect>
+  <rect width="1024" height="1024" rx="229" fill="#ffffff"></rect>
   <svg x="133" y="133" width="758" height="758" viewBox="16 12 90 90">
-    <circle cx="50" cy="34" r="15" fill="none" stroke="#f4f4f6" stroke-width="9.5"></circle>
-    <circle cx="50" cy="67" r="20" fill="none" stroke="#f4f4f6" stroke-width="9.5"></circle>
-    <path d="M28 92 C46 100 68 94 76 74 L92 34" fill="none" stroke="#101016" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"></path>
-    <polygon points="99,25 97.5,42 83,31" fill="none" stroke="#101016" stroke-width="5" stroke-linejoin="round"></polygon>
+    <circle cx="50" cy="34" r="15" fill="none" stroke="#14141a" stroke-width="9.5"></circle>
+    <circle cx="50" cy="67" r="20" fill="none" stroke="#14141a" stroke-width="9.5"></circle>
+    <path d="M28 92 C46 100 68 94 76 74 L92 34" fill="none" stroke="#ffffff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"></path>
+    <polygon points="99,25 97.5,42 83,31" fill="none" stroke="#ffffff" stroke-width="5" stroke-linejoin="round"></polygon>
     <path d="M28 92 C46 100 68 94 76 74 L92 34" fill="none" stroke="url(#gold)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"></path>
     <polygon points="99,25 97.5,42 83,31" fill="url(#gold)"></polygon>
   </svg>
