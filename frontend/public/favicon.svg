@@ -1,13 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="g" x1="15%" y1="0%" x2="85%" y2="120%">
+    <linearGradient id="gold" x1="15%" y1="0%" x2="85%" y2="120%">
       <stop offset="0%" stop-color="#d9a355"/><stop offset="55%" stop-color="#c8923e"/><stop offset="100%" stop-color="#8a6230"/>
     </linearGradient>
-    <radialGradient id="sheen" cx="30%" cy="18%" r="80%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28"/><stop offset="55%" stop-color="#ffffff" stop-opacity="0"/>
-    </radialGradient>
+    <linearGradient id="green" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#22c55e"/><stop offset="100%" stop-color="#4ade80"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a20"/><stop offset="100%" stop-color="#0a0a0c"/>
+    </linearGradient>
   </defs>
-  <rect width="1024" height="1024" rx="224" fill="url(#g)"/>
-  <rect width="1024" height="1024" rx="224" fill="url(#sheen)"/>
-  <text x="512" y="762" font-family="Helvetica Neue, Arial, sans-serif" font-size="640" font-weight="800" fill="#ffffff" text-anchor="middle">8</text>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <rect x="34" y="34" width="956" height="956" rx="200" fill="none" stroke="url(#gold)" stroke-width="22"/>
+  <text x="472" y="778" font-family="Helvetica Neue, Arial, sans-serif" font-size="680" font-weight="800" fill="url(#gold)" text-anchor="middle">8</text>
+  <path d="M 210 800 C 420 890, 640 815, 735 585" fill="none" stroke="url(#green)" stroke-width="92" stroke-linecap="round"/>
+  <path d="M 818 357 L 838 577 L 658 510 Z" fill="url(#green)"/>
 </svg>

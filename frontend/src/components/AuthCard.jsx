@@ -1,4 +1,5 @@
 import './AuthCard.css';
+import BrandLogo from './BrandLogo';
 
 // Illustrative allocation for the logged-out hero (not user data)
 const ALLOCATION = [
@@ -97,9 +98,7 @@ export default function AuthCard({ subtitle, children }) {
       <div className="auth-form-panel">
         <div className="auth-form-wrap">
           <div className="auth-brand">
-            <div className="auth-brand-icon">
-              <span className="text-white font-extrabold text-[20px] leading-none">8</span>
-            </div>
+            <BrandLogo size={48} className="mx-auto" />
             <h1 className="auth-brand-title">8Sync</h1>
             {subtitle && <p className="auth-brand-sub">{subtitle}</p>}
           </div>

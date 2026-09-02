@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import BrandLogo from './BrandLogo';
 import { getEntitlement } from '../services/api';
 import useModalBehavior from '../hooks/useModalBehavior';
 
@@ -59,9 +60,7 @@ export default function PaywallModal({ reason, onClose }) {
         style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}>
 
         <div className="flex items-start justify-between mb-1">
-          <div className="btn-gold w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
-            <span className="text-white font-extrabold text-[22px] leading-none">8</span>
-          </div>
+          <BrandLogo size={44} className="shrink-0" />
           <button onClick={onClose} className="p-2 -m-1 rounded-md text-dim hover:text-strong" title="Close">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

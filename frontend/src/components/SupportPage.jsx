@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import BrandLogo from './BrandLogo';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 
@@ -34,9 +35,7 @@ export default function SupportPage() {
     <div className="min-h-screen" style={{ background: 'var(--bg-page)' }}>
       <div className="max-w-xl mx-auto px-4 sm:px-6 py-10">
         <div className="flex items-center gap-3 mb-8">
-          <div className="btn-gold w-9 h-9 rounded-xl flex items-center justify-center shrink-0">
-            <span className="text-white font-extrabold text-[17px] leading-none">8</span>
-          </div>
+          <BrandLogo size={36} className="shrink-0" />
           <span className="font-semibold" style={{ color: 'var(--text-1)' }}>8Sync</span>
         </div>
 

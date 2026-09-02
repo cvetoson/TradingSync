@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import BrandLogo from './components/BrandLogo';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -171,9 +172,7 @@ function DashboardContent() {
       <aside className="glass-card w-14 sm:w-52 flex flex-col py-5 shrink-0 relative z-[1] m-3 sm:m-4 sticky top-3 sm:top-4 h-[calc(100vh-1.5rem)] sm:h-[calc(100vh-2rem)]">
         {/* Brand */}
         <div className="px-3 lg:px-4 mb-8 flex items-center gap-3">
-          <div className="btn-gold w-9 h-9 rounded-xl flex items-center justify-center shrink-0">
-            <span className="text-white font-extrabold text-[17px] leading-none">8</span>
-          </div>
+          <BrandLogo size={36} className="shrink-0" />
           <span className="hidden sm:block font-semibold text-sm tracking-tight" style={{ color: 'var(--text-1)' }}>8Sync</span>
         </div>
 
